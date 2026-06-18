@@ -44,6 +44,7 @@ app.*.map.json
 /android/key.properties
 /android/app/*.jks
 /android/app/*.keystore
+/android/github-actions-secrets.txt
 
 # Local preview and diagnostic output
 android_build_debug.log
