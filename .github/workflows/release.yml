@@ -83,10 +83,18 @@ jobs:
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s+(.+)$').Matches[0].Groups[1].Value.Split('+')[0]
           if ($env:GITHUB_REF -like 'refs/tags/v*') { $version = $env:GITHUB_REF_NAME.TrimStart('v') }
           flutter build windows --release --build-name $version --build-number $env:GITHUB_RUN_NUMBER
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
       - shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath dist/TingReader-windows-x64.zip -Force
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s+(.+)$').Matches[0].Groups[1].Value.Split('+')[0]
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $version = $env:GITHUB_REF_NAME.TrimStart('v') }
+          $env:TING_READER_VERSION = $version
+          $env:TING_READER_BUILD_DIR = (Resolve-Path "build/windows/x64/runner/Release").Path
+          $env:TING_READER_OUTPUT_DIR = (Resolve-Path "dist").Path
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "windows/installer/ting_reader.iss"
       - uses: actions/upload-artifact@v4
         with:
           name: windows

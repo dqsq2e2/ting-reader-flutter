@@ -95,7 +95,7 @@ class ClientUpdateService {
       case TargetPlatform.android:
         return '$tingReaderWebsiteUrl/api/client/android';
       case TargetPlatform.windows:
-        return '$tingReaderWebsiteUrl/api/client/desktop/winZip';
+        return '$tingReaderWebsiteUrl/api/client/desktop/winSetup';
       case TargetPlatform.macOS:
         return '$tingReaderWebsiteUrl/api/client/desktop/macZip';
       case TargetPlatform.linux:
