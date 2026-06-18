@@ -22,12 +22,24 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+      - name: Set up Android SDK
+        run: |
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O commandlinetools.zip
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          unzip -q commandlinetools.zip -d "$HOME/android-sdk/cmdline-tools"
+          mv "$HOME/android-sdk/cmdline-tools/cmdline-tools" "$HOME/android-sdk/cmdline-tools/latest"
+          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$HOME/android-sdk/platform-tools" >> "$GITHUB_PATH"
+      - name: Install Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;26.1.10909125"
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
+          channel: stable
           cache: true
-      - name: Install Android SDK 36
-        run: yes | sdkmanager "platforms;android-36"
       - name: Resolve build version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
@@ -59,7 +71,7 @@ jobs:
               "keyPassword=$ANDROID_KEY_PASSWORD" \
               > android/key.properties
           fi
-      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - name: Run tests if present
         run: |
@@ -81,15 +93,17 @@ jobs:
 
   windows:
     name: Windows
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
+          channel: stable
           cache: true
-      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub get
       - shell: pwsh
+        env:
+          CMAKE_GENERATOR: Visual Studio 17 2022
         run: |
           $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s+(.+)$').Matches[0].Groups[1].Value.Split('+')[0]
           if ($env:GITHUB_REF -like 'refs/tags/v*') { $version = $env:GITHUB_REF_NAME.TrimStart('v') }
@@ -117,12 +131,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update
-      - run: sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: |
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            libsecret-1-dev xdg-user-dirs \
+            ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswresample-dev \
+            libmpv-dev mpv
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
+          channel: stable
           cache: true
-      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub get
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
@@ -140,14 +159,14 @@ jobs:
 
   macos:
     name: macOS
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
+          channel: stable
           cache: true
-      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub get
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
@@ -165,14 +184,14 @@ jobs:
 
   ios:
     name: iOS unsigned
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.16.0"
+          channel: stable
           cache: true
-      - run: flutter pub get --enforce-lockfile
+      - run: flutter pub get
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
