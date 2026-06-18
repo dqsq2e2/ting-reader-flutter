@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PUB_HOSTED_URL: https://pub.dev
+
 jobs:
   android:
     name: Android
@@ -23,6 +26,8 @@ jobs:
         with:
           flutter-version: "3.16.0"
           cache: true
+      - name: Install Android SDK 36
+        run: sdkmanager "platforms;android-36"
       - name: Resolve build version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
