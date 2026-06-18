@@ -165,18 +165,19 @@ class _AboutVersionRow extends StatelessWidget {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(width: 14),
-          TextButton(
-            onPressed: checking ? null : onCheckUpdate,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary600,
-              disabledForegroundColor: context.mutedText,
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              padding: EdgeInsets.zero,
-            ),
-            child: Text(
-              checking ? '检查中...' : '检查更新',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          InkWell(
+            onTap: checking ? null : onCheckUpdate,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+              child: Text(
+                checking ? '检查中...' : '检查更新',
+                style: TextStyle(
+                  color: checking ? context.mutedText : AppColors.primary600,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ),
         ],
@@ -189,67 +190,106 @@ class _BackendUpdateDialog extends StatelessWidget {
   const _BackendUpdateDialog({
     required this.update,
     required this.onClose,
-    required this.onCopyUrl,
+    required this.onOpenUpdate,
   });
 
   final Map<String, dynamic> update;
   final VoidCallback onClose;
-  final VoidCallback onCopyUrl;
+  final VoidCallback onOpenUpdate;
 
   @override
   Widget build(BuildContext context) {
-    final version = _stringValue(update, 'version', fallback: 'Unknown');
+    final rawVersion = _stringValue(update, 'version', fallback: 'Unknown');
+    final version =
+        rawVersion == 'Unknown' || rawVersion.toLowerCase().startsWith('v')
+            ? rawVersion
+            : 'v$rawVersion';
     final date = _stringValue(update, 'date', fallback: '');
     return _ModalBarrier(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 390),
         child: TingCard(
-          radius: 24,
-          padding: const EdgeInsets.all(24),
+          radius: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 64,
-                height: 64,
+                width: 72,
+                height: 72,
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.12),
+                  color: AppColors.primary600.withOpacity(0.14),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: const Icon(
-                  Icons.check_circle_rounded,
-                  color: Colors.blue,
-                  size: 34,
+                  Icons.check_circle_outline_rounded,
+                  color: AppColors.primary600,
+                  size: 38,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 22),
               Text(
                 '发现服务端新版本 $version',
                 textAlign: TextAlign.center,
                 style:
-                    const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                    const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
               ),
               if (date.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
                 Text(
-                  '发布时间: ${_dateOnly(date)}',
-                  style: TextStyle(color: context.mutedText),
+                  '发布时间：${_dateOnly(date).replaceAll('-', '/')}',
+                  style: TextStyle(
+                    color: context.mutedText,
+                    fontSize: 16,
+                  ),
                 ),
               ],
-              const SizedBox(height: 22),
+              const SizedBox(height: 28),
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton(
+                    child: TextButton(
                       onPressed: onClose,
-                      child: const Text('暂不更新'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: context.mutedText,
+                        backgroundColor: context.isDark
+                            ? AppColors.slate800
+                            : AppColors.slate100,
+                        minimumSize: const Size.fromHeight(52),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        '暂不更新',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: onCopyUrl,
-                      child: const Text('复制更新地址'),
+                      onPressed: onOpenUpdate,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary600,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(52),
+                        elevation: 10,
+                        shadowColor: AppColors.primary600.withOpacity(0.25),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: const Text(
+                        '前往官网更新',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -265,11 +305,13 @@ class _BackendUpdateDialog extends StatelessWidget {
 class _ClientUpdateDialog extends StatelessWidget {
   const _ClientUpdateDialog({
     required this.update,
+    required this.actionLabel,
     required this.onClose,
     required this.onDownload,
   });
 
   final ClientReleaseInfo update;
+  final String actionLabel;
   final VoidCallback onClose;
   final VoidCallback onDownload;
 
@@ -328,7 +370,7 @@ class _ClientUpdateDialog extends StatelessWidget {
                     child: ElevatedButton.icon(
                       onPressed: onDownload,
                       icon: const Icon(Icons.download_rounded, size: 18),
-                      label: const Text('下载安装'),
+                      label: Text(actionLabel),
                     ),
                   ),
                 ],

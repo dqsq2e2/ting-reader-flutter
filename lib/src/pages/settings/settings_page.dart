@@ -1,6 +1,4 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
 import '../../services/client_update_service.dart';
@@ -309,7 +307,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _downloadClientUpdate() async {
     final update = _clientUpdate;
     if (update == null) return;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    if (_clientUpdateService.canInstallDirectly) {
       setState(() {
         _downloadingClientUpdate = true;
         _clientDownloadProgress = 0;
@@ -337,14 +335,23 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _copy(String text) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    _showSnack('已复制到剪贴板');
-  }
-
   void _showSnack(String text) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.slate900,
+        duration: const Duration(seconds: 2),
+        margin: const EdgeInsets.only(left: 96, right: 96, bottom: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   String get _clientOrigin {
@@ -531,20 +538,21 @@ class _SettingsPageState extends State<SettingsPage> {
           _BackendUpdateDialog(
             update: _backendUpdate!,
             onClose: () => setState(() => _backendUpdate = null),
-            onCopyUrl: () {
+            onOpenUpdate: () {
               final url = _stringValue(
                 _backendUpdate!,
                 'download_url',
                 camel: 'downloadUrl',
                 fallback: 'https://www.tingreader.cn/guide/update',
               );
-              _copy(url);
               setState(() => _backendUpdate = null);
+              openExternalUrl(url);
             },
           ),
         if (_clientUpdate != null)
           _ClientUpdateDialog(
             update: _clientUpdate!,
+            actionLabel: _clientUpdateService.updateActionLabel,
             onClose: () => setState(() => _clientUpdate = null),
             onDownload: _downloadClientUpdate,
           ),

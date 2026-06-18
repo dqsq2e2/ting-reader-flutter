@@ -71,6 +71,14 @@ class ClientUpdateService {
     return _compareVersions(remoteVersion, currentVersion) > 0;
   }
 
+  bool get canInstallDirectly {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.windows;
+  }
+
+  String get updateActionLabel => canInstallDirectly ? '下载安装' : '前往浏览器下载';
+
   Future<void> openOrInstall(
     ClientReleaseInfo release, {
     ValueChanged<double>? onProgress,
@@ -81,6 +89,10 @@ class ClientUpdateService {
     }
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await _downloadAndInstallApk(release, onProgress: onProgress);
+      return;
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+      await _downloadAndOpenInstaller(release, onProgress: onProgress);
       return;
     }
     await openExternalUrl(release.downloadUrl);
@@ -100,6 +112,7 @@ class ClientUpdateService {
       case TargetPlatform.linux:
         return '$tingReaderWebsiteUrl/api/client/desktop/linuxTar';
       case TargetPlatform.iOS:
+        return '$tingReaderWebsiteUrl/api/client/ios';
       case TargetPlatform.fuchsia:
         return null;
     }
@@ -126,6 +139,38 @@ class ClientUpdateService {
       targetPath,
       type: 'application/vnd.android.package-archive',
     );
+    if (result.type != ResultType.done) {
+      throw StateError(result.message);
+    }
+  }
+
+  Future<void> _downloadAndOpenInstaller(
+    ClientReleaseInfo release, {
+    ValueChanged<double>? onProgress,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final safeVersion =
+        release.version.replaceAll(RegExp(r'[^0-9A-Za-z._-]'), '_');
+    final uri = Uri.tryParse(release.downloadUrl);
+    var extension = 'exe';
+    if (uri != null && uri.pathSegments.isNotEmpty) {
+      final fileName = uri.pathSegments.last;
+      final dotIndex = fileName.lastIndexOf('.');
+      if (dotIndex >= 0 && dotIndex < fileName.length - 1) {
+        extension = fileName.substring(dotIndex + 1);
+      }
+    }
+    final targetPath = '${tempDir.path}/ting-reader-$safeVersion.$extension';
+    await _dio.download(
+      release.downloadUrl,
+      targetPath,
+      onReceiveProgress: (received, total) {
+        if (total <= 0) return;
+        onProgress?.call(received / total);
+      },
+    );
+    onProgress?.call(1);
+    final result = await OpenFilex.open(targetPath);
     if (result.type != ResultType.done) {
       throw StateError(result.message);
     }
