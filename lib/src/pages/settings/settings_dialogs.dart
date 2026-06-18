@@ -23,57 +23,96 @@ class _AboutDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 430;
     return _ModalBarrier(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 390),
+        constraints: const BoxConstraints(maxWidth: 392),
         child: TingCard(
-          radius: 24,
-          padding: const EdgeInsets.all(24),
+          radius: 28,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 28 : 32,
+            vertical: compact ? 30 : 34,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Image.asset('assets/images/logo.png', width: 64, height: 64),
-              const SizedBox(height: 16),
-              const Text(
-                '关于 Ting Reader',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              Image.asset(
+                'assets/images/logo.png',
+                width: compact ? 74 : 78,
+                height: compact ? 74 : 78,
               ),
               const SizedBox(height: 22),
-              _AboutVersionRow(
-                label: '客户端版本',
-                version: clientVersion.isEmpty ? 'Unknown' : clientVersion,
-                checking: checkingClient,
-                onCheckUpdate: onCheckClientUpdate,
+              const Text(
+                '关于 Ting Reader',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 28),
               _AboutVersionRow(
                 label: '服务端版本',
-                version:
-                    backendVersion.isEmpty ? 'Unknown' : 'v$backendVersion',
+                version: backendVersion.isEmpty ? '未知' : 'v$backendVersion',
                 checking: checkingBackend,
                 onCheckUpdate: onCheckBackendUpdate,
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 12),
+              _AboutVersionRow(
+                label: '客户端版本',
+                version: clientVersion.isEmpty ? '未知' : clientVersion,
+                checking: checkingClient,
+                onCheckUpdate: onCheckClientUpdate,
+              ),
+              const SizedBox(height: 24),
               InkWell(
                 onTap: onOpenWebsite,
                 borderRadius: BorderRadius.circular(8),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Text(
-                    '官网地址  www.tingreader.cn',
-                    style: TextStyle(
-                      color: AppColors.primary600,
-                      fontSize: 14,
-                    ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 10,
+                    children: [
+                      Text(
+                        '官网地址',
+                        style: TextStyle(
+                          color: context.mutedText,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Text(
+                        'www.tingreader.cn',
+                        style: TextStyle(
+                          color: AppColors.primary600,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 26),
               SizedBox(
                 width: double.infinity,
-                child: OutlinedButton(
+                height: 52,
+                child: TextButton(
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.isDark
+                        ? AppColors.slate100
+                        : AppColors.slate700,
+                    backgroundColor: context.isDark
+                        ? AppColors.slate800
+                        : AppColors.slate100,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
                   onPressed: onClose,
-                  child: const Text('关闭'),
+                  child: const Text(
+                    '关闭',
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                  ),
                 ),
               ),
             ],
@@ -100,32 +139,45 @@ class _AboutVersionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: context.isDark ? AppColors.slate800 : AppColors.slate50,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: TextStyle(color: context.mutedText),
+              style: TextStyle(
+                color: context.mutedText,
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
-          Flexible(
-            child: Text(
-              version,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
+          const SizedBox(width: 10),
+          Text(
+            version,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
-          const SizedBox(width: 8),
-          OutlinedButton(
+          const SizedBox(width: 14),
+          TextButton(
             onPressed: checking ? null : onCheckUpdate,
-            child: Text(checking ? '检查中...' : '检查更新'),
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.primary600,
+              disabledForegroundColor: context.mutedText,
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: EdgeInsets.zero,
+            ),
+            child: Text(
+              checking ? '检查中...' : '检查更新',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),

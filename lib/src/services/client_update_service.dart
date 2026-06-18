@@ -55,8 +55,7 @@ class ClientUpdateService {
 
   Future<String> currentVersionLabel() async {
     final info = await packageInfo();
-    if (info.buildNumber.isEmpty) return 'v${info.version}';
-    return 'v${info.version}+${info.buildNumber}';
+    return 'v${info.version}';
   }
 
   Future<ClientReleaseInfo?> fetchLatest() async {
