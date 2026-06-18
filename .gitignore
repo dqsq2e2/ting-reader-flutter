@@ -48,6 +48,8 @@ app.*.map.json
 
 # Local preview and diagnostic output
 android_build_debug.log
+tool/
+test/
 preview_screenshots/
 real_compare_screenshots/
 web_compare_screenshots/

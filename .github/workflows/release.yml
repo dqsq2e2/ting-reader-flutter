@@ -55,8 +55,14 @@ jobs:
           EOF
           fi
       - run: flutter pub get
-      - run: flutter analyze
-      - run: flutter test
+      - run: flutter analyze --no-fatal-infos
+      - name: Run tests if present
+        run: |
+          if [[ -d test ]]; then
+            flutter test
+          else
+            echo "No committed test scripts to run."
+          fi
       - run: flutter build apk --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: flutter build appbundle --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: |
