@@ -47,12 +47,12 @@ jobs:
           fi
           if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
-            cat > android/key.properties <<EOF
-          storeFile=release.jks
-          storePassword=$ANDROID_KEYSTORE_PASSWORD
-          keyAlias=$ANDROID_KEY_ALIAS
-          keyPassword=$ANDROID_KEY_PASSWORD
-          EOF
+            printf '%s\n' \
+              "storeFile=release.jks" \
+              "storePassword=$ANDROID_KEYSTORE_PASSWORD" \
+              "keyAlias=$ANDROID_KEY_ALIAS" \
+              "keyPassword=$ANDROID_KEY_PASSWORD" \
+              > android/key.properties
           fi
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
