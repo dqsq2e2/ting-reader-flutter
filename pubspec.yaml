@@ -38,7 +38,6 @@ dependencies:
   audio_session: ^0.1.25
   path_provider: ^2.1.5
   shared_preferences: ^2.5.3
-  web_socket_channel: ^2.4.5
   just_audio_windows: ^0.2.3
   just_audio_media_kit: ^2.0.6
   media_kit_libs_linux: ^1.2.1
