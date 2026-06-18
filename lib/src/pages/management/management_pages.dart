@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/external_links.dart';
 import '../../widgets/app_scope.dart';
 import '../../widgets/common_widgets.dart';
 

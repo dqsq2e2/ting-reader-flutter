@@ -48,6 +48,9 @@ dependencies:
   audio_service:
     path: third_party/audio_service
   lpinyin: ^2.0.3
+  package_info_plus: ^5.0.1
+  url_launcher: ^6.3.0
+  open_filex: ^4.7.0
 
 dev_dependencies:
   flutter_test:

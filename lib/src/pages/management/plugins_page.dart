@@ -831,11 +831,11 @@ class _PluginCard extends StatelessWidget {
           Divider(color: context.faintBorder),
           Row(
             children: [
-              if (item.repo != null)
-                const _PluginFooterButton(
+              if (item.repo != null && item.repo!.trim().isNotEmpty)
+                _PluginFooterButton(
                   icon: Icons.code_rounded,
                   label: '仓库',
-                  onPressed: null,
+                  onPressed: () => openExternalUrl(item.repo!),
                 ),
               const Spacer(),
               if (onConfigure != null)

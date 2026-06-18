@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
+import '../../services/client_update_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/external_links.dart';
 import '../../utils/home_layout.dart';
 import '../../widgets/app_scope.dart';
 import '../../widgets/common_widgets.dart';
@@ -26,6 +29,7 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  final _clientUpdateService = ClientUpdateService();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _widgetCssController = TextEditingController();
@@ -36,6 +40,8 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _saved = false;
   bool _accountSaved = false;
   bool _checkingUpdate = false;
+  bool _checkingClientUpdate = false;
+  bool _downloadingClientUpdate = false;
   bool _showAbout = false;
 
   String _theme = 'system';
@@ -47,7 +53,10 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _resumeAfterInterruption = false;
   String _widgetEmbedType = 'private';
   String _backendVersion = '';
+  String _clientVersion = '';
+  double _clientDownloadProgress = 0;
   Map<String, dynamic>? _backendUpdate;
+  ClientReleaseInfo? _clientUpdate;
 
   @override
   void initState() {
@@ -70,6 +79,12 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await appState.loadSettings(silent: true);
       _applySettings(appState.settings);
+
+      try {
+        _clientVersion = await _clientUpdateService.currentVersionLabel();
+      } catch (_) {
+        _clientVersion = 'Unknown';
+      }
 
       try {
         final healthRes = await appState.api.get('/api/health');
@@ -268,6 +283,60 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _checkClientUpdate() async {
+    if (_checkingClientUpdate) return;
+    setState(() => _checkingClientUpdate = true);
+    try {
+      final latest = await _clientUpdateService.fetchLatest();
+      if (latest == null || !latest.hasDownload) {
+        _showSnack('当前平台请前往官网下载客户端');
+        await _clientUpdateService.openDownloadPage();
+        return;
+      }
+      final current = await _clientUpdateService.currentVersion();
+      if (_clientUpdateService.isNewer(latest.version, current)) {
+        setState(() => _clientUpdate = latest);
+      } else {
+        _showSnack('客户端已是最新版本');
+      }
+    } catch (error) {
+      _showSnack('检查客户端更新失败: $error');
+    } finally {
+      if (mounted) setState(() => _checkingClientUpdate = false);
+    }
+  }
+
+  Future<void> _downloadClientUpdate() async {
+    final update = _clientUpdate;
+    if (update == null) return;
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      setState(() {
+        _downloadingClientUpdate = true;
+        _clientDownloadProgress = 0;
+      });
+    } else {
+      setState(() => _clientUpdate = null);
+    }
+    try {
+      await _clientUpdateService.openOrInstall(
+        update,
+        onProgress: (progress) {
+          if (!mounted) return;
+          setState(() => _clientDownloadProgress = progress.clamp(0, 1));
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _clientUpdate = null;
+        _downloadingClientUpdate = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _downloadingClientUpdate = false);
+      _showSnack('下载客户端更新失败: $error');
+    }
+  }
+
   Future<void> _copy(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
@@ -450,9 +519,13 @@ class _SettingsPageState extends State<SettingsPage> {
         if (_showAbout)
           _AboutDialog(
             backendVersion: _backendVersion,
-            checking: _checkingUpdate,
+            clientVersion: _clientVersion,
+            checkingBackend: _checkingUpdate,
+            checkingClient: _checkingClientUpdate,
             onClose: () => setState(() => _showAbout = false),
-            onCheckUpdate: _checkBackendUpdate,
+            onCheckBackendUpdate: _checkBackendUpdate,
+            onCheckClientUpdate: _checkClientUpdate,
+            onOpenWebsite: () => openExternalUrl(tingReaderWebsiteUrl),
           ),
         if (_backendUpdate != null)
           _BackendUpdateDialog(
@@ -469,6 +542,14 @@ class _SettingsPageState extends State<SettingsPage> {
               setState(() => _backendUpdate = null);
             },
           ),
+        if (_clientUpdate != null)
+          _ClientUpdateDialog(
+            update: _clientUpdate!,
+            onClose: () => setState(() => _clientUpdate = null),
+            onDownload: _downloadClientUpdate,
+          ),
+        if (_downloadingClientUpdate)
+          _ClientDownloadDialog(progress: _clientDownloadProgress),
       ],
     );
   }

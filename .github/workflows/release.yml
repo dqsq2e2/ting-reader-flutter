@@ -23,11 +23,42 @@ jobs:
         with:
           channel: stable
           cache: true
+      - name: Resolve build version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            BUILD_NAME="${GITHUB_REF_NAME#v}"
+          else
+            BUILD_NAME="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          fi
+          echo "BUILD_NAME=${BUILD_NAME}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+      - name: Prepare Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            test -n "$ANDROID_KEYSTORE_BASE64"
+            test -n "$ANDROID_KEYSTORE_PASSWORD"
+            test -n "$ANDROID_KEY_ALIAS"
+            test -n "$ANDROID_KEY_PASSWORD"
+          fi
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release.jks
+            cat > android/key.properties <<EOF
+          storeFile=release.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+          fi
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --release
-      - run: flutter build appbundle --release
+      - run: flutter build apk --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+      - run: flutter build appbundle --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk dist/ting-reader-flutter-android.apk
@@ -47,7 +78,11 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build windows --release
+      - shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s+(.+)$').Matches[0].Groups[1].Value.Split('+')[0]
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $version = $env:GITHUB_REF_NAME.TrimStart('v') }
+          flutter build windows --release --build-name $version --build-number $env:GITHUB_RUN_NUMBER
       - shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
@@ -69,7 +104,13 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build linux --release
+      - run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            BUILD_NAME="${GITHUB_REF_NAME#v}"
+          else
+            BUILD_NAME="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          fi
+          flutter build linux --release --build-name "$BUILD_NAME" --build-number "$GITHUB_RUN_NUMBER"
       - run: |
           mkdir -p dist
           tar -C build/linux/x64/release/bundle -czf dist/TingReader-linux-x64.tar.gz .
@@ -88,7 +129,13 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build macos --release
+      - run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            BUILD_NAME="${GITHUB_REF_NAME#v}"
+          else
+            BUILD_NAME="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          fi
+          flutter build macos --release --build-name "$BUILD_NAME" --build-number "$GITHUB_RUN_NUMBER"
       - run: |
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent build/macos/Build/Products/Release/*.app dist/TingReader-macos.zip
@@ -107,7 +154,13 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            BUILD_NAME="${GITHUB_REF_NAME#v}"
+          else
+            BUILD_NAME="$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d+ -f1)"
+          fi
+          flutter build ios --release --no-codesign --build-name "$BUILD_NAME" --build-number "$GITHUB_RUN_NUMBER"
       - run: |
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/TingReader-ios-nosign.zip

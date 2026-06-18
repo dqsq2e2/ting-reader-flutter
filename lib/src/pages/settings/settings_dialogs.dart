@@ -3,15 +3,23 @@ part of 'settings_page.dart';
 class _AboutDialog extends StatelessWidget {
   const _AboutDialog({
     required this.backendVersion,
-    required this.checking,
+    required this.clientVersion,
+    required this.checkingBackend,
+    required this.checkingClient,
     required this.onClose,
-    required this.onCheckUpdate,
+    required this.onCheckBackendUpdate,
+    required this.onCheckClientUpdate,
+    required this.onOpenWebsite,
   });
 
   final String backendVersion;
-  final bool checking;
+  final String clientVersion;
+  final bool checkingBackend;
+  final bool checkingClient;
   final VoidCallback onClose;
-  final VoidCallback onCheckUpdate;
+  final VoidCallback onCheckBackendUpdate;
+  final VoidCallback onCheckClientUpdate;
+  final VoidCallback onOpenWebsite;
 
   @override
   Widget build(BuildContext context) {
@@ -31,37 +39,35 @@ class _AboutDialog extends StatelessWidget {
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 22),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color:
-                      context.isDark ? AppColors.slate800 : AppColors.slate50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        '服务端版本',
-                        style: TextStyle(
-                          color: context.mutedText,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      backendVersion.isEmpty ? 'Unknown' : 'v$backendVersion',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(width: 8),
-                    OutlinedButton(
-                      onPressed: checking ? null : onCheckUpdate,
-                      child: Text(checking ? '检查中...' : '检查更新'),
-                    ),
-                  ],
-                ),
+              _AboutVersionRow(
+                label: '客户端版本',
+                version: clientVersion.isEmpty ? 'Unknown' : clientVersion,
+                checking: checkingClient,
+                onCheckUpdate: onCheckClientUpdate,
+              ),
+              const SizedBox(height: 10),
+              _AboutVersionRow(
+                label: '服务端版本',
+                version:
+                    backendVersion.isEmpty ? 'Unknown' : 'v$backendVersion',
+                checking: checkingBackend,
+                onCheckUpdate: onCheckBackendUpdate,
               ),
               const SizedBox(height: 18),
-              const SelectableText('官网地址  www.tingreader.cn'),
+              InkWell(
+                onTap: onOpenWebsite,
+                borderRadius: BorderRadius.circular(8),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  child: Text(
+                    '官网地址  www.tingreader.cn',
+                    style: TextStyle(
+                      color: AppColors.primary600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ),
               const SizedBox(height: 22),
               SizedBox(
                 width: double.infinity,
@@ -73,6 +79,55 @@ class _AboutDialog extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AboutVersionRow extends StatelessWidget {
+  const _AboutVersionRow({
+    required this.label,
+    required this.version,
+    required this.checking,
+    required this.onCheckUpdate,
+  });
+
+  final String label;
+  final String version;
+  final bool checking;
+  final VoidCallback onCheckUpdate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.isDark ? AppColors.slate800 : AppColors.slate50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: context.mutedText),
+            ),
+          ),
+          Flexible(
+            child: Text(
+              version,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton(
+            onPressed: checking ? null : onCheckUpdate,
+            child: Text(checking ? '检查中...' : '检查更新'),
+          ),
+        ],
       ),
     );
   }
@@ -146,6 +201,124 @@ class _BackendUpdateDialog extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClientUpdateDialog extends StatelessWidget {
+  const _ClientUpdateDialog({
+    required this.update,
+    required this.onClose,
+    required this.onDownload,
+  });
+
+  final ClientReleaseInfo update;
+  final VoidCallback onClose;
+  final VoidCallback onDownload;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ModalBarrier(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 390),
+        child: TingCard(
+          radius: 24,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: AppColors.primary600.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.system_update_alt_rounded,
+                  color: AppColors.primary600,
+                  size: 34,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                '发现客户端新版本 ${update.version}',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+              ),
+              if (update.size.isNotEmpty || update.date.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  [
+                    if (update.size.isNotEmpty) '大小 ${update.size}',
+                    if (update.date.isNotEmpty) '发布 ${_dateOnly(update.date)}',
+                  ].join(' · '),
+                  style: TextStyle(color: context.mutedText),
+                ),
+              ],
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: onClose,
+                      child: const Text('暂不更新'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: onDownload,
+                      icon: const Icon(Icons.download_rounded, size: 18),
+                      label: const Text('下载安装'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ClientDownloadDialog extends StatelessWidget {
+  const _ClientDownloadDialog({required this.progress});
+
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final percent = (progress * 100).clamp(0, 100).round();
+    return _ModalBarrier(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: TingCard(
+          radius: 22,
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                '正在下载客户端更新',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 18),
+              LinearProgressIndicator(value: progress <= 0 ? null : progress),
+              const SizedBox(height: 10),
+              Text(
+                progress <= 0 ? '准备下载...' : '$percent%',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: context.mutedText),
               ),
             ],
           ),
