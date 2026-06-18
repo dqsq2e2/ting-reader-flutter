@@ -13,8 +13,47 @@ env:
   PUB_HOSTED_URL: https://pub.dev
 
 jobs:
+  dependencies:
+    name: Resolve dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Refresh Flutter dependency lockfile
+        run: flutter pub upgrade
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: pubspec.lock
+      - name: Commit refreshed lockfile to main
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          if git diff --quiet -- pubspec.lock; then
+            echo "pubspec.lock is already current."
+            exit 0
+          fi
+          cp pubspec.lock /tmp/pubspec.lock
+          git fetch origin main
+          git checkout main
+          cp /tmp/pubspec.lock pubspec.lock
+          if git diff --quiet -- pubspec.lock; then
+            echo "main already has the refreshed lockfile."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pubspec.lock
+          git commit -m "Update Flutter dependency lockfile"
+          git push origin HEAD:main
+
   android:
     name: Android
+    needs: dependencies
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +79,10 @@ jobs:
         with:
           channel: stable
           cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: .
       - name: Resolve build version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
@@ -71,7 +114,7 @@ jobs:
               "keyPassword=$ANDROID_KEY_PASSWORD" \
               > android/key.properties
           fi
-      - run: flutter pub get
+      - run: flutter pub get --enforce-lockfile
       - run: flutter analyze --no-fatal-infos
       - name: Run tests if present
         run: |
@@ -93,6 +136,7 @@ jobs:
 
   windows:
     name: Windows
+    needs: dependencies
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +144,11 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: .
+      - run: flutter pub get --enforce-lockfile
       - shell: pwsh
         env:
           CMAKE_GENERATOR: Visual Studio 17 2022
@@ -127,6 +175,7 @@ jobs:
 
   linux:
     name: Linux
+    needs: dependencies
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -139,7 +188,11 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: .
+      - run: flutter pub get --enforce-lockfile
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
@@ -157,6 +210,7 @@ jobs:
 
   macos:
     name: macOS
+    needs: dependencies
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -164,7 +218,11 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: .
+      - run: flutter pub get --enforce-lockfile
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
@@ -182,6 +240,7 @@ jobs:
 
   ios:
     name: iOS unsigned
+    needs: dependencies
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -189,7 +248,11 @@ jobs:
         with:
           channel: stable
           cache: true
-      - run: flutter pub get
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-lockfile
+          path: .
+      - run: flutter pub get --enforce-lockfile
       - run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             BUILD_NAME="${GITHUB_REF_NAME#v}"
