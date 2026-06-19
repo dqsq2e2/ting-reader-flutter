@@ -569,7 +569,7 @@ class _Header extends StatelessWidget {
           final modeButton = isAdmin
               ? _ToolbarButton(
                   icon: Icons.layers_rounded,
-                  label: '选择模式',
+                  label: mobile ? '选择' : '选择模式',
                   onPressed: onSelectionMode,
                   compact: mobile,
                 )
