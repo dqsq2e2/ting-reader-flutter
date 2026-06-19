@@ -14,6 +14,7 @@ import 'src/widgets/app_scope.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   _initializeNativeAudioBackend();
   await _initializeBackgroundAudio();
   await _requestNotificationPermission();
