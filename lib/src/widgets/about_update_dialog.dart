@@ -4,7 +4,6 @@ import '../models/models.dart';
 import '../services/client_update_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/external_links.dart';
-import '../utils/urls.dart';
 import 'app_scope.dart';
 import 'common_widgets.dart';
 
