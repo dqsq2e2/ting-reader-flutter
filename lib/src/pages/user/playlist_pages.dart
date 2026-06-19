@@ -103,8 +103,6 @@ class _MyPlaylistsPageState extends State<MyPlaylistsPage> {
     return PageListView(
       onRefresh: _load,
       children: [
-        AppBackButton(onPressed: widget.onBack),
-        const SizedBox(height: 24),
         _PageHeaderRow(
           icon: Icons.playlist_play_rounded,
           title: '我的书单',

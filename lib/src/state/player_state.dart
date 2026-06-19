@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart' as audio_session;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:just_audio/just_audio.dart' as audio;
 import 'package:just_audio_background/just_audio_background.dart'
     as audio_background;
@@ -14,8 +15,9 @@ import '../utils/urls.dart';
 import 'app_state.dart';
 import 'download_state.dart';
 
-class PlayerState extends ChangeNotifier {
+class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
+    WidgetsBinding.instance.addObserver(this);
     _audio = audio.AudioPlayer(
       handleInterruptions: false,
       handleAudioSessionActivation: false,
@@ -45,6 +47,12 @@ class PlayerState extends ChangeNotifier {
         _resetTranscodeClock(currentTime);
       }
       isPlaying = playing;
+      if (playing) {
+        _startProgressTimer();
+      } else {
+        _stopProgressTimers();
+        unawaited(sendProgress());
+      }
       notifyListeners();
     });
     _completeSub = _audio.playerStateStream.listen((state) {
@@ -82,6 +90,7 @@ class PlayerState extends ChangeNotifier {
   bool _progressSocketConnecting = false;
   StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _noisySub;
+  Timer? _progressWsTimer;
   Timer? _progressTimer;
   Future<void> _transcodeSeekQueue = Future<void>.value();
   int _seekGeneration = 0;
@@ -785,9 +794,26 @@ class PlayerState extends ChangeNotifier {
     final book = currentBook;
     final chapter = currentChapter;
     if (book == null || chapter == null) return;
-    if (_localFilePathFromChapter(chapter) != null) return;
-    final sentByWs = await _sendProgressByWebSocket(book, chapter);
-    if (sentByWs) return;
+    if (appState.offlineMode) return;
+    unawaited(_sendProgressByWebSocket(book, chapter));
+    await _sendProgressByHttp(book, chapter);
+  }
+
+  Future<void> _sendCurrentProgressByWebSocket() async {
+    final book = currentBook;
+    final chapter = currentChapter;
+    if (book == null || chapter == null || appState.offlineMode) return;
+    await _sendProgressByWebSocket(book, chapter);
+  }
+
+  Future<void> _sendCurrentProgressByHttp() async {
+    final book = currentBook;
+    final chapter = currentChapter;
+    if (book == null || chapter == null || appState.offlineMode) return;
+    await _sendProgressByHttp(book, chapter);
+  }
+
+  Future<void> _sendProgressByHttp(Book book, Chapter chapter) async {
     try {
       await appState.api.post(
         '/api/progress',
@@ -803,24 +829,23 @@ class PlayerState extends ChangeNotifier {
     }
   }
 
-  Future<bool> _sendProgressByWebSocket(Book book, Chapter chapter) async {
-    if (kIsWeb) return false;
+  Future<void> _sendProgressByWebSocket(Book book, Chapter chapter) async {
+    if (kIsWeb) return;
     final token = appState.token;
-    if (token == null || token.isEmpty || appState.offlineMode) return false;
+    if (token == null || token.isEmpty || appState.offlineMode) return;
     try {
       final socket = await _ensureProgressSocket();
-      if (socket == null) return false;
+      if (socket == null) return;
       socket.add(
         jsonEncode({
           'type': 'progress_update',
           'book_id': book.id,
           'chapter_id': chapter.id,
-          'position': currentTime,
+          'position': currentTime.floor(),
         }),
       );
-      return true;
     } catch (_) {
-      return false;
+      // HTTP sync is kept as a separate fallback, matching the web client.
     }
   }
 
@@ -865,9 +890,12 @@ class PlayerState extends ChangeNotifier {
     final base = Uri.tryParse(appState.activeUrl);
     if (base == null || base.host.isEmpty) return null;
     final scheme = base.scheme == 'https' ? 'wss' : 'ws';
+    final basePath = base.path.endsWith('/')
+        ? base.path.substring(0, base.path.length - 1)
+        : base.path;
     return base.replace(
       scheme: scheme,
-      path: '/api/ws',
+      path: '${basePath.isEmpty ? '' : basePath}/api/ws',
       queryParameters: {'token': token},
     );
   }
@@ -949,16 +977,37 @@ class PlayerState extends ChangeNotifier {
   }
 
   void _startProgressTimer() {
-    _progressTimer?.cancel();
-    _closeProgressSocket();
-    _progressTimer = Timer.periodic(const Duration(seconds: 15), (_) {
-      sendProgress();
+    _stopProgressTimers();
+    unawaited(sendProgress());
+    _progressWsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+      unawaited(_sendCurrentProgressByWebSocket());
     });
+    _progressTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      unawaited(_sendCurrentProgressByHttp());
+    });
+  }
+
+  void _stopProgressTimers() {
+    _progressWsTimer?.cancel();
+    _progressWsTimer = null;
+    _progressTimer?.cancel();
+    _progressTimer = null;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      unawaited(sendProgress());
+    }
   }
 
   @override
   void dispose() {
-    _progressTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _stopProgressTimers();
     _positionSub?.cancel();
     _durationSub?.cancel();
     _playingSub?.cancel();
@@ -970,6 +1019,7 @@ class PlayerState extends ChangeNotifier {
       audio_background.JustAudioBackground.setSeekHandler(null);
       audio_background.JustAudioBackground.setChapterNavigationHandlers();
     }
+    _closeProgressSocket();
     _audio.dispose();
     super.dispose();
   }
