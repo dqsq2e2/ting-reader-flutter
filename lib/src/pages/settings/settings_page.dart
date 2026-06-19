@@ -406,15 +406,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
             const SizedBox(height: 34),
-            Center(
-              child: Text(
-                '©2026 Ting Reader.保留所有权利。',
-                style: TextStyle(
-                  color: context.mutedText.withOpacity(0.62),
-                  fontSize: 12,
-                ),
-              ),
-            ),
             const SafeBottomSpacer(),
           ],
         ),
