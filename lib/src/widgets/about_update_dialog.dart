@@ -411,6 +411,10 @@ class _AboutVersionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 430;
+    final labelWidth = compact ? 86.0 : 92.0;
+    final actionWidth = compact ? 74.0 : 82.0;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -419,38 +423,51 @@ class _AboutVersionRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Expanded(
+          SizedBox(
+            width: labelWidth,
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: context.mutedText,
                 fontSize: 15,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Flexible(
+          const SizedBox(width: 12),
+          Expanded(
             child: Text(
               version,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400),
             ),
           ),
-          const SizedBox(width: 14),
-          InkWell(
-            onTap: checking ? null : onCheckUpdate,
-            borderRadius: BorderRadius.circular(8),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-              child: Text(
-                checking ? '检查中...' : '检查更新',
-                style: TextStyle(
-                  color: checking ? context.mutedText : AppColors.primary600,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
+          const SizedBox(width: 12),
+          SizedBox(
+            width: actionWidth,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: InkWell(
+                onTap: checking ? null : onCheckUpdate,
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+                  child: Text(
+                    checking ? '检查中...' : '检查更新',
+                    maxLines: 1,
+                    overflow: TextOverflow.visible,
+                    style: TextStyle(
+                      color:
+                          checking ? context.mutedText : AppColors.primary600,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
                 ),
               ),
             ),
