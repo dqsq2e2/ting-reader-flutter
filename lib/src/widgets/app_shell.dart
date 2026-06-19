@@ -604,7 +604,10 @@ class _MobileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final headerColor = context.cardColor.withOpacity(0.92);
+    final headerColor = Color.alphaBlend(
+      context.cardColor.withValues(alpha: 0.92),
+      Theme.of(context).scaffoldBackgroundColor,
+    );
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
