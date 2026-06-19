@@ -100,6 +100,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _usingTranscodeStream = false;
   bool _usingAudioQueue = false;
   bool _suppressPositionUpdates = false;
+  bool _applyingQueueStartSeek = false;
   double _transcodeClockPosition = 0;
   DateTime? _transcodeClockStartedAt;
 
@@ -531,8 +532,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final book = currentBook;
     if (chapter == null || book == null || chapters.isEmpty) return;
     final index = chapters.indexWhere((item) => item.id == chapter.id);
-    if (!_usingTranscodeStream && _audio.hasNext) {
-      await _audio.seekToNext();
+    if (!_usingTranscodeStream &&
+        _usingAudioQueue &&
+        _audio.hasNext &&
+        index >= 0 &&
+        index < chapters.length - 1) {
+      await _seekAudioQueueToChapter(index + 1, book, chapters[index + 1]);
       return;
     }
     if (index >= 0 && index < chapters.length - 1) {
@@ -549,8 +554,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final book = currentBook;
     if (chapter == null || book == null || chapters.isEmpty) return;
     final index = chapters.indexWhere((item) => item.id == chapter.id);
-    if (!_usingTranscodeStream && _audio.hasPrevious) {
-      await _audio.seekToPrevious();
+    if (!_usingTranscodeStream &&
+        _usingAudioQueue &&
+        _audio.hasPrevious &&
+        index > 0) {
+      await _seekAudioQueueToChapter(index - 1, book, chapters[index - 1]);
       return;
     }
     if (index > 0) {
@@ -566,6 +574,23 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       return progress;
     }
     return book.skipIntro.toDouble();
+  }
+
+  Future<void> _seekAudioQueueToChapter(
+    int index,
+    Book book,
+    Chapter chapter,
+  ) async {
+    final start = _startPositionFor(book, chapter);
+    _applyingQueueStartSeek = true;
+    try {
+      await _audio.seek(
+        Duration(milliseconds: (start * 1000).round()),
+        index: index,
+      );
+    } finally {
+      _applyingQueueStartSeek = false;
+    }
   }
 
   String streamUrl(
@@ -738,8 +763,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     if (index == null || index < 0 || index >= chapters.length) return;
     final nextChapter = chapters[index];
     if (currentChapter?.id == nextChapter.id) return;
+    final book = currentBook;
+    final startPosition =
+        book == null ? 0.0 : _startPositionFor(book, nextChapter);
     currentChapter = nextChapter;
-    currentTime = 0;
+    currentTime = startPosition;
     duration = nextChapter.duration.toDouble();
     _clearTranscodeClock();
     _usingTranscodeStream = false;
@@ -747,6 +775,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     usingLocalFile = _localFilePathFromChapter(nextChapter) != null ||
         downloadState.hasChapter(nextChapter.id);
     notifyListeners();
+    if (!_applyingQueueStartSeek && startPosition > 0 && book != null) {
+      unawaited(_seekAudioQueueToChapter(index, book, nextChapter));
+    }
     _startProgressTimer();
   }
 

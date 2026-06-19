@@ -1274,7 +1274,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     await _showAnchoredPopover(
       anchorContext: anchorContext,
       width: 198,
-      estimatedHeight: 226,
+      estimatedHeight: 204,
       alignRight: true,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -1315,38 +1315,46 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    childAspectRatio: 2.7,
-                    mainAxisSpacing: 7,
-                    crossAxisSpacing: 7,
-                    children: [
-                      for (final mins in [15, 30, 45, 60])
-                        OutlinedButton(
-                          onPressed: () async {
-                            await _startSleepTimer(player, mins);
-                            if (dialogContext.mounted) {
-                              Navigator.pop(dialogContext);
-                            }
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: context.mutedText,
-                            side: BorderSide(color: context.faintBorder),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                  const SizedBox(height: 7),
+                  for (final row in const [
+                    [15, 30],
+                    [45, 60],
+                  ]) ...[
+                    Row(
+                      children: [
+                        for (var i = 0; i < row.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 7),
+                          Expanded(
+                            child: SizedBox(
+                              height: 32,
+                              child: OutlinedButton(
+                                onPressed: () async {
+                                  await _startSleepTimer(player, row[i]);
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext);
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: context.mutedText,
+                                  side: BorderSide(color: context.faintBorder),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                child: Text('${row[i]} 分钟'),
+                              ),
                             ),
                           ),
-                          child: Text('$mins 分钟'),
-                        ),
-                    ],
-                  ),
+                        ],
+                      ],
+                    ),
+                    if (row.first != 45) const SizedBox(height: 7),
+                  ],
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(4),
