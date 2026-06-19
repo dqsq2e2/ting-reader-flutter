@@ -156,7 +156,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                     width: compact ? 74 : 78,
                     height: compact ? 74 : 78,
                     decoration: BoxDecoration(
-                      color: AppColors.primary600.withOpacity(0.14),
+                      color: AppColors.primary600.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(
@@ -221,7 +221,8 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                             foregroundColor: Colors.white,
                             minimumSize: const Size.fromHeight(54),
                             elevation: 12,
-                            shadowColor: AppColors.primary600.withOpacity(0.28),
+                            shadowColor:
+                                AppColors.primary600.withValues(alpha: 0.28),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(16),
                             ),
