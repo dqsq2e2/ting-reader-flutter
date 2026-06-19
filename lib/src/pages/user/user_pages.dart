@@ -7,6 +7,7 @@ import '../../models/models.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/formatters.dart';
+import '../../utils/urls.dart';
 import '../../widgets/app_scope.dart';
 import '../../widgets/about_update_dialog.dart';
 import '../../widgets/book_card.dart';
