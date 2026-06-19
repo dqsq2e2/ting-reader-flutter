@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
-import '../../services/client_update_service.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/external_links.dart';
 import '../../utils/home_layout.dart';
 import '../../widgets/app_scope.dart';
+import '../../widgets/about_update_dialog.dart';
 import '../../widgets/common_widgets.dart';
 
 part 'settings_sections.dart';
@@ -28,7 +27,6 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final _clientUpdateService = ClientUpdateService();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _widgetCssController = TextEditingController();
@@ -38,10 +36,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _accountSaving = false;
   bool _saved = false;
   bool _accountSaved = false;
-  bool _checkingUpdate = false;
-  bool _checkingClientUpdate = false;
-  bool _downloadingClientUpdate = false;
-  bool _showAbout = false;
 
   String _theme = 'system';
   HomeLayoutSettings _homeLayout = const HomeLayoutSettings();
@@ -52,10 +46,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _resumeAfterInterruption = false;
   String _widgetEmbedType = 'private';
   String _backendVersion = '';
-  String _clientVersion = '';
-  double _clientDownloadProgress = 0;
-  Map<String, dynamic>? _backendUpdate;
-  ClientReleaseInfo? _clientUpdate;
 
   @override
   void initState() {
@@ -78,12 +68,6 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await appState.loadSettings(silent: true);
       _applySettings(appState.settings);
-
-      try {
-        _clientVersion = await _clientUpdateService.currentVersionLabel();
-      } catch (_) {
-        _clientVersion = 'Unknown';
-      }
 
       try {
         final healthRes = await appState.api.get('/api/health');
@@ -258,81 +242,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _showSnack('账号更新失败: $error');
     } finally {
       if (mounted) setState(() => _accountSaving = false);
-    }
-  }
-
-  Future<void> _checkBackendUpdate() async {
-    if (_checkingUpdate || _backendVersion.isEmpty) return;
-    setState(() => _checkingUpdate = true);
-    try {
-      final res =
-          await AppScope.appOf(context).api.get('/api/system/check-update');
-      final data = asMap(res.data);
-      final remote = _stringValue(data, 'version').replaceFirst('v', '');
-      final current = _backendVersion.replaceFirst('v', '');
-      if (remote.isNotEmpty && remote != current) {
-        setState(() => _backendUpdate = data);
-      } else {
-        _showSnack('服务端已是最新版本');
-      }
-    } catch (error) {
-      _showSnack('检查服务端更新失败: $error');
-    } finally {
-      if (mounted) setState(() => _checkingUpdate = false);
-    }
-  }
-
-  Future<void> _checkClientUpdate() async {
-    if (_checkingClientUpdate) return;
-    setState(() => _checkingClientUpdate = true);
-    try {
-      final latest = await _clientUpdateService.fetchLatest();
-      if (latest == null || !latest.hasDownload) {
-        _showSnack('当前平台请前往官网下载客户端');
-        await _clientUpdateService.openDownloadPage();
-        return;
-      }
-      final current = await _clientUpdateService.currentVersion();
-      if (_clientUpdateService.isNewer(latest.version, current)) {
-        setState(() => _clientUpdate = latest);
-      } else {
-        _showSnack('客户端已是最新版本');
-      }
-    } catch (error) {
-      _showSnack('检查客户端更新失败: $error');
-    } finally {
-      if (mounted) setState(() => _checkingClientUpdate = false);
-    }
-  }
-
-  Future<void> _downloadClientUpdate() async {
-    final update = _clientUpdate;
-    if (update == null) return;
-    if (_clientUpdateService.canInstallDirectly) {
-      setState(() {
-        _downloadingClientUpdate = true;
-        _clientDownloadProgress = 0;
-      });
-    } else {
-      setState(() => _clientUpdate = null);
-    }
-    try {
-      await _clientUpdateService.openOrInstall(
-        update,
-        onProgress: (progress) {
-          if (!mounted) return;
-          setState(() => _clientDownloadProgress = progress.clamp(0, 1));
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _clientUpdate = null;
-        _downloadingClientUpdate = false;
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _downloadingClientUpdate = false);
-      _showSnack('下载客户端更新失败: $error');
     }
   }
 
@@ -511,7 +420,14 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 34),
             Center(
               child: TextButton(
-                onPressed: () => setState(() => _showAbout = true),
+                onPressed: () {
+                  showDialog<void>(
+                    context: context,
+                    builder: (context) => AboutUpdateDialog(
+                      backendVersion: _backendVersion,
+                    ),
+                  );
+                },
                 child: const Text(
                   '关于 Ting Reader',
                   style: TextStyle(fontWeight: FontWeight.w700),
@@ -530,41 +446,6 @@ class _SettingsPageState extends State<SettingsPage> {
             const SafeBottomSpacer(),
           ],
         ),
-        if (_showAbout)
-          _AboutDialog(
-            backendVersion: _backendVersion,
-            clientVersion: _clientVersion,
-            checkingBackend: _checkingUpdate,
-            checkingClient: _checkingClientUpdate,
-            onClose: () => setState(() => _showAbout = false),
-            onCheckBackendUpdate: _checkBackendUpdate,
-            onCheckClientUpdate: _checkClientUpdate,
-            onOpenWebsite: () => openExternalUrl(tingReaderWebsiteUrl),
-          ),
-        if (_backendUpdate != null)
-          _BackendUpdateDialog(
-            update: _backendUpdate!,
-            onClose: () => setState(() => _backendUpdate = null),
-            onOpenUpdate: () {
-              final url = _stringValue(
-                _backendUpdate!,
-                'download_url',
-                camel: 'downloadUrl',
-                fallback: 'https://www.tingreader.cn/guide/update',
-              );
-              setState(() => _backendUpdate = null);
-              openExternalUrl(url);
-            },
-          ),
-        if (_clientUpdate != null)
-          _ClientUpdateDialog(
-            update: _clientUpdate!,
-            actionLabel: _clientUpdateService.updateActionLabel,
-            onClose: () => setState(() => _clientUpdate = null),
-            onDownload: _downloadClientUpdate,
-          ),
-        if (_downloadingClientUpdate)
-          _ClientDownloadDialog(progress: _clientDownloadProgress),
       ],
     );
   }

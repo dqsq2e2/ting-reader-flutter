@@ -1,16 +1,14 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
-import '../../services/client_update_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
-import '../../utils/external_links.dart';
 import '../../utils/formatters.dart';
-import '../../utils/urls.dart';
 import '../../widgets/app_scope.dart';
+import '../../widgets/about_update_dialog.dart';
 import '../../widgets/book_card.dart';
 import '../../widgets/common_widgets.dart';
 import '../../widgets/display_filter_menu.dart';
@@ -164,7 +162,7 @@ class _MyPageState extends State<MyPage> {
   void _showAboutDialog() {
     showDialog<void>(
       context: context,
-      builder: (context) => _AboutDialog(backendVersion: _version),
+      builder: (context) => AboutUpdateDialog(backendVersion: _version),
     );
   }
 
@@ -1005,247 +1003,6 @@ class _EntryRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _AboutDialog extends StatefulWidget {
-  const _AboutDialog({required this.backendVersion});
-
-  final String? backendVersion;
-
-  @override
-  State<_AboutDialog> createState() => _AboutDialogState();
-}
-
-class _AboutDialogState extends State<_AboutDialog> {
-  final _clientUpdateService = ClientUpdateService();
-
-  String _clientVersion = 'Unknown';
-  bool _checking = false;
-  bool _downloading = false;
-  double _progress = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadClientVersion();
-  }
-
-  Future<void> _loadClientVersion() async {
-    try {
-      final version = await _clientUpdateService.currentVersionLabel();
-      if (mounted) setState(() => _clientVersion = version);
-    } catch (_) {
-      // Version is best effort in the about dialog.
-    }
-  }
-
-  Future<void> _checkClientUpdate() async {
-    if (_checking) return;
-    setState(() => _checking = true);
-    try {
-      final latest = await _clientUpdateService.fetchLatest();
-      if (latest == null || !latest.hasDownload) {
-        await _clientUpdateService.openDownloadPage();
-        return;
-      }
-      final current = await _clientUpdateService.currentVersion();
-      if (!_clientUpdateService.isNewer(latest.version, current)) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('客户端已是最新版本')),
-        );
-        return;
-      }
-      if (!mounted) return;
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text('发现客户端新版本 ${latest.version}'),
-          content: Text([
-            if (latest.size.isNotEmpty) '大小 ${latest.size}',
-            if (latest.date.isNotEmpty) '发布 ${_formatAboutDate(latest.date)}',
-          ].join('\n')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('暂不更新'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.of(context).pop(true),
-              icon: const Icon(Icons.download_rounded, size: 18),
-              label: const Text('下载安装'),
-            ),
-          ],
-        ),
-      );
-      if (confirm != true) return;
-      setState(() {
-        _downloading = true;
-        _progress = 0;
-      });
-      await _clientUpdateService.openOrInstall(
-        latest,
-        onProgress: (progress) {
-          if (!mounted) return;
-          setState(() => _progress = progress.clamp(0, 1));
-        },
-      );
-      if (!mounted) return;
-      setState(() => _downloading = false);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _downloading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查客户端更新失败: $error')),
-      );
-    } finally {
-      if (mounted) setState(() => _checking = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final backendVersion = widget.backendVersion;
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 384),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: Image.asset(
-                  'assets/images/logo.png',
-                  width: 64,
-                  height: 64,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                '关于 Ting Reader',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 20),
-              _AboutVersionTile(
-                label: '客户端版本',
-                version: _clientVersion,
-                checking: _checking,
-                onCheck: _checkClientUpdate,
-              ),
-              const SizedBox(height: 10),
-              _AboutVersionTile(
-                label: '服务端版本',
-                version: 'v${backendVersion ?? 'Unknown'}',
-              ),
-              if (_downloading) ...[
-                const SizedBox(height: 14),
-                LinearProgressIndicator(
-                    value: _progress <= 0 ? null : _progress),
-                const SizedBox(height: 6),
-                Text(
-                  _progress <= 0
-                      ? '准备下载...'
-                      : '${(_progress * 100).clamp(0, 100).round()}%',
-                  style: TextStyle(color: context.mutedText, fontSize: 12),
-                ),
-              ],
-              const SizedBox(height: 14),
-              InkWell(
-                onTap: () => openExternalUrl(tingReaderWebsiteUrl),
-                borderRadius: BorderRadius.circular(8),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Text(
-                    '官网地址  www.tingreader.cn',
-                    style: TextStyle(color: AppColors.primary600, fontSize: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 22),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  style: TextButton.styleFrom(
-                    backgroundColor: context.isDark
-                        ? AppColors.slate800
-                        : AppColors.slate100,
-                    foregroundColor: context.isDark
-                        ? AppColors.slate300
-                        : AppColors.slate600,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: const Text('关闭'),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AboutVersionTile extends StatelessWidget {
-  const _AboutVersionTile({
-    required this.label,
-    required this.version,
-    this.checking = false,
-    this.onCheck,
-  });
-
-  final String label;
-  final String version;
-  final bool checking;
-  final VoidCallback? onCheck;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.isDark ? AppColors.slate800 : AppColors.slate50,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: context.mutedText, fontSize: 14),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              version,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-            ),
-          ),
-          if (onCheck != null) ...[
-            const SizedBox(width: 8),
-            OutlinedButton(
-              onPressed: checking ? null : onCheck,
-              child: Text(checking ? '检查中...' : '检查更新'),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-String _formatAboutDate(String raw) {
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return raw;
-  return '${parsed.year}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
 }
 
 class _PageHeaderRow extends StatelessWidget {
