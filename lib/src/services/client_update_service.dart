@@ -77,7 +77,7 @@ class ClientUpdateService {
         defaultTargetPlatform == TargetPlatform.windows;
   }
 
-  String get updateActionLabel => canInstallDirectly ? '下载安装' : '打开浏览器下载';
+  String get updateActionLabel => canInstallDirectly ? '下载安装' : '前往浏览器下载';
 
   Future<void> openOrInstall(
     ClientReleaseInfo release, {

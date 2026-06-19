@@ -5,7 +5,6 @@ import '../../models/models.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/home_layout.dart';
 import '../../widgets/app_scope.dart';
-import '../../widgets/about_update_dialog.dart';
 import '../../widgets/common_widgets.dart';
 
 part 'settings_sections.dart';
@@ -45,7 +44,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _ignoreAudioFocus = false;
   bool _resumeAfterInterruption = false;
   String _widgetEmbedType = 'private';
-  String _backendVersion = '';
 
   @override
   void initState() {
@@ -68,16 +66,6 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await appState.loadSettings(silent: true);
       _applySettings(appState.settings);
-
-      try {
-        final healthRes = await appState.api.get('/api/health');
-        final version = asMap(healthRes.data)['version'];
-        if (version != null) {
-          _backendVersion = version.toString();
-        }
-      } catch (_) {
-        // Version is nice-to-have; settings should still render if health fails.
-      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -418,22 +406,6 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
             const SizedBox(height: 34),
-            Center(
-              child: TextButton(
-                onPressed: () {
-                  showDialog<void>(
-                    context: context,
-                    builder: (context) => AboutUpdateDialog(
-                      backendVersion: _backendVersion,
-                    ),
-                  );
-                },
-                child: const Text(
-                  '关于 Ting Reader',
-                  style: TextStyle(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
             Center(
               child: Text(
                 '©2026 Ting Reader.保留所有权利。',

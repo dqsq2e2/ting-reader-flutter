@@ -7,6 +7,8 @@ import '../utils/external_links.dart';
 import 'app_scope.dart';
 import 'common_widgets.dart';
 
+const _serverUpdateGuideUrl = 'https://www.tingreader.cn/guide/update';
+
 class AboutUpdateDialog extends StatefulWidget {
   const AboutUpdateDialog({
     super.key,
@@ -62,12 +64,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
           actionLabel: '前往官网更新',
         );
         if (open == true) {
-          final url = _firstString(
-            data,
-            const ['download_url', 'downloadUrl', 'url', 'html_url'],
-            fallback: '$tingReaderWebsiteUrl/guide/update',
-          );
-          await openExternalUrl(url);
+          await openExternalUrl(_serverUpdateGuideUrl);
         }
       } else {
         _showSnack('服务端已是最新版本');
@@ -149,7 +146,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
             child: TingCard(
               radius: 28,
               padding: EdgeInsets.symmetric(
-                horizontal: compact ? 28 : 32,
+                horizontal: compact ? 24 : 32,
                 vertical: compact ? 30 : 34,
               ),
               child: Column(
@@ -172,9 +169,10 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                   Text(
                     title,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
+                    style: TextStyle(
+                      fontSize: compact ? 20 : 22,
+                      fontWeight: FontWeight.w600,
+                      height: 1.25,
                     ),
                   ),
                   if (releaseDate.isNotEmpty) ...[
@@ -184,6 +182,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                       style: TextStyle(
                         color: context.mutedText,
                         fontSize: 16,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -205,9 +204,10 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                           ),
                           child: const Text(
                             '暂不更新',
+                            maxLines: 1,
                             style: TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -226,12 +226,16 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: Text(
-                            actionLabel,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              actionLabel,
+                              maxLines: 1,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
                         ),
@@ -258,7 +262,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
         content: Text(
           text,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+          style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.slate900,
@@ -298,7 +302,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
               const SizedBox(height: 22),
               const Text(
                 '关于 Ting Reader',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 28),
               _AboutVersionRow(
@@ -346,7 +350,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                         style: TextStyle(
                           color: context.mutedText,
                           fontSize: 15,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const Text(
@@ -354,7 +358,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                         style: TextStyle(
                           color: AppColors.primary600,
                           fontSize: 16,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
@@ -380,7 +384,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text(
                     '关闭',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -421,7 +425,7 @@ class _AboutVersionRow extends StatelessWidget {
               style: TextStyle(
                 color: context.mutedText,
                 fontSize: 15,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -432,7 +436,7 @@ class _AboutVersionRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.right,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
             ),
           ),
           const SizedBox(width: 14),
@@ -446,7 +450,7 @@ class _AboutVersionRow extends StatelessWidget {
                 style: TextStyle(
                   color: checking ? context.mutedText : AppColors.primary600,
                   fontSize: 15,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
