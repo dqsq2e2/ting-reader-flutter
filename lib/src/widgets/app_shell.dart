@@ -1,4 +1,4 @@
-﻿import 'dart:ui';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -604,15 +604,27 @@ class _MobileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Builder(
-      builder: (context) {
-        return SafeArea(
+    final headerColor = context.cardColor.withOpacity(0.92);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: headerColor,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        systemNavigationBarColor: Theme.of(context).scaffoldBackgroundColor,
+        systemNavigationBarIconBrightness:
+            isDark ? Brightness.light : Brightness.dark,
+        systemNavigationBarDividerColor: Colors.transparent,
+      ),
+      child: ColoredBox(
+        color: headerColor,
+        child: SafeArea(
           bottom: false,
           child: Container(
             height: 64,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
-              color: context.cardColor.withOpacity(0.92),
+              color: headerColor,
               border: Border(bottom: BorderSide(color: context.faintBorder)),
             ),
             child: Row(
@@ -631,8 +643,8 @@ class _MobileHeader extends StatelessWidget {
               ],
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

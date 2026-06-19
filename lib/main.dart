@@ -91,13 +91,31 @@ class TingReaderApp extends StatelessWidget {
           builder: (context, child) {
             final media = MediaQuery.of(context);
             final scale = _desktopTextScaleForWidth(media.size.width);
-            if (scale == 1) return child ?? const SizedBox.shrink();
             final systemScale = media.textScaler.scale(1);
-            return MediaQuery(
-              data: media.copyWith(
-                textScaler: TextScaler.linear(systemScale * scale),
+            final content = scale == 1
+                ? child ?? const SizedBox.shrink()
+                : MediaQuery(
+                    data: media.copyWith(
+                      textScaler: TextScaler.linear(systemScale * scale),
+                    ),
+                    child: child ?? const SizedBox.shrink(),
+                  );
+            final brightness = Theme.of(context).brightness;
+            final isDark = brightness == Brightness.dark;
+            final background = Theme.of(context).scaffoldBackgroundColor;
+            return AnnotatedRegion<SystemUiOverlayStyle>(
+              value: SystemUiOverlayStyle(
+                statusBarColor: Colors.transparent,
+                statusBarIconBrightness:
+                    isDark ? Brightness.light : Brightness.dark,
+                statusBarBrightness:
+                    isDark ? Brightness.dark : Brightness.light,
+                systemNavigationBarColor: background,
+                systemNavigationBarIconBrightness:
+                    isDark ? Brightness.light : Brightness.dark,
+                systemNavigationBarDividerColor: Colors.transparent,
               ),
-              child: child ?? const SizedBox.shrink(),
+              child: content,
             );
           },
           home: const StartupGate(),
