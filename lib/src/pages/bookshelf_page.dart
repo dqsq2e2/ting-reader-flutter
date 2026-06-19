@@ -600,7 +600,7 @@ class _Header extends StatelessWidget {
                   ],
                   if (libraries.isNotEmpty)
                     if (mobile)
-                      Expanded(flex: 13, child: libraryDropdown)
+                      Expanded(flex: 12, child: libraryDropdown)
                     else
                       SizedBox(width: 176, child: libraryDropdown),
                   if (libraries.isNotEmpty) const SizedBox(width: 8),
@@ -746,7 +746,7 @@ class _LibraryDropdown extends StatelessWidget {
                 _libraryLabel(item.value ?? ''),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 13),
+                style: const TextStyle(fontSize: 14),
               ),
             ),
           )
