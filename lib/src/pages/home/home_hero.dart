@@ -45,31 +45,34 @@ class _HomeHeader extends StatelessWidget {
       runSpacing: 10,
       alignment: compact ? WrapAlignment.start : WrapAlignment.end,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
-          decoration: BoxDecoration(
-            color: context.cardColor,
-            border: Border.all(color: context.faintBorder),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.calendar_today_rounded,
-                  size: 16, color: AppColors.slate500),
-              const SizedBox(width: 8),
-              Text(
-                dateText,
-                style: TextStyle(color: context.mutedText, fontSize: 14),
-              ),
-            ],
+        SizedBox(
+          height: 48,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: context.cardColor,
+              border: Border.all(color: context.faintBorder),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.calendar_today_rounded,
+                    size: 16, color: AppColors.slate500),
+                const SizedBox(width: 8),
+                Text(
+                  dateText,
+                  style: TextStyle(color: context.mutedText, fontSize: 14),
+                ),
+              ],
+            ),
           ),
         ),
         FilledButton.icon(
@@ -77,7 +80,8 @@ class _HomeHeader extends StatelessWidget {
           style: FilledButton.styleFrom(
             backgroundColor: AppColors.slate950,
             foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+            minimumSize: const Size(0, 48),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             shape:
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),

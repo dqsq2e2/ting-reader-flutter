@@ -512,26 +512,10 @@ class _Header extends StatelessWidget {
               ),
             if (libraries.isNotEmpty)
               SizedBox(
-                width: compact ? constraints.maxWidth : 144,
-                child: DropdownButtonFormField<String>(
-                  value: selectedLibraryId,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.library_books_rounded, size: 18),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('所有媒体库')),
-                    ...libraries.map(
-                      (lib) => DropdownMenuItem(
-                        value: lib.id,
-                        child: Text(
-                          lib.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
+                width: compact ? constraints.maxWidth : 168,
+                child: _LibraryDropdown(
+                  libraries: libraries,
+                  selectedLibraryId: selectedLibraryId,
                   onChanged: onLibraryChanged,
                 ),
               ),
@@ -592,25 +576,9 @@ class _Header extends StatelessWidget {
               : const SizedBox.shrink();
           final libraryDropdown = libraries.isEmpty
               ? const SizedBox.shrink()
-              : DropdownButtonFormField<String>(
-                  value: selectedLibraryId,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.library_books_rounded, size: 18),
-                    contentPadding:
-                        EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  ),
-                  items: [
-                    const DropdownMenuItem(value: '', child: Text('所有媒体库')),
-                    ...libraries.map(
-                      (lib) => DropdownMenuItem(
-                        value: lib.id,
-                        child: Text(
-                          lib.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                  ],
+              : _LibraryDropdown(
+                  libraries: libraries,
+                  selectedLibraryId: selectedLibraryId,
                   onChanged: onLibraryChanged,
                 );
 
@@ -632,7 +600,7 @@ class _Header extends StatelessWidget {
                   ],
                   if (libraries.isNotEmpty)
                     if (mobile)
-                      Expanded(flex: 12, child: libraryDropdown)
+                      Expanded(flex: 13, child: libraryDropdown)
                     else
                       SizedBox(width: 176, child: libraryDropdown),
                   if (libraries.isNotEmpty) const SizedBox(width: 8),
@@ -719,6 +687,72 @@ class _SearchEntry extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LibraryDropdown extends StatelessWidget {
+  const _LibraryDropdown({
+    required this.libraries,
+    required this.selectedLibraryId,
+    required this.onChanged,
+  });
+
+  final List<Library> libraries;
+  final String selectedLibraryId;
+  final ValueChanged<String?> onChanged;
+
+  String _libraryLabel(String id) {
+    if (id.isEmpty) return '所有媒体库';
+    for (final library in libraries) {
+      if (library.id == id) return library.name;
+    }
+    return '媒体库';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      const DropdownMenuItem(value: '', child: Text('所有媒体库')),
+      ...libraries.map(
+        (lib) => DropdownMenuItem(
+          value: lib.id,
+          child: Text(
+            lib.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
+    ];
+
+    return DropdownButtonFormField<String>(
+      initialValue: selectedLibraryId,
+      isExpanded: true,
+      icon: const Padding(
+        padding: EdgeInsets.only(left: 8),
+        child: Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+      ),
+      decoration: const InputDecoration(
+        prefixIcon: Icon(Icons.library_books_rounded, size: 18),
+        prefixIconConstraints: BoxConstraints(minWidth: 34, minHeight: 42),
+        contentPadding: EdgeInsets.fromLTRB(2, 8, 8, 8),
+      ),
+      selectedItemBuilder: (context) => items
+          .map(
+            (item) => Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _libraryLabel(item.value ?? ''),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          )
+          .toList(),
+      items: items,
+      onChanged: onChanged,
     );
   }
 }
