@@ -129,7 +129,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
       final params = <String, dynamic>{
         'limit': _chaptersPerGroup,
         'offset': requestedGroup * _chaptersPerGroup,
-        'order': _chapterAscending ? 'asc' : 'desc',
+        // Keep server pagination in canonical order; the UI toggles only the
+        // visible group so group boundaries never jump between 1-100, 101-200...
+        'order': 'asc',
       };
       if (!(targetChapterId != null && tab == null)) {
         params['chapter_type'] = requestedTab;
@@ -530,38 +532,45 @@ class _BookDetailPageState extends State<BookDetailPage> {
           },
         ),
         const SizedBox(height: 32),
-        KeyedSubtree(
-          key: _chapterSectionKey,
-          child: _ChapterSection(
-            book: book,
-            chapters: _chapters,
-            groupCount: _groupCount,
-            activeTotal: _activeTotal,
-            groupIndex: _groupIndex,
-            activeTab: _activeTab,
-            mainCount: _mainChapterTotal,
-            extraCount: _extraChapterTotal,
-            showExtraTab: _extraChapterTotal > 0,
-            highlightedChapterId: highlightedChapterId,
-            currentChapterId: sameBookCurrentChapter?.id,
-            isPlaying: player.isPlaying,
-            loading: _chapterPageLoading,
-            themeColor: themeColor,
-            admin: appState.isAdmin,
-            rowKeys: _chapterRowKeys,
-            ascending: _chapterAscending,
-            onPlayChapter: (chapter) async {
-              await _playChapter(chapter);
-            },
-            onToggleSort: () {
-              setState(() => _chapterAscending = !_chapterAscending);
-              _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
-            },
-            onGroupChanged: (index) =>
-                _loadChapterPage(tab: _activeTab, groupIndex: index),
-            onTabChanged: (tab) => _loadChapterPage(tab: tab, groupIndex: 0),
-            onManage: _showChapterManager,
-          ),
+        Builder(
+          builder: (context) {
+            final visibleChapters = _chapterAscending
+                ? _chapters
+                : _chapters.reversed.toList(growable: false);
+            return KeyedSubtree(
+              key: _chapterSectionKey,
+              child: _ChapterSection(
+                book: book,
+                chapters: visibleChapters,
+                groupCount: _groupCount,
+                activeTotal: _activeTotal,
+                groupIndex: _groupIndex,
+                activeTab: _activeTab,
+                mainCount: _mainChapterTotal,
+                extraCount: _extraChapterTotal,
+                showExtraTab: _extraChapterTotal > 0,
+                highlightedChapterId: highlightedChapterId,
+                currentChapterId: sameBookCurrentChapter?.id,
+                isPlaying: player.isPlaying,
+                loading: _chapterPageLoading,
+                themeColor: themeColor,
+                admin: appState.isAdmin,
+                rowKeys: _chapterRowKeys,
+                ascending: _chapterAscending,
+                onPlayChapter: (chapter) async {
+                  await _playChapter(chapter);
+                },
+                onToggleSort: () {
+                  setState(() => _chapterAscending = !_chapterAscending);
+                },
+                onGroupChanged: (index) =>
+                    _loadChapterPage(tab: _activeTab, groupIndex: index),
+                onTabChanged: (tab) =>
+                    _loadChapterPage(tab: tab, groupIndex: 0),
+                onManage: _showChapterManager,
+              ),
+            );
+          },
         ),
         const SafeBottomSpacer(),
       ],
