@@ -91,17 +91,7 @@ class TingReaderApp extends StatelessWidget {
           darkTheme: AppTheme.dark,
           themeMode: appState.themeMode,
           builder: (context, child) {
-            final media = MediaQuery.of(context);
-            final scale = _desktopTextScaleForWidth(media.size.width);
-            final systemScale = media.textScaler.scale(1);
-            final content = scale == 1
-                ? child ?? const SizedBox.shrink()
-                : MediaQuery(
-                    data: media.copyWith(
-                      textScaler: TextScaler.linear(systemScale * scale),
-                    ),
-                    child: child ?? const SizedBox.shrink(),
-                  );
+            final content = child ?? const SizedBox.shrink();
             final brightness = Theme.of(context).brightness;
             final isDark = brightness == Brightness.dark;
             final background = Theme.of(context).scaffoldBackgroundColor;
@@ -125,13 +115,6 @@ class TingReaderApp extends StatelessWidget {
       },
     );
   }
-}
-
-double _desktopTextScaleForWidth(double width) {
-  if (width >= 1440) return 1.06;
-  if (width >= 1100) return 1.04;
-  if (width >= 900) return 1.02;
-  return 1.0;
 }
 
 class StartupGate extends StatefulWidget {

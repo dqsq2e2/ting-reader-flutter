@@ -49,6 +49,18 @@ class AppTheme {
     required Color text,
   }) {
     final isDark = brightness == Brightness.dark;
+    final windows = defaultTargetPlatform == TargetPlatform.windows;
+    final fontFamily = windows ? 'Microsoft YaHei' : null;
+    final fontFamilyFallback =
+        windows ? const <String>['Microsoft YaHei UI', 'Segoe UI'] : null;
+    final baseTextTheme =
+        Typography.material2021(platform: defaultTargetPlatform).black;
+    final textTheme = _regularTextTheme(baseTextTheme).apply(
+      fontFamily: fontFamily,
+      fontFamilyFallback: fontFamilyFallback,
+      bodyColor: text,
+      displayColor: text,
+    );
     final scheme = ColorScheme.fromSeed(
       seedColor: AppColors.primary600,
       brightness: brightness,
@@ -62,12 +74,10 @@ class AppTheme {
       useMaterial3: false,
       brightness: brightness,
       colorScheme: scheme,
+      fontFamily: fontFamily,
+      fontFamilyFallback: fontFamilyFallback,
       scaffoldBackgroundColor: scaffold,
-      textTheme:
-          Typography.material2021(platform: defaultTargetPlatform).black.apply(
-                bodyColor: text,
-                displayColor: text,
-              ),
+      textTheme: textTheme,
       cardColor: card,
       dividerColor: isDark ? AppColors.slate800 : AppColors.slate200,
       canvasColor: card,
@@ -123,10 +133,58 @@ class AppTheme {
       ),
       popupMenuTheme: PopupMenuThemeData(
         textStyle: TextStyle(
+          fontFamily: fontFamily,
           color: text,
           fontSize: 15,
+          fontWeight: FontWeight.w400,
         ),
       ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: _regularButtonStyle(fontFamily),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: _regularButtonStyle(fontFamily),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: _regularButtonStyle(fontFamily),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: _regularButtonStyle(fontFamily),
+      ),
+    );
+  }
+
+  static ButtonStyle _regularButtonStyle(String? fontFamily) {
+    return ButtonStyle(
+      textStyle: WidgetStatePropertyAll(
+        TextStyle(
+          fontFamily: fontFamily,
+          fontWeight: FontWeight.w400,
+        ),
+      ),
+    );
+  }
+
+  static TextTheme _regularTextTheme(TextTheme theme) {
+    TextStyle? regular(TextStyle? style) =>
+        style?.copyWith(fontWeight: FontWeight.w400);
+
+    return theme.copyWith(
+      displayLarge: regular(theme.displayLarge),
+      displayMedium: regular(theme.displayMedium),
+      displaySmall: regular(theme.displaySmall),
+      headlineLarge: regular(theme.headlineLarge),
+      headlineMedium: regular(theme.headlineMedium),
+      headlineSmall: regular(theme.headlineSmall),
+      titleLarge: regular(theme.titleLarge),
+      titleMedium: regular(theme.titleMedium),
+      titleSmall: regular(theme.titleSmall),
+      bodyLarge: regular(theme.bodyLarge),
+      bodyMedium: regular(theme.bodyMedium),
+      bodySmall: regular(theme.bodySmall),
+      labelLarge: regular(theme.labelLarge),
+      labelMedium: regular(theme.labelMedium),
+      labelSmall: regular(theme.labelSmall),
     );
   }
 }

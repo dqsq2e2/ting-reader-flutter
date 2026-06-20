@@ -23,10 +23,10 @@ class _HomeHeader extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        const Text(
+        Text(
           '今天听点什么',
           style: TextStyle(
-            color: AppColors.slate950,
+            color: context.primaryText,
             fontSize: 36,
             height: 1.1,
             fontWeight: FontWeight.w700,
@@ -78,7 +78,8 @@ class _HomeHeader extends StatelessWidget {
         FilledButton.icon(
           onPressed: onSearch,
           style: FilledButton.styleFrom(
-            backgroundColor: AppColors.slate950,
+            backgroundColor:
+                context.isDark ? AppColors.primary600 : AppColors.slate950,
             foregroundColor: Colors.white,
             minimumSize: const Size(0, 48),
             padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -208,24 +209,37 @@ class _HeroCard extends StatelessWidget {
           );
 
     final smallScreen = MediaQuery.sizeOf(context).width < 640;
+    final isDark = context.isDark;
     return Container(
       constraints: BoxConstraints(minHeight: smallScreen ? 0 : 420),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withOpacity(0.7)),
-        gradient: const LinearGradient(
+        border: Border.all(
+          color: isDark
+              ? AppColors.slate700.withValues(alpha: 0.8)
+              : Colors.white.withValues(alpha: 0.7),
+        ),
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xfff8fafc),
-            Color(0xffdbeafe),
-            Color(0xfff0f9ff),
-          ],
+          colors: isDark
+              ? const [
+                  AppColors.slate900,
+                  AppColors.primary950,
+                  AppColors.slate800,
+                ]
+              : const [
+                  Color(0xfff8fafc),
+                  Color(0xffdbeafe),
+                  Color(0xfff0f9ff),
+                ],
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary200.withOpacity(0.65),
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.42)
+                : AppColors.primary200.withValues(alpha: 0.65),
             blurRadius: 34,
             offset: const Offset(0, 20),
           ),
@@ -240,7 +254,7 @@ class _HeroCard extends StatelessWidget {
             height: 460,
             child: IgnorePointer(
               child: Opacity(
-                opacity: 0.18,
+                opacity: isDark ? 0.1 : 0.18,
                 child: CoverImage(url: cover, radius: 220),
               ),
             ),
@@ -251,11 +265,17 @@ class _HeroCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withOpacity(0.74),
-                    Colors.white.withOpacity(0.18),
-                    AppColors.slate900.withOpacity(0.08),
-                  ],
+                  colors: isDark
+                      ? [
+                          AppColors.slate950.withValues(alpha: 0.68),
+                          AppColors.slate900.withValues(alpha: 0.28),
+                          AppColors.primary950.withValues(alpha: 0.2),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.74),
+                          Colors.white.withValues(alpha: 0.18),
+                          AppColors.slate900.withValues(alpha: 0.08),
+                        ],
                 ),
               ),
             ),
@@ -348,10 +368,15 @@ class _HeroText extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
-                    color: AppColors.slate900.withOpacity(0.05),
+                    color: context.isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : AppColors.slate900.withValues(alpha: 0.05),
                     borderRadius: BorderRadius.circular(999),
-                    border:
-                        Border.all(color: AppColors.slate900.withOpacity(0.1)),
+                    border: Border.all(
+                      color: context.isDark
+                          ? Colors.white.withValues(alpha: 0.14)
+                          : AppColors.slate900.withValues(alpha: 0.1),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -364,8 +389,8 @@ class _HeroText extends StatelessWidget {
                       const SizedBox(width: 7),
                       Text(
                         isProgress ? '继续收听' : '今日推荐',
-                        style: const TextStyle(
-                          color: AppColors.slate700,
+                        style: TextStyle(
+                          color: context.secondaryText,
                           fontSize: 12,
                         ),
                       ),
@@ -378,7 +403,7 @@ class _HeroText extends StatelessWidget {
                   maxLines: compact ? 2 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: AppColors.slate950,
+                    color: context.primaryText,
                     fontSize: titleSize,
                     height: 1.1,
                   ),
@@ -389,7 +414,7 @@ class _HeroText extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: AppColors.slate500,
+                    color: context.tertiaryText,
                     fontSize: compact ? 14 : 16,
                   ),
                 ),
@@ -399,7 +424,7 @@ class _HeroText extends StatelessWidget {
                   maxLines: compact ? 3 : 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    color: AppColors.slate700,
+                    color: context.secondaryText,
                     fontSize: compact ? 14 : 16,
                     height: compact ? 1.55 : 1.66,
                   ),
@@ -443,7 +468,8 @@ class _HeroActions extends StatelessWidget {
     final primary = FilledButton.icon(
       onPressed: onPrimary,
       style: FilledButton.styleFrom(
-        backgroundColor: AppColors.slate950,
+        backgroundColor:
+            context.isDark ? AppColors.primary600 : AppColors.slate950,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -459,9 +485,16 @@ class _HeroActions extends StatelessWidget {
     final secondary = OutlinedButton.icon(
       onPressed: onPlaylists,
       style: OutlinedButton.styleFrom(
-        backgroundColor: Colors.white.withOpacity(0.48),
-        foregroundColor: AppColors.slate800,
-        side: BorderSide(color: Colors.white.withOpacity(0.7)),
+        backgroundColor: context.isDark
+            ? AppColors.slate800.withValues(alpha: 0.78)
+            : Colors.white.withValues(alpha: 0.48),
+        foregroundColor:
+            context.isDark ? AppColors.slate100 : AppColors.slate800,
+        side: BorderSide(
+          color: context.isDark
+              ? AppColors.slate700
+              : Colors.white.withValues(alpha: 0.7),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
