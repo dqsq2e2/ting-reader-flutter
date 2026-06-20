@@ -184,7 +184,7 @@ class _SeriesPickerBookRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: context.adaptiveFont(15, 14),
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         color: context.primaryText,
                       ),
                     ),

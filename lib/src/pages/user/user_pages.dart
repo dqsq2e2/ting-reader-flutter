@@ -838,17 +838,17 @@ class _SummaryCard extends StatelessWidget {
               children: [
                 TextSpan(
                   text: '$value',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     height: 1,
-                    color: AppColors.slate900,
+                    color: context.primaryText,
                   ),
                 ),
                 TextSpan(
                   text: ' $unit',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppColors.slate500,
+                    color: context.mutedText,
                   ),
                 ),
               ],

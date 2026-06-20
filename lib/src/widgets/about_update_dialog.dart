@@ -171,7 +171,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: compact ? 20 : 22,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       height: 1.25,
                     ),
                   ),
@@ -207,7 +207,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                             maxLines: 1,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -235,7 +235,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
@@ -263,7 +263,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
         content: Text(
           text,
           textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
         behavior: SnackBarBehavior.floating,
         backgroundColor: AppColors.slate900,
@@ -303,7 +303,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
               const SizedBox(height: 22),
               const Text(
                 '关于 Ting Reader',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 28),
               _AboutVersionRow(
@@ -351,7 +351,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                         style: TextStyle(
                           color: context.mutedText,
                           fontSize: 15,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                       const Text(
@@ -359,7 +359,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                         style: TextStyle(
                           color: AppColors.primary600,
                           fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ],
@@ -385,7 +385,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text(
                     '关闭',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),

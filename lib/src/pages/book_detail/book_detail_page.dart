@@ -1024,7 +1024,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             Widget footer() {
               final textStyle = TextStyle(
                 fontSize: compact ? 13 : 14,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               );
               final deleteButton = TextButton.icon(
                 onPressed: disabled ? null : deleteBook,

@@ -380,7 +380,7 @@ class _AppShellState extends State<AppShell> {
       case AppDestination.statistics:
         return AdminStatisticsPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.downloads:
-        return const DownloadsPage();
+        return DownloadsPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.settings:
         return SettingsPage(openDownloads: () => _go(AppDestination.downloads));
       case AppDestination.libraries:

@@ -50,9 +50,14 @@ class AppTheme {
   }) {
     final isDark = brightness == Brightness.dark;
     final windows = defaultTargetPlatform == TargetPlatform.windows;
-    final fontFamily = windows ? 'Microsoft YaHei' : null;
-    final fontFamilyFallback =
-        windows ? const <String>['Microsoft YaHei UI', 'Segoe UI'] : null;
+    final fontFamily = windows ? 'Noto Sans CJK SC' : null;
+    final fontFamilyFallback = windows
+        ? const <String>[
+            'Microsoft YaHei UI',
+            'Microsoft YaHei',
+            'Segoe UI',
+          ]
+        : null;
     final baseTextTheme =
         Typography.material2021(platform: defaultTargetPlatform).black;
     final textTheme = _regularTextTheme(baseTextTheme).apply(

@@ -11,7 +11,9 @@ import '../widgets/book_card.dart';
 import '../widgets/common_widgets.dart';
 
 class DownloadsPage extends StatefulWidget {
-  const DownloadsPage({super.key});
+  const DownloadsPage({super.key, this.onBack});
+
+  final VoidCallback? onBack;
 
   @override
   State<DownloadsPage> createState() => _DownloadsPageState();
@@ -60,6 +62,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
 
         return PageListView(
           children: [
+            if (widget.onBack != null) ...[
+              AppBackButton(onPressed: widget.onBack!),
+              const SizedBox(height: 20),
+            ],
             _DownloadsHeader(
               downloadedCount: downloads.downloads.length,
               totalSize: downloads.totalSize,

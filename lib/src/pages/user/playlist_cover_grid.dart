@@ -317,7 +317,7 @@ class _PlaylistDialogField extends StatelessWidget {
           style: TextStyle(
             color: context.secondaryText,
             fontSize: 13,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 8),

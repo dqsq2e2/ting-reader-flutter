@@ -235,7 +235,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
               final actionIconSize = compact ? 15.0 : 17.0;
               final actionTextStyle = TextStyle(
                 fontSize: compact ? 13 : 14,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               );
               final title = Row(
                 mainAxisSize: MainAxisSize.min,
@@ -479,7 +479,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
                       compact ? '下载' : '下载选中',
                       style: TextStyle(
                         fontSize: compact ? 13 : 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     style: TextButton.styleFrom(

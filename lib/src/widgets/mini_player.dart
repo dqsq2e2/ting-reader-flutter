@@ -1311,7 +1311,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       style: TextStyle(
                         color: context.tertiaryText,
                         fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
@@ -1343,7 +1343,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   padding: EdgeInsets.zero,
                                   textStyle: const TextStyle(
                                     fontSize: 12,
-                                    fontWeight: FontWeight.w600,
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                                 child: Text('${row[i]} 分钟'),
@@ -3121,7 +3121,7 @@ class _SeekButton extends StatelessWidget {
                 style: TextStyle(
                   color: context.mutedText,
                   fontSize: 9,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   height: 1,
                 ),
               ),
