@@ -11,6 +11,7 @@ import 'src/state/player_state.dart';
 import 'src/theme/app_theme.dart';
 import 'src/widgets/app_shell.dart';
 import 'src/widgets/app_scope.dart';
+import 'src/widgets/common_widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -224,22 +225,7 @@ class StartupConnectionPage extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(26, 28, 26, 24),
-                decoration: BoxDecoration(
-                  color: context.cardColor,
-                  borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: context.faintBorder),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(
-                        context.isDark ? 0.24 : 0.08,
-                      ),
-                      blurRadius: 30,
-                      offset: const Offset(0, 18),
-                    ),
-                  ],
-                ),
+              child: ConnectionStatusCard(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,

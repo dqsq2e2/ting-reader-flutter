@@ -51,6 +51,35 @@ class TingCard extends StatelessWidget {
   }
 }
 
+class ConnectionStatusCard extends StatelessWidget {
+  const ConnectionStatusCard({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(26, 28, 26, 24),
+      decoration: BoxDecoration(
+        color: context.cardColor,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: context.faintBorder),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: context.isDark ? 0.24 : 0.08,
+            ),
+            blurRadius: 30,
+            offset: const Offset(0, 18),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+}
+
 EdgeInsets pagePaddingForWidth(double width) {
   if (width >= 768) return const EdgeInsets.all(32);
   if (width >= 640) return const EdgeInsets.all(24);

@@ -1178,40 +1178,55 @@ class _ConnectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 380),
-            child: TingCard(
-              padding: const EdgeInsets.all(28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Image.asset('assets/images/logo.png', width: 64, height: 64),
-                  const SizedBox(height: 20),
-                  const Text(
-                    '连接失败',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    message,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                  const SizedBox(height: 22),
-                  PrimaryButton(
-                    label: '重试连接',
-                    icon: Icons.refresh_rounded,
-                    onPressed: onRetry,
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: onLogout,
-                    child: const Text('退出登录'),
-                  ),
-                ],
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: ConnectionStatusCard(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Image.asset(
+                      'assets/images/logo.png',
+                      width: 72,
+                      height: 72,
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      '连接失败',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 24,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      message,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 14,
+                        height: 1.45,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    PrimaryButton(
+                      label: '重试连接',
+                      icon: Icons.refresh_rounded,
+                      onPressed: onRetry,
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: onLogout,
+                      child: const Text('退出登录'),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

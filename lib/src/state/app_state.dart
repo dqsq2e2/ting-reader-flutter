@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../utils/client_device_headers.dart';
+import '../utils/local_network.dart';
 
 class AppState extends ChangeNotifier {
   final ApiClient api = ApiClient();
@@ -285,7 +286,7 @@ class AppState extends ChangeNotifier {
     bool force = false,
     bool quick = false,
   }) async {
-    final candidates = _serverCandidates(
+    final candidates = await _serverCandidates(
       server: server,
       localServer: localServer,
     );
@@ -587,19 +588,18 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  List<String> _serverCandidates({
+  Future<List<String>> _serverCandidates({
     required String server,
     required String localServer,
-  }) {
-    final candidates = <String>[];
-    for (final value in [
-      _normalizeOptionalServerUrl(localServer),
-      _normalizeOptionalServerUrl(server),
-    ]) {
-      if (value.isEmpty || candidates.contains(value)) continue;
-      candidates.add(value);
-    }
-    return candidates;
+  }) async {
+    final wideArea = _normalizeOptionalServerUrl(server);
+    final localArea = _normalizeOptionalServerUrl(localServer);
+    if (localArea.isEmpty) return wideArea.isEmpty ? const [] : [wideArea];
+    if (wideArea.isEmpty) return [localArea];
+    if (wideArea == localArea) return [localArea];
+
+    final sameSubnet = await isServerOnCurrentIpv4Subnet(localArea);
+    return sameSubnet == false ? [wideArea, localArea] : [localArea, wideArea];
   }
 
   String _normalizeOptionalServerUrl(String input) {
