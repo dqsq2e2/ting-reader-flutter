@@ -49,6 +49,11 @@ Map<String, dynamic> asMap(dynamic value) {
   return <String, dynamic>{};
 }
 
+Map<String, String> _stringMap(dynamic value) {
+  final map = asMap(value);
+  return map.map((key, item) => MapEntry(key, item?.toString() ?? ''));
+}
+
 List<Map<String, dynamic>> asMapList(dynamic value) {
   if (value is! List) return const [];
   return value.map(asMap).toList();
@@ -606,6 +611,8 @@ class NotificationWebhook {
     this.enabled = true,
     this.events = const [],
     this.secret,
+    this.headers = const {},
+    this.bodyTemplate = '{{json:payload}}',
     this.createdAt,
     this.updatedAt,
   });
@@ -616,6 +623,8 @@ class NotificationWebhook {
   final bool enabled;
   final List<String> events;
   final String? secret;
+  final Map<String, String> headers;
+  final String bodyTemplate;
   final String? createdAt;
   final String? updatedAt;
 
@@ -627,10 +636,23 @@ class NotificationWebhook {
       enabled: _bool(json, 'enabled') ?? true,
       events: _stringList(json['events']),
       secret: _string(json, 'secret'),
+      headers: _stringMap(json['headers']),
+      bodyTemplate:
+          _string(json, 'body_template', 'bodyTemplate') ?? '{{json:payload}}',
       createdAt: _string(json, 'created_at', 'createdAt'),
       updatedAt: _string(json, 'updated_at', 'updatedAt'),
     );
   }
+
+  Map<String, dynamic> toRequestJson({bool? enabledOverride}) => {
+        'name': name,
+        'url': url,
+        'enabled': enabledOverride ?? enabled,
+        'events': events,
+        'secret': secret,
+        'headers': headers,
+        'body_template': bodyTemplate,
+      };
 }
 
 class AdminStatistics {

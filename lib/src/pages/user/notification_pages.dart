@@ -110,15 +110,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
   Future<void> _toggle(NotificationWebhook webhook) async {
     await AppScope.appOf(context).api.put(
-      '/api/system/notifications/${webhook.id}',
-      data: {
-        'name': webhook.name,
-        'url': webhook.url,
-        'enabled': !webhook.enabled,
-        'events': webhook.events,
-        'secret': webhook.secret,
-      },
-    );
+          '/api/system/notifications/${webhook.id}',
+          data: webhook.toRequestJson(enabledOverride: !webhook.enabled),
+        );
     await _load();
   }
 
@@ -224,7 +218,9 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
             border: Border.all(color: context.faintBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+                color: Colors.black.withValues(
+                  alpha: context.isDark ? 0.12 : 0.035,
+                ),
                 blurRadius: 12,
                 offset: const Offset(0, 5),
               ),
@@ -462,7 +458,7 @@ class _NotificationStatCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.08),
+                color: color.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(15),
               ),
               child: Icon(icon, color: color, size: 22),
@@ -565,6 +561,126 @@ class _WebhookEventChip extends StatelessWidget {
   }
 }
 
+const _defaultWebhookBodyTemplate = '{{json:payload}}';
+
+class _WebhookHeaderDraft {
+  _WebhookHeaderDraft({String? id, this.key = '', this.value = ''})
+      : id = id ?? '${DateTime.now().microsecondsSinceEpoch}';
+
+  final String id;
+  String key;
+  String value;
+}
+
+class _WebhookPreset {
+  const _WebhookPreset({
+    required this.id,
+    required this.name,
+    required this.urlPlaceholder,
+    required this.headers,
+    required this.bodyTemplate,
+  });
+
+  final String id;
+  final String name;
+  final String urlPlaceholder;
+  final Map<String, String> headers;
+  final String bodyTemplate;
+}
+
+class _WebhookTestResult {
+  const _WebhookTestResult({
+    required this.success,
+    required this.status,
+    this.responseBody = '',
+    this.renderedBody = '',
+    this.error,
+  });
+
+  final bool success;
+  final int status;
+  final String responseBody;
+  final String renderedBody;
+  final String? error;
+
+  factory _WebhookTestResult.fromJson(Map<String, dynamic> json) {
+    return _WebhookTestResult(
+      success: json['success'] == true,
+      status: (json['status'] as num?)?.toInt() ?? 0,
+      responseBody:
+          (json['response_body'] ?? json['responseBody'] ?? '').toString(),
+      renderedBody:
+          (json['rendered_body'] ?? json['renderedBody'] ?? '').toString(),
+      error: (json['error'] as String?)?.trim(),
+    );
+  }
+}
+
+const _webhookPresets = [
+  _WebhookPreset(
+    id: 'ting-json',
+    name: '原始事件 JSON',
+    urlPlaceholder: 'https://example.com/webhook',
+    headers: {'Content-Type': 'application/json'},
+    bodyTemplate: _defaultWebhookBodyTemplate,
+  ),
+  _WebhookPreset(
+    id: 'wecom-markdown',
+    name: '企业微信 Markdown',
+    urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
+    headers: {'Content-Type': 'application/json'},
+    bodyTemplate: '''{
+  "msgtype": "markdown",
+  "markdown": {
+    "content": {{json:notification}}
+  }
+}''',
+  ),
+  _WebhookPreset(
+    id: 'wecom-text',
+    name: '企业微信文本',
+    urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
+    headers: {'Content-Type': 'application/json'},
+    bodyTemplate: '''{
+  "msgtype": "text",
+  "text": {
+    "content": {{json:notification}}
+  }
+}''',
+  ),
+  _WebhookPreset(
+    id: 'ntfy-json',
+    name: 'ntfy JSON',
+    urlPlaceholder: 'https://ntfy.example.com',
+    headers: {'Content-Type': 'application/json'},
+    bodyTemplate: '''{
+  "topic": "ting-reader",
+  "title": {{json:title}},
+  "message": {{json:message}},
+  "priority": 3,
+  "tags": ["headphones"]
+}''',
+  ),
+  _WebhookPreset(
+    id: 'gotify-json',
+    name: 'Gotify JSON',
+    urlPlaceholder: 'https://gotify.example.com/message?token=...',
+    headers: {'Content-Type': 'application/json'},
+    bodyTemplate: '''{
+  "title": {{json:title}},
+  "message": {{json:message}},
+  "priority": 5
+}''',
+  ),
+  _WebhookPreset(
+    id: 'plain-text',
+    name: '纯文本',
+    urlPlaceholder: 'https://example.com/webhook',
+    headers: {'Content-Type': 'text/plain; charset=utf-8'},
+    bodyTemplate: '{{notification}}',
+  ),
+];
+
 class _WebhookDialog extends StatefulWidget {
   const _WebhookDialog({required this.events, this.webhook});
 
@@ -580,8 +696,13 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   late final TextEditingController _url;
   late final TextEditingController _secret;
   late final TextEditingController _filter;
+  late final TextEditingController _bodyTemplate;
   late bool _enabled;
   late Set<String> _events;
+  late List<_WebhookHeaderDraft> _headers;
+  String? _selectedPresetId;
+  bool _testing = false;
+  _WebhookTestResult? _testResult;
 
   @override
   void initState() {
@@ -591,9 +712,14 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     _url = TextEditingController(text: webhook?.url ?? '');
     _secret = TextEditingController(text: webhook?.secret ?? '');
     _filter = TextEditingController();
+    _bodyTemplate = TextEditingController(
+      text: webhook?.bodyTemplate ?? _defaultWebhookBodyTemplate,
+    );
     _enabled = webhook?.enabled ?? true;
-    _events = (webhook?.events.toSet() ??
-        widget.events.take(1).map((event) => event.id).toSet());
+    _events = webhook?.events.toSet() ?? _commonEvents();
+    _headers = _headersFromMap(
+      webhook?.headers ?? const {'Content-Type': 'application/json'},
+    );
   }
 
   @override
@@ -602,7 +728,123 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     _url.dispose();
     _secret.dispose();
     _filter.dispose();
+    _bodyTemplate.dispose();
     super.dispose();
+  }
+
+  Set<String> _commonEvents() {
+    const preferred = {
+      'user.login',
+      'playback.play',
+      'library.scan_completed',
+    };
+    final common = widget.events
+        .where((event) => preferred.contains(event.id))
+        .map((event) => event.id)
+        .toSet();
+    if (common.isNotEmpty) return common;
+    return widget.events.take(1).map((event) => event.id).toSet();
+  }
+
+  List<_WebhookHeaderDraft> _headersFromMap(Map<String, String> headers) {
+    return headers.entries
+        .map((entry) => _WebhookHeaderDraft(
+              key: entry.key,
+              value: entry.value,
+            ))
+        .toList();
+  }
+
+  Map<String, String> _headersToMap() {
+    final values = <String, String>{};
+    for (final header in _headers) {
+      final key = header.key.trim();
+      if (key.isEmpty) continue;
+      values[key] = header.value.trim();
+    }
+    return values;
+  }
+
+  _WebhookPreset? get _selectedPreset {
+    final id = _selectedPresetId;
+    if (id == null || id.isEmpty) return null;
+    for (final preset in _webhookPresets) {
+      if (preset.id == id) return preset;
+    }
+    return null;
+  }
+
+  void _applyPreset(String? presetId) {
+    if (presetId == null || presetId.isEmpty) return;
+    final preset = _webhookPresets.firstWhere((item) => item.id == presetId);
+    setState(() {
+      _selectedPresetId = presetId;
+      _headers = _headersFromMap(preset.headers);
+      _bodyTemplate.text = preset.bodyTemplate;
+      _testResult = null;
+    });
+  }
+
+  Map<String, dynamic> _requestData({bool? enabledOverride}) {
+    return {
+      'name': _name.text.trim(),
+      'url': _url.text.trim(),
+      'enabled': enabledOverride ?? _enabled,
+      'events': _events.toList(),
+      'secret': _secret.text.trim().isEmpty ? null : _secret.text.trim(),
+      'headers': _headersToMap(),
+      'body_template': _bodyTemplate.text.trim().isEmpty
+          ? _defaultWebhookBodyTemplate
+          : _bodyTemplate.text,
+    };
+  }
+
+  bool _validate() {
+    if (_name.text.trim().isEmpty || _url.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请填写名称和 Webhook URL')),
+      );
+      return false;
+    }
+    if (_events.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请至少选择一个监听事件')),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _testWebhook() async {
+    if (_testing || !_validate()) return;
+    final api = AppScope.appOf(context).api;
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    try {
+      final response = await api.post(
+        '/api/system/notifications/test',
+        data: _requestData(enabledOverride: true),
+      );
+      if (!mounted) return;
+      setState(() {
+        _testResult = _WebhookTestResult.fromJson(asMap(response.data));
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _testResult = _WebhookTestResult(
+          success: false,
+          status: 0,
+          error: '测试发送失败：$error',
+        );
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _testing = false);
+      }
+    }
   }
 
   @override
@@ -627,52 +869,38 @@ class _WebhookDialogState extends State<_WebhookDialog> {
       ),
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: 760,
-          maxHeight: math.min(screen.height * 0.9, 760),
+          maxWidth: 840,
+          maxHeight: math.min(screen.height * 0.94, 820),
         ),
         child: Column(
           children: [
             Padding(
               padding: EdgeInsets.fromLTRB(
-                compact ? 18 : 26,
+                compact ? 20 : 28,
                 compact ? 18 : 24,
-                compact ? 14 : 22,
-                compact ? 14 : 18,
+                compact ? 12 : 20,
+                compact ? 16 : 20,
               ),
               child: Row(
                 children: [
-                  Container(
-                    width: compact ? 40 : 44,
-                    height: compact ? 40 : 44,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary50,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.webhook_rounded,
-                      color: AppColors.primary600,
-                      size: 23,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           widget.webhook == null ? '添加 Webhook' : '编辑 Webhook',
-                          style: const TextStyle(
-                            fontSize: 20,
+                          style: TextStyle(
+                            color: context.primaryText,
+                            fontSize: compact ? 22 : 26,
+                            height: 1.1,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 3),
+                        const SizedBox(height: 8),
                         Text(
-                          '${_events.length} 个监听事件',
+                          '${_events.length} 个事件',
                           style: TextStyle(
                             color: context.mutedText,
-                            fontSize: 12,
+                            fontSize: 13,
                           ),
                         ),
                       ],
@@ -690,203 +918,64 @@ class _WebhookDialogState extends State<_WebhookDialog> {
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.fromLTRB(
-                  compact ? 18 : 26,
-                  compact ? 18 : 22,
-                  compact ? 18 : 26,
-                  compact ? 18 : 22,
+                  compact ? 20 : 28,
+                  compact ? 18 : 24,
+                  compact ? 20 : 28,
+                  compact ? 20 : 24,
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final nameField = TextField(
-                          controller: _name,
-                          decoration: const InputDecoration(
-                            prefixIcon: Icon(Icons.badge_outlined),
-                            labelText: '配置名称',
-                          ),
-                        );
-                        final enabledTile = Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: context.isDark
-                                ? AppColors.slate900
-                                : AppColors.slate50,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: context.faintBorder),
-                          ),
-                          child: SwitchListTile(
-                            value: _enabled,
-                            onChanged: (value) =>
-                                setState(() => _enabled = value),
-                            title: const Text('启用'),
-                            activeColor: AppColors.primary600,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                        );
-                        if (constraints.maxWidth < 520) {
-                          return Column(
-                            children: [
-                              nameField,
-                              const SizedBox(height: 12),
-                              enabledTile,
-                            ],
-                          );
-                        }
-                        return Row(
-                          children: [
-                            Expanded(child: nameField),
-                            const SizedBox(width: 14),
-                            SizedBox(width: 170, child: enabledTile),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _url,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.link_rounded),
-                        labelText: 'Webhook URL',
+                    _labeledField(
+                      context,
+                      '配置名称',
+                      TextField(
+                        controller: _name,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.badge_outlined),
+                          hintText: '例如：企业微信通知',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 14),
-                    TextField(
-                      controller: _secret,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.key_rounded),
-                        labelText: 'Secret（可选）',
+                    _labeledField(
+                      context,
+                      'Webhook URL',
+                      TextField(
+                        controller: _url,
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.link_rounded),
+                          hintText: _selectedPreset?.urlPlaceholder ??
+                              'https://example.com/webhook',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _labeledField(
+                      context,
+                      'Secret（可选）',
+                      TextField(
+                        controller: _secret,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.key_rounded),
+                          hintText: '用于签名校验，可留空',
+                        ),
                       ),
                     ),
                     const SizedBox(height: 18),
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.all(compact ? 14 : 18),
-                      decoration: BoxDecoration(
-                        color: context.isDark
-                            ? AppColors.slate900
-                            : AppColors.slate50,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: context.faintBorder),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final actions = Wrap(
-                                spacing: 4,
-                                runSpacing: 4,
-                                children: [
-                                  TextButton(
-                                    onPressed: () => setState(() {
-                                      final common = widget.events
-                                          .where((event) =>
-                                              event.id == 'user.login' ||
-                                              event.id == 'playback.play' ||
-                                              event.id ==
-                                                  'library.scan_completed')
-                                          .map((event) => event.id);
-                                      _events = common.toSet();
-                                    }),
-                                    child: const Text('常用'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () => setState(() {
-                                      _events = widget.events
-                                          .map((event) => event.id)
-                                          .toSet();
-                                    }),
-                                    child: const Text('全选'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        setState(() => _events = <String>{}),
-                                    child: const Text('清空'),
-                                  ),
-                                ],
-                              );
-                              final title = Text(
-                                '监听事件',
-                                style: TextStyle(
-                                  color: context.isDark
-                                      ? Colors.white
-                                      : AppColors.slate900,
-                                ),
-                              );
-                              if (constraints.maxWidth < 430) {
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    title,
-                                    const SizedBox(height: 8),
-                                    actions,
-                                  ],
-                                );
-                              }
-                              return Row(
-                                children: [
-                                  Expanded(child: title),
-                                  actions,
-                                ],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _filter,
-                            decoration: const InputDecoration(
-                              prefixIcon: Icon(Icons.search_rounded),
-                              hintText: '搜索事件',
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                          const SizedBox(height: 14),
-                          if (filteredEvents.isEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 24),
-                              child: Center(
-                                child: Text(
-                                  '没有匹配事件',
-                                  style: TextStyle(color: context.mutedText),
-                                ),
-                              ),
-                            )
-                          else
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final itemWidth = constraints.maxWidth < 420
-                                    ? constraints.maxWidth
-                                    : constraints.maxWidth < 660
-                                        ? (constraints.maxWidth - 10) / 2
-                                        : 214.0;
-                                return Wrap(
-                                  spacing: 10,
-                                  runSpacing: 10,
-                                  children: [
-                                    for (final event in filteredEvents)
-                                      _WebhookEventToggle(
-                                        width: itemWidth,
-                                        event: event,
-                                        selected: _events.contains(event.id),
-                                        onTap: () {
-                                          setState(() {
-                                            _events.contains(event.id)
-                                                ? _events.remove(event.id)
-                                                : _events.add(event.id);
-                                          });
-                                        },
-                                      ),
-                                  ],
-                                );
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
+                    _buildPresetRow(compact),
+                    const SizedBox(height: 18),
+                    _buildHeadersCard(compact),
+                    const SizedBox(height: 18),
+                    _buildBodyTemplate(),
+                    if (_testResult != null) ...[
+                      const SizedBox(height: 16),
+                      _buildTestResult(_testResult!),
+                    ],
+                    const SizedBox(height: 18),
+                    _buildEnabledCard(),
+                    const SizedBox(height: 18),
+                    _buildEventsCard(filteredEvents, compact),
                   ],
                 ),
               ),
@@ -894,10 +983,10 @@ class _WebhookDialogState extends State<_WebhookDialog> {
             Divider(height: 1, color: context.faintBorder),
             Padding(
               padding: EdgeInsets.fromLTRB(
-                compact ? 18 : 26,
+                compact ? 20 : 28,
                 14,
-                compact ? 18 : 26,
-                compact ? 18 : 22,
+                compact ? 20 : 28,
+                compact ? 20 : 24,
               ),
               child: Row(
                 children: [
@@ -920,26 +1009,447 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     );
   }
 
+  Widget _labeledField(BuildContext context, String label, Widget child) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(color: context.secondaryText, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+
+  Widget _buildPresetRow(bool compact) {
+    final dropdown = DropdownButtonFormField<String>(
+      initialValue: _selectedPresetId,
+      hint: const Text('选择模板'),
+      items: [
+        for (final preset in _webhookPresets)
+          DropdownMenuItem(
+            value: preset.id,
+            child: Text(preset.name),
+          ),
+      ],
+      onChanged: _applyPreset,
+    );
+    final testButton = OutlinedButton.icon(
+      onPressed: _testing ? null : _testWebhook,
+      icon: _testing
+          ? const SizedBox(
+              width: 17,
+              height: 17,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.science_outlined, size: 18),
+      label: const Text('测试发送'),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size(132, 52),
+        foregroundColor: AppColors.primary600,
+        side: const BorderSide(color: AppColors.primary200),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+
+    if (compact) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            '常见模板',
+            style: TextStyle(color: context.secondaryText, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          dropdown,
+          const SizedBox(height: 10),
+          testButton,
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '常见模板',
+          style: TextStyle(color: context.secondaryText, fontSize: 13),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(child: dropdown),
+            const SizedBox(width: 14),
+            testButton,
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeadersCard(bool compact) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 14 : 18),
+      decoration: BoxDecoration(
+        color: context.cardColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.faintBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '请求头',
+                  style: TextStyle(color: context.primaryText, fontSize: 15),
+                ),
+              ),
+              IconButton(
+                tooltip: '添加请求头',
+                onPressed: () {
+                  setState(() {
+                    _headers.add(_WebhookHeaderDraft());
+                    _testResult = null;
+                  });
+                },
+                icon:
+                    const Icon(Icons.add_rounded, color: AppColors.primary600),
+              ),
+            ],
+          ),
+          if (_headers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text('未设置请求头', style: TextStyle(color: context.mutedText)),
+            )
+          else
+            for (var i = 0; i < _headers.length; i++) ...[
+              if (i > 0) const SizedBox(height: 10),
+              _buildHeaderRow(_headers[i], compact),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow(_WebhookHeaderDraft header, bool compact) {
+    final keyField = TextFormField(
+      key: ValueKey('webhook-header-key-${header.id}'),
+      initialValue: header.key,
+      decoration: const InputDecoration(hintText: 'Content-Type'),
+      onChanged: (value) {
+        header.key = value;
+        _testResult = null;
+      },
+    );
+    final valueField = TextFormField(
+      key: ValueKey('webhook-header-value-${header.id}'),
+      initialValue: header.value,
+      decoration: const InputDecoration(hintText: 'application/json'),
+      onChanged: (value) {
+        header.value = value;
+        _testResult = null;
+      },
+    );
+    final deleteButton = IconButton(
+      tooltip: '删除请求头',
+      onPressed: () {
+        setState(() {
+          _headers.removeWhere((item) => item.id == header.id);
+          _testResult = null;
+        });
+      },
+      icon: const Icon(Icons.delete_outline_rounded),
+      color: AppColors.slate400,
+    );
+
+    if (compact) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              children: [
+                keyField,
+                const SizedBox(height: 8),
+                valueField,
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          deleteButton,
+        ],
+      );
+    }
+    return Row(
+      children: [
+        Expanded(flex: 4, child: keyField),
+        const SizedBox(width: 10),
+        Expanded(flex: 6, child: valueField),
+        const SizedBox(width: 4),
+        deleteButton,
+      ],
+    );
+  }
+
+  Widget _buildBodyTemplate() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              '{}',
+              style: TextStyle(color: context.secondaryText, fontSize: 14),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Body 模板',
+              style: TextStyle(color: context.secondaryText, fontSize: 14),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _bodyTemplate,
+          minLines: 8,
+          maxLines: 12,
+          spellCheckConfiguration: const SpellCheckConfiguration.disabled(),
+          style: TextStyle(
+            color: context.isDark ? Colors.white : AppColors.slate900,
+            fontFamily: 'monospace',
+            fontSize: 13,
+            height: 1.45,
+          ),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: context.isDark ? AppColors.slate950 : AppColors.slate50,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: context.isDark ? AppColors.slate800 : AppColors.slate200,
+              ),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                color: context.isDark ? AppColors.slate800 : AppColors.slate200,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: AppColors.primary500),
+            ),
+          ),
+          onChanged: (_) => _testResult = null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTestResult(_WebhookTestResult result) {
+    final success = result.success;
+    final color = success ? const Color(0xff16a34a) : const Color(0xffdc2626);
+    final background =
+        success ? const Color(0xffecfdf5) : const Color(0xfffff1f2);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.isDark ? color.withValues(alpha: 0.14) : background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            success
+                ? '发送成功 · HTTP ${result.status}'
+                : (result.error?.isNotEmpty == true
+                    ? result.error!
+                    : '发送失败 · HTTP ${result.status}'),
+            style: TextStyle(color: color, fontSize: 13),
+          ),
+          if (result.responseBody.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              result.responseBody,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: context.secondaryText, fontSize: 12),
+            ),
+          ],
+          if (result.renderedBody.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              title: Text(
+                '实际请求体',
+                style: TextStyle(color: context.secondaryText, fontSize: 12),
+              ),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SelectableText(
+                    result.renderedBody,
+                    style: TextStyle(
+                      color: context.secondaryText,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEnabledCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: context.isDark ? AppColors.slate900 : AppColors.slate50,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: context.faintBorder),
+      ),
+      child: SwitchListTile(
+        value: _enabled,
+        onChanged: (value) => setState(() => _enabled = value),
+        title: const Text('启用'),
+        subtitle: Text(_enabled ? '开启' : '关闭'),
+        activeThumbColor: AppColors.primary600,
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  Widget _buildEventsCard(
+    List<NotificationEventOption> filteredEvents,
+    bool compact,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.all(compact ? 14 : 18),
+      decoration: BoxDecoration(
+        color: context.isDark ? AppColors.slate900 : AppColors.slate50,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: context.faintBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final actions = Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _events = _commonEvents();
+                    }),
+                    child: const Text('常用'),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _events = widget.events.map((event) => event.id).toSet();
+                    }),
+                    child: const Text('全选'),
+                  ),
+                  TextButton(
+                    onPressed: () => setState(() => _events = <String>{}),
+                    child: const Text('清空'),
+                  ),
+                ],
+              );
+              final title = Text(
+                '监听事件',
+                style: TextStyle(color: context.primaryText, fontSize: 15),
+              );
+              if (constraints.maxWidth < 440) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    title,
+                    const SizedBox(height: 8),
+                    actions,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: title),
+                  actions,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _filter,
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search_rounded),
+              hintText: '搜索事件',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 14),
+          if (filteredEvents.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                child: Text(
+                  '没有匹配事件',
+                  style: TextStyle(color: context.mutedText),
+                ),
+              ),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = constraints.maxWidth < 420
+                    ? constraints.maxWidth
+                    : constraints.maxWidth < 660
+                        ? (constraints.maxWidth - 10) / 2
+                        : 214.0;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final event in filteredEvents)
+                      _WebhookEventToggle(
+                        width: itemWidth,
+                        event: event,
+                        selected: _events.contains(event.id),
+                        onTap: () {
+                          setState(() {
+                            _events.contains(event.id)
+                                ? _events.remove(event.id)
+                                : _events.add(event.id);
+                          });
+                        },
+                      ),
+                  ],
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   void _save() {
-    if (_name.text.trim().isEmpty || _url.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写名称和 Webhook URL')),
-      );
-      return;
-    }
-    if (_events.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请至少选择一个监听事件')),
-      );
-      return;
-    }
-    Navigator.pop(context, {
-      'name': _name.text.trim(),
-      'url': _url.text.trim(),
-      'enabled': _enabled,
-      'events': _events.toList(),
-      'secret': _secret.text.trim().isEmpty ? null : _secret.text.trim(),
-    });
+    if (!_validate()) return;
+    Navigator.pop(context, _requestData());
   }
 }
 
@@ -958,8 +1468,18 @@ class _WebhookEventToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final selectedBackground =
+        context.isDark ? const Color(0xff172033) : AppColors.primary50;
+    final selectedBorder =
+        context.isDark ? AppColors.primary500 : AppColors.primary300;
+    final selectedTitle = context.isDark ? Colors.white : AppColors.primary700;
+    final selectedSubtitle =
+        context.isDark ? AppColors.slate300 : AppColors.slate600;
+    final unselectedBackground = context.cardColor;
+    final unselectedTitle = context.isDark ? Colors.white : AppColors.slate900;
+    final unselectedSubtitle = context.mutedText;
     return Material(
-      color: selected ? AppColors.primary50 : context.cardColor,
+      color: selected ? selectedBackground : unselectedBackground,
       borderRadius: BorderRadius.circular(14),
       child: InkWell(
         onTap: onTap,
@@ -970,7 +1490,7 @@ class _WebhookEventToggle extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: selected ? AppColors.primary300 : context.faintBorder,
+              color: selected ? selectedBorder : context.faintBorder,
             ),
           ),
           child: Row(
@@ -978,7 +1498,7 @@ class _WebhookEventToggle extends StatelessWidget {
             children: [
               Icon(
                 selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                color: selected ? AppColors.primary600 : AppColors.slate400,
+                color: selected ? AppColors.primary300 : AppColors.slate400,
                 size: 18,
               ),
               const SizedBox(width: 8),
@@ -991,12 +1511,9 @@ class _WebhookEventToggle extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected
-                            ? AppColors.primary700
-                            : (context.isDark
-                                ? Colors.white
-                                : AppColors.slate900),
+                        color: selected ? selectedTitle : unselectedTitle,
                         fontSize: 13,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1005,7 +1522,7 @@ class _WebhookEventToggle extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: context.mutedText,
+                        color: selected ? selectedSubtitle : unselectedSubtitle,
                         fontSize: 11,
                         height: 1.25,
                       ),
