@@ -440,7 +440,11 @@ class _PlayerAudioHandler extends BaseAudioHandler
     _playerCompleter.complete(player);
     final playbackEventMessageStream = player.playbackEventMessageStream;
     playbackEventMessageStream.listen((event) {
+      final previousIndex = _justAudioEvent.currentIndex;
       _justAudioEvent = event;
+      if (event.currentIndex != previousIndex) {
+        _publishMediaItemAt(event.currentIndex);
+      }
       _broadcastState();
     });
     playbackEventMessageStream
@@ -493,11 +497,8 @@ class _PlayerAudioHandler extends BaseAudioHandler
   @override
   Future<void> updateQueue(List<MediaItem> queue) async {
     this.queue.add(queue);
-    if (mediaItem.nvalue == null &&
-        index != null &&
-        index! >= 0 &&
-        index! < queue.length) {
-      mediaItem.add(queue[index!]);
+    if (mediaItem.nvalue == null) {
+      _publishMediaItemAt(index);
     }
   }
 
@@ -505,11 +506,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
     _source = request.audioSourceMessage;
     _updateShuffleIndices();
     _updateQueue();
+    _publishMediaItemAt(request.initialIndex ?? 0);
     final response = await (await _player).load(LoadRequest(
       audioSourceMessage: _source!,
       initialPosition: request.initialPosition,
       initialIndex: request.initialIndex,
     ));
+    _publishMediaItemAt(index ?? request.initialIndex ?? 0);
     return LoadResponse(duration: response.duration);
   }
 
@@ -622,6 +625,18 @@ class _PlayerAudioHandler extends BaseAudioHandler
     assert(sequence.every((source) => source.tag is MediaItem),
         'Error : When using just_audio_background, you should always use a MediaItem as tag when setting an AudioSource. See AudioSource.uri documentation for more information.');
     queue.add(sequence.map((source) => source.tag as MediaItem).toList());
+  }
+
+  void _publishMediaItemAt(int? targetIndex) {
+    final items = currentQueue;
+    if (items == null || items.isEmpty) return;
+    final resolvedIndex = targetIndex ?? (items.length == 1 ? 0 : null);
+    if (resolvedIndex == null ||
+        resolvedIndex < 0 ||
+        resolvedIndex >= items.length) {
+      return;
+    }
+    mediaItem.add(items[resolvedIndex]);
   }
 
   void _updateShuffleIndices() {

@@ -791,6 +791,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       if ((book.author ?? '').trim().isNotEmpty) book.author!.trim(),
     ];
     final artUri = _mediaArtUri(book);
+    final artHeaders = artUri != null &&
+            (artUri.scheme == 'http' || artUri.scheme == 'https') &&
+            appState.usesActiveOrigin(artUri.toString())
+        ? _streamHeaders
+        : null;
     return MediaItem(
       id: chapter.id,
       album: book.title,
@@ -799,6 +804,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       duration:
           chapter.duration > 0 ? Duration(seconds: chapter.duration) : null,
       artUri: artUri,
+      artHeaders: artHeaders == null || artHeaders.isEmpty ? null : artHeaders,
       extras: {
         'bookId': book.id,
         'chapterId': chapter.id,
