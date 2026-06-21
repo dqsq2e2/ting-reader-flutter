@@ -285,10 +285,6 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Remove legacy iOS archive
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release delete-asset "$GITHUB_REF_NAME" "TingReader-ios-nosign.zip" --yes || true
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
