@@ -242,7 +242,7 @@ jobs:
           path: dist/*
 
   ios:
-    name: iOS unsigned
+    name: iOS self-sign IPA
     needs: dependencies
     runs-on: macos-14
     steps:
@@ -265,7 +265,11 @@ jobs:
           flutter build ios --release --no-codesign --build-name "$BUILD_NAME" --build-number "$GITHUB_RUN_NUMBER"
       - run: |
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app dist/TingReader-ios-nosign.zip
+          mkdir -p dist/Payload
+          ditto build/ios/iphoneos/Runner.app dist/Payload/Runner.app
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent Payload TingReader-ios-self-sign.ipa
+          rm -rf Payload
       - uses: actions/upload-artifact@v4
         with:
           name: ios
@@ -281,6 +285,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Remove legacy iOS archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release delete-asset "$GITHUB_REF_NAME" "TingReader-ios-nosign.zip" --yes || true
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
