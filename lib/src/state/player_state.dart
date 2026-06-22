@@ -163,13 +163,14 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       nested: nested,
       fallback: false,
     );
-    final nextResume = _boolSetting(
-      settings,
-      'resume_after_interruption',
-      'resumeAfterInterruption',
-      nested: nested,
-      fallback: false,
-    );
+    final nextResume = !next &&
+        _boolSetting(
+          settings,
+          'resume_after_interruption',
+          'resumeAfterInterruption',
+          nested: nested,
+          fallback: false,
+        );
     await setIgnoreAudioFocus(next);
     await setResumeAfterInterruption(nextResume);
   }

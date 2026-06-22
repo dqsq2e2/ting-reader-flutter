@@ -383,15 +383,15 @@ class _PlaybackSection extends StatelessWidget {
           if (showAudioFocusSetting) ...[
             _SettingDivider(),
             _ToggleSettingRow(
-              title: '被其他应用中断后继续播放',
-              subtitle: '开启后，其他应用播放声音时尽量保持当前章节继续播放',
+              title: '被其他应用暂停后自动恢复',
+              subtitle: '关闭混音时，通话或其他应用短暂打断后自动继续播放',
               value: resumeAfterInterruption,
               onChanged: onResumeAfterInterruption,
             ),
             _SettingDivider(),
             _ToggleSettingRow(
-              title: '与其他应用混音',
-              subtitle: '不主动抢占其他应用的音频焦点',
+              title: '与其他应用同时播放',
+              subtitle: '允许和其他应用声音共存，可能不会收到中断恢复事件',
               value: ignoreAudioFocus,
               onChanged: onIgnoreAudioFocus,
             ),

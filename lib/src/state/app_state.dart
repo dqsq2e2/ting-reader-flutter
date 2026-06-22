@@ -14,6 +14,12 @@ class AppState extends ChangeNotifier {
 
   static const _cachedSettingsPrefsKey = 'cached_app_settings';
   static const _localSettingsPrefsKey = 'local_app_settings';
+  static const _localOnlySettingKeys = <String>{
+    'ignore_audio_focus',
+    'ignoreAudioFocus',
+    'resume_after_interruption',
+    'resumeAfterInterruption',
+  };
 
   SharedPreferences? _prefs;
   Map<String, String> _redirectCache = {};
@@ -452,9 +458,26 @@ class AppState extends ChangeNotifier {
   }
 
   void _applyLocalSettings() {
+    settings = _withoutLocalOnlySettings(settings);
     final local = _normalizeLocalSettingsPatch(_readLocalSettings());
     if (local.isEmpty) return;
     _applySettingsPatch(local);
+  }
+
+  Map<String, dynamic> _withoutLocalOnlySettings(Map<String, dynamic> source) {
+    final next = {...source};
+    for (final key in _localOnlySettingKeys) {
+      next.remove(key);
+    }
+    for (final nestedKey in const ['settings_json', 'settingsJson']) {
+      if (!next.containsKey(nestedKey)) continue;
+      final nested = {...asMap(next[nestedKey])};
+      for (final key in _localOnlySettingKeys) {
+        nested.remove(key);
+      }
+      next[nestedKey] = nested;
+    }
+    return next;
   }
 
   void _applySettingsPatch(Map<String, dynamic> patch) {
@@ -483,6 +506,14 @@ class AppState extends ChangeNotifier {
     }
     if (patch.containsKey('ignore_audio_focus')) {
       normalized['ignoreAudioFocus'] = patch['ignore_audio_focus'];
+    }
+    if (patch.containsKey('resumeAfterInterruption')) {
+      normalized['resume_after_interruption'] =
+          patch['resumeAfterInterruption'];
+    }
+    if (patch.containsKey('resume_after_interruption')) {
+      normalized['resumeAfterInterruption'] =
+          patch['resume_after_interruption'];
     }
     return normalized;
   }
