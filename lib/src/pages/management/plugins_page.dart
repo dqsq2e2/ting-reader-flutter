@@ -833,9 +833,9 @@ class _PluginCard extends StatelessWidget {
             children: [
               if (item.repo != null && item.repo!.trim().isNotEmpty)
                 _PluginFooterButton(
-                  icon: Icons.code_rounded,
+                  icon: const _GitHubIcon(size: 17),
                   label: '仓库',
-                  onPressed: () => openExternalUrl(item.repo!),
+                  onPressed: () => openRepositoryUrl(item.repo!),
                 ),
               const Spacer(),
               if (onConfigure != null)
@@ -913,7 +913,7 @@ class _PluginFooterButton extends StatelessWidget {
     required this.onPressed,
   });
 
-  final IconData icon;
+  final Widget icon;
   final String label;
   final VoidCallback? onPressed;
 
@@ -925,7 +925,7 @@ class _PluginFooterButton extends StatelessWidget {
         foregroundColor: context.mutedText,
         padding: const EdgeInsets.symmetric(horizontal: 8),
       ),
-      icon: Icon(icon, size: 17),
+      icon: icon,
       label: Text(label, style: const TextStyle(fontSize: 12)),
     );
   }
@@ -1354,4 +1354,66 @@ List<int> _versionParts(String value) {
       .where((part) => part.isNotEmpty)
       .map((part) => int.tryParse(part) ?? 0)
       .toList();
+}
+
+class _GitHubIcon extends StatelessWidget {
+  const _GitHubIcon({this.size = 17});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size.square(size),
+      painter: _GitHubIconPainter(
+        color: IconTheme.of(context).color ?? context.mutedText,
+      ),
+    );
+  }
+}
+
+class _GitHubIconPainter extends CustomPainter {
+  const _GitHubIconPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.width / 24;
+    final path = Path()
+      ..moveTo(15, 22)
+      ..lineTo(15, 18)
+      ..cubicTo(15, 16.6, 14.65, 15.4, 14, 14.5)
+      ..cubicTo(17, 14.5, 20, 12.5, 20, 9)
+      ..cubicTo(20.08, 7.75, 19.73, 6.52, 19, 5.5)
+      ..cubicTo(19.28, 4.35, 19.28, 3.15, 19, 2)
+      ..cubicTo(19, 2, 18, 2, 16, 3.5)
+      ..cubicTo(13.36, 3, 10.64, 3, 8, 3.5)
+      ..cubicTo(6, 2, 5, 2, 5, 2)
+      ..cubicTo(4.7, 3.15, 4.7, 4.35, 5, 5.5)
+      ..cubicTo(4.35, 6.5, 4, 7.7, 4, 9)
+      ..cubicTo(4, 12.5, 7, 14.5, 10, 14.5)
+      ..cubicTo(9.61, 14.99, 9.32, 15.55, 9.15, 16.15)
+      ..cubicTo(8.98, 16.75, 8.93, 17.38, 9, 18)
+      ..lineTo(9, 22)
+      ..moveTo(9, 18)
+      ..cubicTo(4.49, 20, 4, 16, 2, 16);
+    canvas.save();
+    canvas.scale(scale, scale);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _GitHubIconPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
 }

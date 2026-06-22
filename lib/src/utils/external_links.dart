@@ -9,6 +9,20 @@ Future<bool> openExternalUrl(String rawUrl) async {
   return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
+Future<bool> openRepositoryUrl(String repository) {
+  final trimmed = repository.trim();
+  if (trimmed.isEmpty) return Future.value(false);
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return openExternalUrl(trimmed);
+  }
+  if (trimmed.startsWith('github.com/')) {
+    return openExternalUrl('https://$trimmed');
+  }
+  return openExternalUrl(
+    'https://github.com/${trimmed.replaceFirst(RegExp(r'^/+'), '')}',
+  );
+}
+
 String _normalizeUrl(String rawUrl) {
   final trimmed = rawUrl.trim();
   if (trimmed.isEmpty) return trimmed;

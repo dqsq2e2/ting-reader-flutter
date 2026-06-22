@@ -298,7 +298,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     await _waitForPendingTranscodeSeek();
     if (!_isActivePlay(playGeneration, targetChapter.id)) return;
-    _suppressPositionUpdates = false;
 
     try {
       final localPath = _localFilePathFromChapter(targetChapter) ??
@@ -314,6 +313,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       );
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
       _usingAudioQueue = true;
+      currentTime = resumePosition;
+      _suppressPositionUpdates = false;
       await _audio.setSpeed(playbackSpeed);
       await _audio.setVolume(volume);
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
@@ -325,6 +326,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _usingAudioQueue = false;
       _usingTranscodeStream = true;
       _resetTranscodeClock(resumePosition);
+      _suppressPositionUpdates = true;
       error = null;
       try {
         await _setFallbackTranscodeSource(
@@ -337,6 +339,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           resumePosition,
         );
         if (!_isActivePlay(playGeneration, targetChapter.id)) return;
+        currentTime = resumePosition;
+        _suppressPositionUpdates = false;
         await _audio.setSpeed(playbackSpeed);
         await _audio.setVolume(volume);
         if (resumePosition > 0) {
@@ -348,6 +352,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         _startProgressTimer();
       } catch (_) {
         if (!_isActivePlay(playGeneration, targetChapter.id)) return;
+        _suppressPositionUpdates = false;
         error = '音频播放失败';
         notifyListeners();
       }
@@ -826,13 +831,23 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     return Uri.tryParse(cover);
   }
 
-  Future<void> sendProgress() async {
+  Future<void> sendProgress({double? playbackStart}) async {
     final book = currentBook;
     final chapter = currentChapter;
     if (book == null || chapter == null) return;
     if (appState.offlineMode) return;
-    unawaited(_sendProgressByWebSocket(book, chapter));
-    await _sendProgressByHttp(book, chapter);
+    unawaited(
+      _sendProgressByWebSocket(
+        book,
+        chapter,
+        playbackStart: playbackStart,
+      ),
+    );
+    await _sendProgressByHttp(
+      book,
+      chapter,
+      playbackStart: playbackStart,
+    );
   }
 
   Future<void> _sendCurrentProgressByWebSocket() async {
@@ -849,7 +864,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     await _sendProgressByHttp(book, chapter);
   }
 
-  Future<void> _sendProgressByHttp(Book book, Chapter chapter) async {
+  Future<void> _sendProgressByHttp(
+    Book book,
+    Chapter chapter, {
+    double? playbackStart,
+  }) async {
     try {
       await appState.api.post(
         '/api/progress',
@@ -858,6 +877,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           'chapter_id': chapter.id,
           'position': currentTime,
           'duration': duration > 0 ? duration : chapter.duration,
+          if (playbackStart != null) 'playback_start': playbackStart,
         },
       );
     } catch (_) {
@@ -865,7 +885,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _sendProgressByWebSocket(Book book, Chapter chapter) async {
+  Future<void> _sendProgressByWebSocket(
+    Book book,
+    Chapter chapter, {
+    double? playbackStart,
+  }) async {
     if (kIsWeb) return;
     final token = appState.token;
     if (token == null || token.isEmpty || appState.offlineMode) return;
@@ -878,6 +902,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           'book_id': book.id,
           'chapter_id': chapter.id,
           'position': currentTime.floor(),
+          if (playbackStart != null) 'playback_start': playbackStart.floor(),
         }),
       );
     } catch (_) {
@@ -1014,7 +1039,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   void _startProgressTimer() {
     _stopProgressTimers();
-    unawaited(sendProgress());
+    unawaited(sendProgress(playbackStart: currentTime));
     _progressWsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       unawaited(_sendCurrentProgressByWebSocket());
     });
