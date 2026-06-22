@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../state/download_state.dart';
 import '../theme/app_theme.dart';
+import '../utils/chapter_sort.dart';
 import '../utils/formatters.dart';
 import '../utils/urls.dart';
 import '../widgets/app_scope.dart';
@@ -324,8 +325,16 @@ class _DownloadsPageState extends State<DownloadsPage> {
     List<LocalDownload> group,
     LocalDownload item,
   ) async {
-    final ordered = [...group]
-      ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+    final ordered = [...group]..sort(
+        (a, b) => compareChapterOrder(
+          a.isExtra,
+          a.chapterIndex,
+          a.chapterId,
+          b.isExtra,
+          b.chapterIndex,
+          b.chapterId,
+        ),
+      );
     final metadata = item.bookMetadata.isNotEmpty
         ? item.bookMetadata
         : group.first.bookMetadata;

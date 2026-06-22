@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../models/models.dart';
 import '../../state/download_state.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/chapter_sort.dart';
 import '../../utils/formatters.dart';
 import '../../utils/urls.dart';
 import '../../widgets/book_card.dart';
@@ -175,15 +176,15 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (!force &&
         player.currentBook?.id == book.id &&
         player.chapters.isNotEmpty) {
-      _allChaptersCache = [...player.chapters]
-        ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+      _allChaptersCache = sortChaptersForPlayback(player.chapters);
       return _allChaptersCache!;
     }
     final res = await AppScope.appOf(context).api.get(
           '/api/books/${book.id}/chapters',
         );
-    final chapters = asMapList(res.data).map(Chapter.fromJson).toList()
-      ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+    final chapters = sortChaptersForPlayback(
+      asMapList(res.data).map(Chapter.fromJson),
+    );
     _allChaptersCache = chapters;
     return chapters;
   }

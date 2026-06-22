@@ -11,6 +11,7 @@ import 'package:just_audio_background/just_audio_background.dart'
     as audio_background;
 
 import '../models/models.dart';
+import '../utils/chapter_sort.dart';
 import '../utils/urls.dart';
 import 'app_state.dart';
 import 'download_state.dart';
@@ -275,11 +276,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     await applySettings(appState.settings);
     final playGeneration = ++_playGeneration;
     currentBook = book;
-    chapters = [...chapterList]
-      ..sort((a, b) => a.chapterIndex - b.chapterIndex);
+    chapters = sortChaptersForPlayback(chapterList);
     if (chapters.every((item) => item.id != chapter.id)) {
-      chapters = [...chapters, chapter]
-        ..sort((a, b) => a.chapterIndex - b.chapterIndex);
+      chapters = sortChaptersForPlayback([...chapters, chapter]);
     }
     final resumePosition = startAt ?? _startPositionFor(book, chapter);
     final chapterIndex = chapters.indexWhere((item) => item.id == chapter.id);
