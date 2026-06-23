@@ -517,3 +517,49 @@ class HeaderText extends StatelessWidget {
     );
   }
 }
+
+class PageHeaderRow extends StatelessWidget {
+  const PageHeaderRow({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.action,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? action;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final header = HeaderText(
+          icon: icon,
+          title: title,
+          subtitle: subtitle,
+        );
+        if (constraints.maxWidth < 720 || action == null) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              header,
+              if (action != null) ...[
+                const SizedBox(height: 14),
+                action!,
+              ],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: header),
+            action!,
+          ],
+        );
+      },
+    );
+  }
+}

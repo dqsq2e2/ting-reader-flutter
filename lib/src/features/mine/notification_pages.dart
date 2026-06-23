@@ -1,4 +1,4 @@
-part of 'user_pages.dart';
+part of 'mine_page.dart';
 
 class NotificationSettingsPage extends StatefulWidget {
   const NotificationSettingsPage({super.key, required this.onBack});

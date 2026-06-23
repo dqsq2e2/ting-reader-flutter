@@ -4,12 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
-import 'src/features/login/login_page.dart';
+import 'src/features/login_page.dart';
 import 'src/core/state/app_state.dart';
 import 'src/core/state/download_state.dart';
 import 'src/core/state/player_state.dart';
 import 'src/core/theme/app_theme.dart';
-import 'src/features/shell/app_shell.dart';
+import 'src/features/app_shell.dart';
 import 'src/shared/app_scope.dart';
 import 'src/shared/common/common_widgets.dart';
 

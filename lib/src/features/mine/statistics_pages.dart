@@ -1,4 +1,4 @@
-part of 'user_pages.dart';
+part of 'mine_page.dart';
 
 class AdminStatisticsPage extends StatefulWidget {
   const AdminStatisticsPage({super.key, this.onBack});

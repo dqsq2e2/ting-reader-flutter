@@ -169,6 +169,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> applySettings(Map<String, dynamic> settings) async {
     final nested = asMap(settings['settings_json'] ?? settings['settingsJson']);
+    final nextSpeed = _resolvePlaybackSpeedSetting(
+      settings,
+      nested: nested,
+    );
     final next = _boolSetting(
       settings,
       'ignore_audio_focus',
@@ -176,6 +180,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       nested: nested,
       fallback: false,
     );
+    await setSpeed(nextSpeed);
     await setIgnoreAudioFocus(next);
   }
 
@@ -1225,4 +1230,20 @@ double? _doubleValue(dynamic value) {
   if (value is double) return value;
   if (value is num) return value.toDouble();
   return double.tryParse(value.toString());
+}
+
+double _resolvePlaybackSpeedSetting(
+  Map<String, dynamic> settings, {
+  Map<String, dynamic>? nested,
+}) {
+  final nestedSettings =
+      nested ?? asMap(settings['settings_json'] ?? settings['settingsJson']);
+  for (final source in [settings, nestedSettings]) {
+    final value = source['playback_speed'] ?? source['playbackSpeed'];
+    final parsed = _doubleValue(value);
+    if (parsed != null && parsed.isFinite && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 1.0;
 }
