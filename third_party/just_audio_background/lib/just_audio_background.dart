@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio_platform_interface/just_audio_platform_interface.dart';
@@ -16,6 +17,7 @@ Future<void> Function()? _externalNextHandler;
 Future<void> Function()? _externalPreviousHandler;
 bool Function()? _externalHasNextHandler;
 bool Function()? _externalHasPreviousHandler;
+bool _audioFocusEnabled = true;
 
 /// Provides the [init] method to initialise just_audio for background playback.
 class JustAudioBackground {
@@ -34,6 +36,12 @@ class JustAudioBackground {
     _externalPreviousHandler = onPrevious;
     _externalHasNextHandler = hasNext;
     _externalHasPreviousHandler = hasPrevious;
+  }
+
+  /// Controls whether every playback entry point, including media notification
+  /// and headset controls, must acquire the app audio session before playing.
+  static void setAudioFocusEnabled(bool enabled) {
+    _audioFocusEnabled = enabled;
   }
 
   /// Initialise just_audio for background playback. This should be called from
@@ -721,6 +729,14 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> play() async {
+    if (_audioFocusEnabled) {
+      try {
+        final session = await AudioSession.instance;
+        if (!await session.setActive(true)) return;
+      } catch (_) {
+        return;
+      }
+    }
     _updatePosition();
     _playing = true;
     _broadcastState();

@@ -17,8 +17,10 @@ class AppState extends ChangeNotifier {
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'ignoreAudioFocus',
-    // Kept for backward compatibility so any previously persisted local copy
-    // is stripped from the merged settings; the toggle itself is gone.
+    'resume_after_interruption',
+    'resumeAfterInterruption',
+  };
+  static const _obsoleteLocalSettingKeys = <String>{
     'resume_after_interruption',
     'resumeAfterInterruption',
   };
@@ -453,7 +455,19 @@ class AppState extends ChangeNotifier {
     final raw = _prefs?.getString(_localSettingsPrefsKey);
     if (raw == null || raw.isEmpty) return {};
     try {
-      return asMap(jsonDecode(raw));
+      final local = asMap(jsonDecode(raw));
+      for (final key in _obsoleteLocalSettingKeys) {
+        local.remove(key);
+      }
+      for (final nestedKey in const ['settings_json', 'settingsJson']) {
+        final nested = asMap(local[nestedKey]);
+        if (nested.isEmpty) continue;
+        for (final key in _obsoleteLocalSettingKeys) {
+          nested.remove(key);
+        }
+        local[nestedKey] = nested;
+      }
+      return local;
     } catch (_) {
       return {};
     }

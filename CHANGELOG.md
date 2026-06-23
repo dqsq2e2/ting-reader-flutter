@@ -2,18 +2,16 @@
 
 ## 1.0.6 - 2026-06-23
 
-- 真正修复音频焦点状态机：1.0.5 让 just_audio 接管中断处理导致两个 handler
-  并发争抢 `_audio` 状态、auto-resume 因 `handleAudioSessionActivation: false`
-  实际不重激活会话；改回手动管理，并解决根因——`audio_session` 在
-  `audioFocusRequest != null` 时让后续 `setActive(true)` 直接早返回，导致每
-  次 reacquire 焦点都没有真正向系统注册新的焦点回调和 noisy 接收器。
-- 申请焦点前先 `setActive(false)` 强制 abandon，让下一次 `setActive(true)`
-  真正重新 `requestAudioFocus`，保证每次播放都有干净的焦点监听链。
-- 中断恢复路径不再按 `AudioInterruptionType` 过滤：只要 begin 时正在播放，
-  end 时一律尝试恢复，避免 OS/App 上报类型差异（pause/duck/unknown）导致
-  resume 路径被跳过。
-- 用 `isPlaying`（playingStream 同步镜像）代替 `_audio.playing`，规避底层
-  状态滞后导致 begin 时漏记 `_wasPlayingBeforeInterruption`。
+- 修复 Android 永久音频焦点丢失后无法恢复的根因：`audio_session` 收到
+  `AUDIOFOCUS_LOSS` 会主动 abandon，并且不会再发送 interruption end；客户端
+  现在会等待外部媒体真正结束后重新申请焦点并恢复播放。
+- 移除每次播放前 `setActive(false)` 再激活的错误重置逻辑，避免主动放弃焦点
+  与异步中断回调竞争，导致手动继续播放后再次被打断时退化为混音。
+- 通知栏、锁屏和耳机按键等所有后台播放入口统一先申请音频焦点，避免绕过
+  `PlayerState` 后在无焦点状态下继续播放。
+- 耳机断连除 `AUDIO_BECOMING_NOISY` 外同时监听输出设备移除，覆盖有线、
+  蓝牙、USB 和助听设备，并确保断连后只暂停、不自动恢复。
+- “被其他应用暂停后自动恢复”保持默认始终开启，并清理旧版本遗留的本地设置。
 
 ## 1.0.5 - 2026-06-23
 

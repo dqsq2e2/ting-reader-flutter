@@ -19,14 +19,11 @@ import 'download_state.dart';
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
     WidgetsBinding.instance.addObserver(this);
-    // We manage interruptions ourselves so we can guarantee a clean
-    // abandon/re-request audio-focus cycle on every play. Letting just_audio
-    // handle it doesn't work here: with `handleAudioSessionActivation: false`
-    // its internal resume after interruption never calls `setActive(true)`,
-    // and with `handleAudioSessionActivation: true` the second activation
-    // short-circuits inside audio_session (the cached `audioFocusRequest` is
-    // not null) so the focus listener gets stuck pointing at a stale closure
-    // and subsequent interruptions are missed entirely.
+    // Interruption policy is managed here because Android distinguishes
+    // transient focus loss (which sends a later gain event) from permanent
+    // focus loss (which does not). Audio-session activation is also requested
+    // by just_audio_background at its lowest play entry point so notification
+    // and headset controls cannot accidentally resume without audio focus.
     _audio = audio.AudioPlayer(
       handleInterruptions: false,
       handleAudioSessionActivation: false,
@@ -57,6 +54,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       }
       isPlaying = playing;
       if (playing) {
+        _cancelFocusRecovery(clearResume: true);
         _startProgressTimer();
       } else {
         _stopProgressTimers();
@@ -80,9 +78,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         hasNext: () => _canMoveChapter(1),
         hasPrevious: () => _canMoveChapter(-1),
       );
+      audio_background.JustAudioBackground.setAudioFocusEnabled(true);
     }
-    unawaited(_configureAudioSession());
-    unawaited(_bindAudioSessionEvents());
+    _audioSessionReady = _initializeAudioSession();
   }
 
   final AppState appState;
@@ -95,6 +93,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<int?>? _indexSub;
   StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _noisySub;
+  StreamSubscription<audio_session.AudioDevicesChangedEvent>?
+      _devicesChangedSub;
+  late final Future<void> _audioSessionReady;
+  Timer? _focusRecoveryTimer;
+  bool _focusRecoveryInFlight = false;
+  int _inactiveAudioChecks = 0;
   WebSocket? _progressSocket;
   StreamSubscription<dynamic>? _progressSocketSub;
   Timer? _progressSocketPingTimer;
@@ -127,9 +131,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool ignoreAudioFocus = false;
   bool usingLocalFile = false;
   bool _advancingFromOutro = false;
-  // Tracks whether playback was running when an interruption started, so we
-  // know whether to resume after it ends.
-  bool _wasPlayingBeforeInterruption = false;
+  // Always enabled: an interruption resumes only if playback was active when
+  // it began. Headset disconnection explicitly clears this flag.
+  bool _resumeAfterInterruption = false;
 
   bool get hasChapter => currentBook != null && currentChapter != null;
 
@@ -176,13 +180,27 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setIgnoreAudioFocus(bool value) async {
+    if (!kIsWeb) {
+      audio_background.JustAudioBackground.setAudioFocusEnabled(
+        !value || defaultTargetPlatform != TargetPlatform.android,
+      );
+    }
+    await _audioSessionReady;
     if (ignoreAudioFocus == value) return;
     ignoreAudioFocus = value;
+    _cancelFocusRecovery(clearResume: value);
     await _configureAudioSession();
-    if (!ignoreAudioFocus && isPlaying) {
+    if (ignoreAudioFocus) {
+      await _deactivateAudioSession();
+    } else if (isPlaying || _audio.playing) {
       await _activateAudioSessionForPlayback();
     }
     notifyListeners();
+  }
+
+  Future<void> _initializeAudioSession() async {
+    await _configureAudioSession();
+    await _bindAudioSessionEvents();
   }
 
   Future<void> _configureAudioSession() async {
@@ -218,20 +236,20 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
     try {
       final session = await audio_session.AudioSession.instance;
-      // Force a fresh focus request. audio_session caches the previous
-      // AudioFocusRequest and short-circuits subsequent setActive(true) calls
-      // when it is still alive, which leaves the onAudioFocusChanged listener
-      // pointing at a stale handler after the first interruption cycle.
-      // Abandoning first guarantees the next setActive truly re-registers
-      // both the focus listener and the AUDIO_BECOMING_NOISY receiver.
-      try {
-        await session.setActive(false);
-      } catch (_) {
-        // setActive(false) failing is fine — we'll try to activate next.
-      }
       return session.setActive(true);
     } catch (_) {
-      return true;
+      return defaultTargetPlatform != TargetPlatform.android &&
+          defaultTargetPlatform != TargetPlatform.iOS;
+    }
+  }
+
+  Future<void> _deactivateAudioSession() async {
+    if (kIsWeb) return;
+    try {
+      final session = await audio_session.AudioSession.instance;
+      await session.setActive(false);
+    } catch (_) {
+      // Releasing focus is best effort when switching to mix mode.
     }
   }
 
@@ -242,40 +260,111 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _interruptionSub =
           session.interruptionEventStream.listen(_handleInterruption);
       _noisySub = session.becomingNoisyEventStream.listen((_) {
-        // Headset unplugged: always pause, never auto-resume.
-        _wasPlayingBeforeInterruption = false;
-        unawaited(_audio.pause());
-        unawaited(sendProgress());
+        _pauseForDisconnectedOutput();
       });
+      _devicesChangedSub =
+          session.devicesChangedEventStream.listen(_handleAudioDevicesChanged);
     } catch (_) {
       // Audio session events are best effort.
     }
   }
 
+  void _handleAudioDevicesChanged(
+    audio_session.AudioDevicesChangedEvent event,
+  ) {
+    final personalOutputRemoved = event.devicesRemoved.any(
+      (device) =>
+          device.isOutput &&
+          _personalAudioDeviceTypeNames.contains(device.type.name),
+    );
+    if (personalOutputRemoved) _pauseForDisconnectedOutput();
+  }
+
+  void _pauseForDisconnectedOutput() {
+    // Headset unplugged: always pause, never auto-resume.
+    _cancelFocusRecovery(clearResume: true);
+    unawaited(_audio.pause());
+    unawaited(sendProgress());
+  }
+
   void _handleInterruption(audio_session.AudioInterruptionEvent event) {
     if (ignoreAudioFocus) return;
     if (event.begin) {
-      // Use our own `isPlaying` mirror (kept in sync via playingStream)
-      // rather than `_audio.playing`, which can lag the underlying state.
-      if (isPlaying) {
-        _wasPlayingBeforeInterruption = true;
+      if (isPlaying || _audio.playing) {
+        _resumeAfterInterruption = true;
         unawaited(_audio.pause());
         unawaited(sendProgress());
       }
+      if (_resumeAfterInterruption &&
+          event.type == audio_session.AudioInterruptionType.unknown &&
+          defaultTargetPlatform == TargetPlatform.android) {
+        _startPermanentFocusRecovery();
+      }
       return;
     }
-    // Interruption ended. Resume regardless of the reported type — different
-    // OS/app combos report `pause`/`duck`/`unknown` here, and we always want
-    // to come back if we were playing when the interruption started.
-    if (_wasPlayingBeforeInterruption) {
-      _wasPlayingBeforeInterruption = false;
-      unawaited(_playWithSession());
+    if (_resumeAfterInterruption &&
+        event.type != audio_session.AudioInterruptionType.unknown) {
+      unawaited(_resumeAfterFocusReturned());
     }
   }
 
-  Future<void> _playWithSession() async {
-    if (!await _activateAudioSessionForPlayback()) return;
+  void _startPermanentFocusRecovery() {
+    if (_focusRecoveryTimer != null) return;
+    _inactiveAudioChecks = 0;
+    _focusRecoveryTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      unawaited(_tryRecoverPermanentFocusLoss());
+    });
+  }
+
+  Future<void> _tryRecoverPermanentFocusLoss() async {
+    if (_focusRecoveryInFlight ||
+        !_resumeAfterInterruption ||
+        ignoreAudioFocus ||
+        isPlaying ||
+        _audio.playing) {
+      if (!_resumeAfterInterruption || ignoreAudioFocus || isPlaying) {
+        _cancelFocusRecovery();
+      }
+      return;
+    }
+    _focusRecoveryInFlight = true;
+    try {
+      final manager = audio_session.AndroidAudioManager();
+      if (await manager.isMusicActive()) {
+        _inactiveAudioChecks = 0;
+        return;
+      }
+      // Avoid stealing focus during a short buffering gap in the other app.
+      _inactiveAudioChecks++;
+      if (_inactiveAudioChecks < 2) return;
+      await _resumeAfterFocusReturned();
+    } catch (_) {
+      // Keep waiting. Transient interruptions still recover from their normal
+      // focus-gain event even if this Android-only fallback is unavailable.
+    } finally {
+      _focusRecoveryInFlight = false;
+    }
+  }
+
+  Future<void> _resumeAfterFocusReturned() async {
+    if (!_resumeAfterInterruption || ignoreAudioFocus) return;
+    if (!await _playWithSession()) return;
+    _resumeAfterInterruption = false;
+    _cancelFocusRecovery();
+  }
+
+  void _cancelFocusRecovery({bool clearResume = false}) {
+    _focusRecoveryTimer?.cancel();
+    _focusRecoveryTimer = null;
+    _inactiveAudioChecks = 0;
+    if (clearResume) _resumeAfterInterruption = false;
+  }
+
+  Future<bool> _playWithSession() async {
+    await _audioSessionReady;
+    if (!await _activateAudioSessionForPlayback()) return false;
     await _audio.play();
+    return true;
   }
 
   Future<void> playChapter(
@@ -284,6 +373,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     Chapter chapter, {
     double? startAt,
   }) async {
+    _cancelFocusRecovery(clearResume: true);
     await applySettings(appState.settings);
     final playGeneration = ++_playGeneration;
     currentBook = book;
@@ -372,6 +462,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> togglePlay() async {
     if (!hasChapter) return;
+    _cancelFocusRecovery(clearResume: true);
     if (_audio.playing) {
       await _audio.pause();
       await sendProgress();
@@ -1087,15 +1178,28 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _indexSub?.cancel();
     _interruptionSub?.cancel();
     _noisySub?.cancel();
+    _devicesChangedSub?.cancel();
+    _cancelFocusRecovery(clearResume: true);
     if (!kIsWeb) {
       audio_background.JustAudioBackground.setSeekHandler(null);
       audio_background.JustAudioBackground.setChapterNavigationHandlers();
+      audio_background.JustAudioBackground.setAudioFocusEnabled(true);
     }
     _closeProgressSocket();
     _audio.dispose();
     super.dispose();
   }
 }
+
+const _personalAudioDeviceTypeNames = <String>{
+  'wiredHeadset',
+  'wiredHeadphones',
+  'bluetoothSco',
+  'bluetoothA2dp',
+  'bluetoothLe',
+  'usbAudio',
+  'hearingAid',
+};
 
 bool _boolSetting(
   Map<String, dynamic> data,
