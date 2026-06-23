@@ -19,14 +19,16 @@ import 'download_state.dart';
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
     WidgetsBinding.instance.addObserver(this);
-    // Let just_audio subscribe to audio_session's interruption and
-    // becoming-noisy streams. It will pause on focus loss / headset unplug
-    // and resume after transient interruptions automatically. We keep
-    // `handleAudioSessionActivation: false` because we still want to control
-    // session activation ourselves through `_playWithSession`, which respects
-    // `ignoreAudioFocus`.
+    // We manage interruptions ourselves so we can guarantee a clean
+    // abandon/re-request audio-focus cycle on every play. Letting just_audio
+    // handle it doesn't work here: with `handleAudioSessionActivation: false`
+    // its internal resume after interruption never calls `setActive(true)`,
+    // and with `handleAudioSessionActivation: true` the second activation
+    // short-circuits inside audio_session (the cached `audioFocusRequest` is
+    // not null) so the focus listener gets stuck pointing at a stale closure
+    // and subsequent interruptions are missed entirely.
     _audio = audio.AudioPlayer(
-      handleInterruptions: true,
+      handleInterruptions: false,
       handleAudioSessionActivation: false,
     );
     _positionSub = _audio.positionStream.listen((position) {
@@ -80,6 +82,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
     unawaited(_configureAudioSession());
+    unawaited(_bindAudioSessionEvents());
   }
 
   final AppState appState;
@@ -90,6 +93,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<audio.PlayerState>? _completeSub;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
+  StreamSubscription<void>? _noisySub;
   WebSocket? _progressSocket;
   StreamSubscription<dynamic>? _progressSocketSub;
   Timer? _progressSocketPingTimer;
@@ -122,6 +127,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool ignoreAudioFocus = false;
   bool usingLocalFile = false;
   bool _advancingFromOutro = false;
+  // Tracks whether playback was running when an interruption started, so we
+  // know whether to resume after it ends.
+  bool _wasPlayingBeforeInterruption = false;
 
   bool get hasChapter => currentBook != null && currentChapter != null;
 
@@ -210,9 +218,58 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
     try {
       final session = await audio_session.AudioSession.instance;
+      // Force a fresh focus request. audio_session caches the previous
+      // AudioFocusRequest and short-circuits subsequent setActive(true) calls
+      // when it is still alive, which leaves the onAudioFocusChanged listener
+      // pointing at a stale handler after the first interruption cycle.
+      // Abandoning first guarantees the next setActive truly re-registers
+      // both the focus listener and the AUDIO_BECOMING_NOISY receiver.
+      try {
+        await session.setActive(false);
+      } catch (_) {
+        // setActive(false) failing is fine — we'll try to activate next.
+      }
       return session.setActive(true);
     } catch (_) {
       return true;
+    }
+  }
+
+  Future<void> _bindAudioSessionEvents() async {
+    if (kIsWeb) return;
+    try {
+      final session = await audio_session.AudioSession.instance;
+      _interruptionSub =
+          session.interruptionEventStream.listen(_handleInterruption);
+      _noisySub = session.becomingNoisyEventStream.listen((_) {
+        // Headset unplugged: always pause, never auto-resume.
+        _wasPlayingBeforeInterruption = false;
+        unawaited(_audio.pause());
+        unawaited(sendProgress());
+      });
+    } catch (_) {
+      // Audio session events are best effort.
+    }
+  }
+
+  void _handleInterruption(audio_session.AudioInterruptionEvent event) {
+    if (ignoreAudioFocus) return;
+    if (event.begin) {
+      // Use our own `isPlaying` mirror (kept in sync via playingStream)
+      // rather than `_audio.playing`, which can lag the underlying state.
+      if (isPlaying) {
+        _wasPlayingBeforeInterruption = true;
+        unawaited(_audio.pause());
+        unawaited(sendProgress());
+      }
+      return;
+    }
+    // Interruption ended. Resume regardless of the reported type — different
+    // OS/app combos report `pause`/`duck`/`unknown` here, and we always want
+    // to come back if we were playing when the interruption started.
+    if (_wasPlayingBeforeInterruption) {
+      _wasPlayingBeforeInterruption = false;
+      unawaited(_playWithSession());
     }
   }
 
@@ -1028,6 +1085,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _playingSub?.cancel();
     _completeSub?.cancel();
     _indexSub?.cancel();
+    _interruptionSub?.cancel();
+    _noisySub?.cancel();
     if (!kIsWeb) {
       audio_background.JustAudioBackground.setSeekHandler(null);
       audio_background.JustAudioBackground.setChapterNavigationHandlers();

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.6 - 2026-06-23
+
+- 真正修复音频焦点状态机：1.0.5 让 just_audio 接管中断处理导致两个 handler
+  并发争抢 `_audio` 状态、auto-resume 因 `handleAudioSessionActivation: false`
+  实际不重激活会话；改回手动管理，并解决根因——`audio_session` 在
+  `audioFocusRequest != null` 时让后续 `setActive(true)` 直接早返回，导致每
+  次 reacquire 焦点都没有真正向系统注册新的焦点回调和 noisy 接收器。
+- 申请焦点前先 `setActive(false)` 强制 abandon，让下一次 `setActive(true)`
+  真正重新 `requestAudioFocus`，保证每次播放都有干净的焦点监听链。
+- 中断恢复路径不再按 `AudioInterruptionType` 过滤：只要 begin 时正在播放，
+  end 时一律尝试恢复，避免 OS/App 上报类型差异（pause/duck/unknown）导致
+  resume 路径被跳过。
+- 用 `isPlaying`（playingStream 同步镜像）代替 `_audio.playing`，规避底层
+  状态滞后导致 begin 时漏记 `_wasPlayingBeforeInterruption`。
+
 ## 1.0.5 - 2026-06-23
 
 - 修复被通话、其他应用等短暂打断后播放无法自动恢复的问题，改由 just_audio 内置的中断管线统一处理 begin/end 事件。
