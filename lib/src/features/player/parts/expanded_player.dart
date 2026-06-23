@@ -9,7 +9,6 @@ class _ExpandedPlayer extends StatefulWidget {
   State<_ExpandedPlayer> createState() => _ExpandedPlayerState();
 }
 
-
 class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   static const _speedSteps = [0.75, 1.0, 1.25, 1.5, 2.0];
 
@@ -201,8 +200,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                 border: Border.all(color: context.faintBorder),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: context.isDark ? 0.48 : 0.18),
+                    color: Colors.black
+                        .withValues(alpha: context.isDark ? 0.48 : 0.18),
                     blurRadius: 30,
                     offset: const Offset(0, 16),
                   ),
@@ -336,8 +335,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                 border: Border.all(color: context.faintBorder),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: context.isDark ? 0.48 : 0.18),
+                    color: Colors.black
+                        .withValues(alpha: context.isDark ? 0.48 : 0.18),
                     blurRadius: 30,
                     offset: const Offset(0, 16),
                   ),
@@ -532,8 +531,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   borderRadius: BorderRadius.circular(32),
                   boxShadow: [
                     BoxShadow(
-                      color:
-                          Colors.black.withValues(alpha: context.isDark ? 0.55 : 0.2),
+                      color: Colors.black
+                          .withValues(alpha: context.isDark ? 0.55 : 0.2),
                       blurRadius: 34,
                       offset: const Offset(0, 18),
                     ),
@@ -691,10 +690,65 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     return '$minutes:${secs.toString().padLeft(2, '0')}';
   }
 
+  Size _expandedCoverBounds({
+    required Size screenSize,
+    required EdgeInsets safePadding,
+    required bool tightControls,
+    required double mainButtonSize,
+    required bool hasError,
+  }) {
+    final baseMaxWidth = _coverShape == CoverShape.square
+        ? (tightControls ? 300.0 : 340.0)
+        : (tightControls ? 280.0 : 320.0);
+    final baseMaxHeight = _coverShape == CoverShape.square
+        ? baseMaxWidth
+        : (tightControls ? 340.0 : 390.0);
+    final portraitPhone =
+        screenSize.height > screenSize.width && screenSize.width < 600;
+    if (!portraitPhone) return Size(baseMaxWidth, baseMaxHeight);
+
+    // Honor 90 Pro is the reference device where the previous cover size fits.
+    const referencePortraitHeight = 900.0;
+    if (screenSize.height >= referencePortraitHeight) {
+      return Size(baseMaxWidth, baseMaxHeight);
+    }
+
+    final afterCoverGap = tightControls ? 20.0 : 24.0;
+    final titleHeight = tightControls ? 32.0 : 36.0;
+    final quickActionGap = tightControls ? 16.0 : 20.0;
+    final sliderGap = tightControls ? 16.0 : 22.0;
+    final controlsGap = tightControls ? 20.0 : 26.0;
+    final errorHeight = hasError ? 72.0 : 0.0;
+    final reservedHeight = safePadding.top +
+        safePadding.bottom * 2 +
+        18 +
+        28 +
+        38 +
+        28 +
+        afterCoverGap +
+        titleHeight +
+        9 +
+        18 +
+        errorHeight +
+        quickActionGap +
+        63 +
+        sliderGap +
+        48 +
+        42 +
+        controlsGap +
+        mainButtonSize;
+    final availableCoverHeight = screenSize.height - reservedHeight;
+    final minCoverHeight = _coverShape == CoverShape.square ? 132.0 : 156.0;
+    final coverMaxHeight =
+        availableCoverHeight.clamp(minCoverHeight, baseMaxHeight).toDouble();
+    return Size(baseMaxWidth, coverMaxHeight);
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
-    final bottom = MediaQuery.of(context).padding.bottom;
+    final mediaPadding = MediaQuery.paddingOf(context);
+    final bottom = mediaPadding.bottom;
 
     return AnimatedBuilder(
       animation: widget.player,
@@ -736,12 +790,13 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
             tightControls ? 22.0 : (compactControls ? 24.0 : 26.0);
         final controlGap =
             tightControls ? 14.0 : (compactControls ? 18.0 : 22.0);
-        final coverMaxWidth = _coverShape == CoverShape.square
-            ? (tightControls ? 300.0 : 340.0)
-            : (tightControls ? 280.0 : 320.0);
-        final coverMaxHeight = _coverShape == CoverShape.square
-            ? coverMaxWidth
-            : (tightControls ? 340.0 : 390.0);
+        final coverBounds = _expandedCoverBounds(
+          screenSize: size,
+          safePadding: mediaPadding,
+          tightControls: tightControls,
+          mainButtonSize: mainButtonSize,
+          hasError: player.error != null,
+        );
 
         return Material(
           color: backgroundColor,
@@ -845,8 +900,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           const SizedBox(height: 28),
                           ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth: coverMaxWidth,
-                              maxHeight: coverMaxHeight,
+                              maxWidth: coverBounds.width,
+                              maxHeight: coverBounds.height,
                             ),
                             child: AspectRatio(
                               aspectRatio: coverAspectRatio(_coverShape),
@@ -861,8 +916,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 
-                                          context.isDark ? 0.44 : 0.18),
+                                      color: Colors.black.withValues(
+                                          alpha: context.isDark ? 0.44 : 0.18),
                                       blurRadius: 34,
                                       offset: const Offset(0, 22),
                                     ),
@@ -1132,5 +1187,3 @@ Color? _parsePlayerThemeColor(String? raw) {
   }
   return null;
 }
-
-
