@@ -412,7 +412,7 @@ class _PluginTabButton extends StatelessWidget {
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: Colors.black.withValues(alpha: 0.04),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -557,7 +557,7 @@ class _PluginCategoryChip extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected
               ? (context.isDark
-                  ? AppColors.primary700.withOpacity(0.24)
+                  ? AppColors.primary700.withValues(alpha: 0.24)
                   : AppColors.primary50)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
@@ -1094,7 +1094,7 @@ class _Badge extends StatelessWidget {
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

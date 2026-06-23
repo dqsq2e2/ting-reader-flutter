@@ -55,7 +55,7 @@ class _HomeHeader extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -564,11 +564,11 @@ class _HeroCoverStack extends StatelessWidget {
                 angle: -0.08,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.45),
+                    color: Colors.white.withValues(alpha: 0.45),
                     borderRadius: BorderRadius.circular(radius),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.slate900.withOpacity(0.1),
+                        color: AppColors.slate900.withValues(alpha: 0.1),
                         blurRadius: 30,
                         offset: const Offset(0, 18),
                       ),
@@ -591,7 +591,7 @@ class _HeroCoverStack extends StatelessWidget {
                       fit: StackFit.expand,
                       children: [
                         CoverImage(url: nextCover, radius: radius),
-                        Container(color: AppColors.slate950.withOpacity(0.32)),
+                        Container(color: AppColors.slate950.withValues(alpha: 0.32)),
                       ],
                     ),
                   ),
@@ -617,11 +617,11 @@ class _HeroCoverStack extends StatelessWidget {
                               vertical: compact ? 8 : 10,
                             ),
                             decoration: BoxDecoration(
-                              color: AppColors.slate950.withOpacity(0.48),
+                              color: AppColors.slate950.withValues(alpha: 0.48),
                               borderRadius:
                                   BorderRadius.circular(compact ? 14 : 18),
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.12),
+                                color: Colors.white.withValues(alpha: 0.12),
                               ),
                             ),
                             child: Row(
@@ -659,7 +659,7 @@ class _HeroCoverStack extends StatelessWidget {
                                   width: compact ? 28 : 34,
                                   height: compact ? 28 : 34,
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.12),
+                                    color: Colors.white.withValues(alpha: 0.12),
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(Icons.refresh_rounded,

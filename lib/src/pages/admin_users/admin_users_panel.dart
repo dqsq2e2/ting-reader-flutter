@@ -23,7 +23,7 @@ class _UsersPanel extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -59,7 +59,7 @@ class _UsersPanel extends StatelessWidget {
               TableRow(
                 decoration: BoxDecoration(
                   color: context.isDark
-                      ? AppColors.slate800.withOpacity(0.5)
+                      ? AppColors.slate800.withValues(alpha: 0.5)
                       : AppColors.slate50,
                 ),
                 children: const [
@@ -421,7 +421,7 @@ class _UserIconButton extends StatelessWidget {
         padding: EdgeInsets.zero,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
-      hoverColor: activeColor.withOpacity(0.08),
+      hoverColor: activeColor.withValues(alpha: 0.08),
       icon: Icon(
         icon,
         size: 20,
@@ -447,7 +447,7 @@ class _CreateUserButton extends StatelessWidget {
           backgroundColor: AppColors.primary600,
           foregroundColor: Colors.white,
           elevation: 8,
-          shadowColor: AppColors.primary500.withOpacity(0.3),
+          shadowColor: AppColors.primary500.withValues(alpha: 0.3),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -484,10 +484,10 @@ class _UserRoleChoice extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 13),
         decoration: BoxDecoration(
-          color: selected ? color.withOpacity(0.08) : context.cardColor,
+          color: selected ? color.withValues(alpha: 0.08) : context.cardColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? color.withOpacity(0.3) : context.faintBorder,
+            color: selected ? color.withValues(alpha: 0.3) : context.faintBorder,
           ),
         ),
         alignment: Alignment.center,

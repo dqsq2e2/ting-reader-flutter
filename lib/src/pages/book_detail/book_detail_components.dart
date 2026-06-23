@@ -53,8 +53,8 @@ class _BookTag extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: context.isDark
-              ? AppColors.slate700.withOpacity(0.5)
-              : AppColors.slate200.withOpacity(0.5),
+              ? AppColors.slate700.withValues(alpha: 0.5)
+              : AppColors.slate200.withValues(alpha: 0.5),
         ),
       ),
       child: Text(
@@ -109,7 +109,7 @@ class _BookActionPanel extends StatelessWidget {
                 backgroundColor: playBackground,
                 foregroundColor: playForeground,
                 elevation: 0,
-                shadowColor: playBackground.withOpacity(0.3),
+                shadowColor: playBackground.withValues(alpha: 0.3),
                 padding: const EdgeInsets.symmetric(horizontal: 28),
                 minimumSize: const Size(0, 52),
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -345,7 +345,7 @@ class _DetailActionButtonState extends State<_DetailActionButton> {
               borderRadius: BorderRadius.circular(16),
               side: BorderSide(
                 color: widget.selected
-                    ? widget.selectedColor.withOpacity(0.22)
+                    ? widget.selectedColor.withValues(alpha: 0.22)
                     : context.faintBorder,
               ),
             ),
@@ -386,15 +386,15 @@ class _DescriptionPanelState extends State<_DescriptionPanel> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: widget.themeColor != null && !context.isDark
-            ? widget.themeColor!.withOpacity(0.08)
+            ? widget.themeColor!.withValues(alpha: 0.08)
             : (context.isDark
-                ? AppColors.slate900.withOpacity(0.28)
-                : Colors.white.withOpacity(0.74)),
+                ? AppColors.slate900.withValues(alpha: 0.28)
+                : Colors.white.withValues(alpha: 0.74)),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: context.isDark
-              ? AppColors.slate800.withOpacity(0.5)
-              : AppColors.slate200.withOpacity(0.72),
+              ? AppColors.slate800.withValues(alpha: 0.5)
+              : AppColors.slate200.withValues(alpha: 0.72),
         ),
       ),
       child: Column(

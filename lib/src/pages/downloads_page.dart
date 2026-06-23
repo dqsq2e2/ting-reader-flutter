@@ -127,7 +127,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 DropdownButtonFormField<int>(
-                  value: maxConcurrentDownloads,
+                  initialValue: maxConcurrentDownloads,
                   decoration: const InputDecoration(labelText: '同时下载'),
                   items: [
                     for (var i = 1; i <= 6; i++)
@@ -156,7 +156,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   decoration: BoxDecoration(
                     color: context.isDark
-                        ? AppColors.slate800.withOpacity(0.3)
+                        ? AppColors.slate800.withValues(alpha: 0.3)
                         : AppColors.slate50,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: context.faintBorder),
@@ -572,8 +572,8 @@ class _StatPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.16 : 0.08),
-        border: Border.all(color: color.withOpacity(0.18)),
+        color: color.withValues(alpha: context.isDark ? 0.16 : 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.18)),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -679,8 +679,8 @@ class _ActiveTaskRow extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate800.withOpacity(0.28)
-            : AppColors.slate50.withOpacity(0.85),
+            ? AppColors.slate800.withValues(alpha: 0.28)
+            : AppColors.slate50.withValues(alpha: 0.85),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.faintBorder),
       ),
@@ -695,7 +695,7 @@ class _ActiveTaskRow extends StatelessWidget {
                 height: 38,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: color.withOpacity(context.isDark ? 0.2 : 0.12),
+                  color: color.withValues(alpha: context.isDark ? 0.2 : 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(_statusIcon(task.status), color: color, size: 20),
@@ -816,7 +816,7 @@ class _StatusBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.2 : 0.1),
+        color: color.withValues(alpha: context.isDark ? 0.2 : 0.1),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -1283,7 +1283,7 @@ class _DownloadChapterIndex extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.primary700.withOpacity(0.16)
+            ? AppColors.primary700.withValues(alpha: 0.16)
             : AppColors.primary50,
         borderRadius: BorderRadius.circular(compact ? 7 : 9),
       ),
@@ -1317,7 +1317,7 @@ class _DownloadSelectionBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate900.withOpacity(0.28)
+            ? AppColors.slate900.withValues(alpha: 0.28)
             : Colors.white,
         border: Border(top: BorderSide(color: context.faintBorder)),
       ),

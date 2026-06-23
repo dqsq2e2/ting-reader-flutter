@@ -852,7 +852,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(context.isDark ? 0.36 : 0.18),
+                  color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.18),
                   blurRadius: 32,
                   offset: const Offset(0, 22),
                 ),

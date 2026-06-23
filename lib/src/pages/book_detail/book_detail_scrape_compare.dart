@@ -314,7 +314,7 @@ class _ScrapeReviewTextFieldState extends State<_ScrapeReviewTextField> {
             isDense: true,
             filled: true,
             fillColor: context.isDark
-                ? AppColors.primary950.withOpacity(0.25)
+                ? AppColors.primary950.withValues(alpha: 0.25)
                 : AppColors.primary50,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -367,7 +367,7 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: context.isDark
-                ? AppColors.primary950.withOpacity(0.25)
+                ? AppColors.primary950.withValues(alpha: 0.25)
                 : AppColors.primary50,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: context.faintBorder),

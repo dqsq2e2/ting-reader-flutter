@@ -19,8 +19,14 @@ import 'download_state.dart';
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
     WidgetsBinding.instance.addObserver(this);
+    // Let just_audio subscribe to audio_session's interruption and
+    // becoming-noisy streams. It will pause on focus loss / headset unplug
+    // and resume after transient interruptions automatically. We keep
+    // `handleAudioSessionActivation: false` because we still want to control
+    // session activation ourselves through `_playWithSession`, which respects
+    // `ignoreAudioFocus`.
     _audio = audio.AudioPlayer(
-      handleInterruptions: false,
+      handleInterruptions: true,
       handleAudioSessionActivation: false,
     );
     _positionSub = _audio.positionStream.listen((position) {
@@ -74,7 +80,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
     unawaited(_configureAudioSession());
-    unawaited(_bindAudioSessionEvents());
   }
 
   final AppState appState;
@@ -89,8 +94,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<dynamic>? _progressSocketSub;
   Timer? _progressSocketPingTimer;
   bool _progressSocketConnecting = false;
-  StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
-  StreamSubscription<void>? _noisySub;
   Timer? _progressWsTimer;
   Timer? _progressTimer;
   Future<void> _transcodeSeekQueue = Future<void>.value();
@@ -117,10 +120,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   double volume = 1;
   String? error;
   bool ignoreAudioFocus = false;
-  bool resumeAfterInterruption = false;
   bool usingLocalFile = false;
   bool _advancingFromOutro = false;
-  bool _pendingResumeAfterInterruption = false;
 
   bool get hasChapter => currentBook != null && currentChapter != null;
 
@@ -163,16 +164,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       nested: nested,
       fallback: false,
     );
-    final nextResume = !next &&
-        _boolSetting(
-          settings,
-          'resume_after_interruption',
-          'resumeAfterInterruption',
-          nested: nested,
-          fallback: false,
-        );
     await setIgnoreAudioFocus(next);
-    await setResumeAfterInterruption(nextResume);
   }
 
   Future<void> setIgnoreAudioFocus(bool value) async {
@@ -182,12 +174,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     if (!ignoreAudioFocus && isPlaying) {
       await _activateAudioSessionForPlayback();
     }
-    notifyListeners();
-  }
-
-  Future<void> setResumeAfterInterruption(bool value) async {
-    if (resumeAfterInterruption == value) return;
-    resumeAfterInterruption = value;
     notifyListeners();
   }
 
@@ -214,39 +200,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       await session.configure(config);
     } catch (_) {
       // Unsupported platforms should not block in-app playback.
-    }
-  }
-
-  Future<void> _bindAudioSessionEvents() async {
-    if (kIsWeb) return;
-    try {
-      final session = await audio_session.AudioSession.instance;
-      _interruptionSub =
-          session.interruptionEventStream.listen(_handleInterruption);
-      _noisySub = session.becomingNoisyEventStream.listen((_) {
-        _pendingResumeAfterInterruption = false;
-        unawaited(_audio.pause());
-        unawaited(sendProgress());
-      });
-    } catch (_) {
-      // Audio session events are best effort.
-    }
-  }
-
-  void _handleInterruption(audio_session.AudioInterruptionEvent event) {
-    if (ignoreAudioFocus) return;
-    if (event.begin) {
-      if (_audio.playing) {
-        _pendingResumeAfterInterruption = resumeAfterInterruption;
-        unawaited(_audio.pause());
-        unawaited(sendProgress());
-      }
-      return;
-    }
-    if (_pendingResumeAfterInterruption &&
-        event.type == audio_session.AudioInterruptionType.pause) {
-      _pendingResumeAfterInterruption = false;
-      unawaited(_playWithSession());
     }
   }
 
@@ -1075,8 +1028,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _playingSub?.cancel();
     _completeSub?.cancel();
     _indexSub?.cancel();
-    _interruptionSub?.cancel();
-    _noisySub?.cancel();
     if (!kIsWeb) {
       audio_background.JustAudioBackground.setSeekHandler(null);
       audio_background.JustAudioBackground.setChapterNavigationHandlers();

@@ -284,7 +284,7 @@ class _MyPageState extends State<MyPage> {
                   '©2026 Ting Reader. 保留所有权利。',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: context.mutedText.withOpacity(0.62),
+                    color: context.mutedText.withValues(alpha: 0.62),
                     fontSize: 12,
                   ),
                 ),
@@ -456,7 +456,7 @@ class _HistoryPageState extends State<HistoryPage> {
               boxShadow: [
                 BoxShadow(
                   color:
-                      Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+                      Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -530,7 +530,7 @@ class _AccountProfileCard extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.16 : 0.05),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.16 : 0.05),
                 blurRadius: 12,
                 offset: const Offset(0, 3),
               ),
@@ -786,7 +786,7 @@ class _SaveAccountButton extends StatelessWidget {
             label: Text(saving ? '保存中' : '保存'),
             style: ElevatedButton.styleFrom(
               elevation: 8,
-              shadowColor: AppColors.primary500.withOpacity(0.22),
+              shadowColor: AppColors.primary500.withValues(alpha: 0.22),
               backgroundColor: AppColors.primary600,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -824,7 +824,7 @@ class _SummaryCard extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate800.withOpacity(0.7)
+            ? AppColors.slate800.withValues(alpha: 0.7)
             : AppColors.slate50,
         borderRadius: BorderRadius.circular(16),
       ),
@@ -904,7 +904,7 @@ class _EntrySection extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.16 : 0.04),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.16 : 0.04),
             blurRadius: 10,
             offset: const Offset(0, 3),
           ),

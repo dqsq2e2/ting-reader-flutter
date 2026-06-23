@@ -42,7 +42,6 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _autoPreload = true;
   bool _autoCache = false;
   bool _ignoreAudioFocus = false;
-  bool _resumeAfterInterruption = false;
   String _widgetEmbedType = 'private';
 
   @override
@@ -100,14 +99,6 @@ class _SettingsPageState extends State<SettingsPage> {
       nested: nested,
       fallback: false,
     );
-    _resumeAfterInterruption = !_ignoreAudioFocus &&
-        _boolValue(
-          data,
-          'resume_after_interruption',
-          'resumeAfterInterruption',
-          nested: nested,
-          fallback: false,
-        );
     final widgetCss = _stringValue(
       data,
       'widget_css',
@@ -139,12 +130,6 @@ class _SettingsPageState extends State<SettingsPage> {
           patch.containsKey('ignoreAudioFocus')) {
         await playerState.setIgnoreAudioFocus(_ignoreAudioFocus);
       }
-      if (patch.containsKey('resume_after_interruption') ||
-          patch.containsKey('resumeAfterInterruption')) {
-        await playerState.setResumeAfterInterruption(
-          _resumeAfterInterruption,
-        );
-      }
       if (!mounted) return;
       setState(() => _saved = true);
       Future<void>.delayed(const Duration(seconds: 2), () {
@@ -160,14 +145,12 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _saveAudioFocusSettings({
     required bool ignoreAudioFocus,
-    required bool resumeAfterInterruption,
   }) async {
     if (_saving) return;
     setState(() {
       _saving = true;
       _saved = false;
       _ignoreAudioFocus = ignoreAudioFocus;
-      _resumeAfterInterruption = resumeAfterInterruption;
     });
 
     final appState = AppScope.appOf(context);
@@ -175,13 +158,9 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await appState.updateLocalSettings({
         'ignoreAudioFocus': ignoreAudioFocus,
-        'resumeAfterInterruption': resumeAfterInterruption,
       });
       _applySettings(appState.settings);
       await playerState.setIgnoreAudioFocus(_ignoreAudioFocus);
-      await playerState.setResumeAfterInterruption(
-        _resumeAfterInterruption,
-      );
       if (!mounted) return;
       setState(() => _saved = true);
       Future<void>.delayed(const Duration(seconds: 2), () {
@@ -375,7 +354,6 @@ class _SettingsPageState extends State<SettingsPage> {
               autoPreload: _autoPreload,
               autoCache: _autoCache,
               ignoreAudioFocus: _ignoreAudioFocus,
-              resumeAfterInterruption: _resumeAfterInterruption,
               showAudioFocusSetting: isMobilePlatform,
               onSpeed: (value) {
                 setState(() => _playbackSpeed = value);
@@ -390,17 +368,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 _saveSettings({'auto_cache': value});
               },
               onIgnoreAudioFocus: (value) {
-                _saveAudioFocusSettings(
-                  ignoreAudioFocus: value,
-                  resumeAfterInterruption:
-                      value ? false : _resumeAfterInterruption,
-                );
-              },
-              onResumeAfterInterruption: (value) {
-                _saveAudioFocusSettings(
-                  ignoreAudioFocus: value ? false : _ignoreAudioFocus,
-                  resumeAfterInterruption: value,
-                );
+                _saveAudioFocusSettings(ignoreAudioFocus: value);
               },
             ),
             if (appState.isAdmin && !isMobilePlatform) ...[

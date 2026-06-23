@@ -28,7 +28,7 @@ class _ConfirmActionDialog extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.34 : 0.18),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.34 : 0.18),
                 blurRadius: 32,
                 offset: const Offset(0, 22),
               ),
@@ -324,7 +324,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.34 : 0.18),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.34 : 0.18),
                 blurRadius: 34,
                 offset: const Offset(0, 24),
               ),
@@ -454,9 +454,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                       backgroundColor: AppColors.primary600,
                       foregroundColor: Colors.white,
                       disabledBackgroundColor:
-                          AppColors.primary600.withOpacity(0.55),
+                          AppColors.primary600.withValues(alpha: 0.55),
                       elevation: 8,
-                      shadowColor: AppColors.primary500.withOpacity(0.3),
+                      shadowColor: AppColors.primary500.withValues(alpha: 0.3),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),

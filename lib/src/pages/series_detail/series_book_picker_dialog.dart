@@ -52,7 +52,7 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
             border: Border.all(color: context.faintBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.16),
+                color: Colors.black.withValues(alpha: 0.16),
                 blurRadius: 24,
                 offset: const Offset(0, 14),
               ),

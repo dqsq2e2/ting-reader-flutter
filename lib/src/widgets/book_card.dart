@@ -122,7 +122,7 @@ class BookCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(6),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.16),
+                          color: Colors.black.withValues(alpha: 0.16),
                           blurRadius: 10,
                           offset: const Offset(0, 5),
                         ),
@@ -141,7 +141,7 @@ class BookCard extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: selected
                             ? AppColors.primary600
-                            : context.cardColor.withOpacity(0.86),
+                            : context.cardColor.withValues(alpha: 0.86),
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: selected
@@ -226,7 +226,7 @@ class SeriesCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -247,7 +247,7 @@ class SeriesCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
+                        color: Colors.black.withValues(alpha: 0.08),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -263,7 +263,7 @@ class SeriesCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.16),
+                        color: Colors.black.withValues(alpha: 0.16),
                         blurRadius: 8,
                         offset: const Offset(0, 4),
                       ),
@@ -279,7 +279,7 @@ class SeriesCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.62),
+                    color: Colors.black.withValues(alpha: 0.62),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Row(
@@ -306,11 +306,11 @@ class SeriesCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary600.withOpacity(0.92),
+                    color: AppColors.primary600.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(4),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),

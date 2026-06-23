@@ -144,7 +144,7 @@ class _PlaylistCoverGrid extends StatelessWidget {
         child: DecoratedBox(
           decoration: BoxDecoration(
             color:
-                AppColors.primary600.withOpacity(context.isDark ? 0.18 : 0.10),
+                AppColors.primary600.withValues(alpha: context.isDark ? 0.18 : 0.10),
           ),
           child: covers.isEmpty
               ? const Icon(

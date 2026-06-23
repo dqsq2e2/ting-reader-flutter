@@ -101,7 +101,7 @@ class _MetricCard extends StatelessWidget {
               width: compact ? 50 : 44,
               height: compact ? 50 : 44,
               decoration: BoxDecoration(
-                color: iconColor.withOpacity(0.1),
+                color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Icon(icon, color: iconColor, size: compact ? 24 : 21),
@@ -629,7 +629,7 @@ class _CollectionCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: AppColors.slate900.withOpacity(0.08),
+                color: AppColors.slate900.withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, 5),
               ),
@@ -648,8 +648,8 @@ class _CollectionCard extends StatelessWidget {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        AppColors.slate950.withOpacity(0.08),
-                        AppColors.slate950.withOpacity(0.86),
+                        AppColors.slate950.withValues(alpha: 0.08),
+                        AppColors.slate950.withValues(alpha: 0.86),
                       ],
                     ),
                   ),

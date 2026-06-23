@@ -418,7 +418,7 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.36 : 0.18),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.18),
                 blurRadius: 32,
                 offset: const Offset(0, 22),
               ),
@@ -486,7 +486,7 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                 decoration: BoxDecoration(
                   color: context.isDark
                       ? AppColors.slate900
-                      : AppColors.slate50.withOpacity(0.8),
+                      : AppColors.slate50.withValues(alpha: 0.8),
                   border: Border.symmetric(
                     horizontal: BorderSide(color: context.faintBorder),
                   ),

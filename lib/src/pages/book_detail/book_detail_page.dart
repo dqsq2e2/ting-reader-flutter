@@ -421,7 +421,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black
-                          .withOpacity(context.isDark ? 0.32 : 0.16),
+                          .withValues(alpha: context.isDark ? 0.32 : 0.16),
                       blurRadius: 24,
                       offset: const Offset(0, 16),
                     ),
@@ -577,7 +577,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
       ],
     );
     if (themeColor == null || context.isDark) return page;
-    return ColoredBox(color: themeColor.withOpacity(0.05), child: page);
+    return ColoredBox(color: themeColor.withValues(alpha: 0.05), child: page);
   }
 
   String _inlineDescription(String value) {
@@ -824,7 +824,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: dialogContext.isDark
-                                ? AppColors.slate800.withOpacity(0.5)
+                                ? AppColors.slate800.withValues(alpha: 0.5)
                                 : AppColors.slate50,
                             borderRadius: BorderRadius.circular(14),
                             border:
@@ -1079,7 +1079,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   backgroundColor: AppColors.primary600,
                   foregroundColor: Colors.white,
                   elevation: 10,
-                  shadowColor: AppColors.primary500.withOpacity(0.28),
+                  shadowColor: AppColors.primary500.withValues(alpha: 0.28),
                   padding: EdgeInsets.symmetric(
                     horizontal: compact ? 14 : 22,
                     vertical: compact ? 10 : 13,
@@ -1141,7 +1141,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black
-                            .withOpacity(dialogContext.isDark ? 0.5 : 0.2),
+                            .withValues(alpha: dialogContext.isDark ? 0.5 : 0.2),
                         blurRadius: 34,
                         offset: const Offset(0, 20),
                       ),
@@ -1279,7 +1279,7 @@ Color? _parseThemeColor(String? raw) {
 }
 
 double _themeLuminance(Color color) {
-  return (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
+  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
 }
 
 bool _isThemeLight(Color color) => _themeLuminance(color) > 0.65;

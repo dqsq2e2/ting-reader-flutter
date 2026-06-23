@@ -138,7 +138,7 @@ class _PlaylistHero extends StatelessWidget {
                         borderRadius: BorderRadius.circular(18),
                         boxShadow: [
                           BoxShadow(
-                            color: color.withOpacity(0.18),
+                            color: color.withValues(alpha: 0.18),
                             blurRadius: 18,
                             offset: const Offset(0, 8),
                           ),
@@ -256,13 +256,13 @@ class _SoftActionButton extends StatelessWidget {
       style: TextButton.styleFrom(
         foregroundColor: foreground,
         backgroundColor: danger
-            ? Colors.red.withOpacity(context.isDark ? 0.14 : 0.08)
+            ? Colors.red.withValues(alpha: context.isDark ? 0.14 : 0.08)
             : (context.isDark ? AppColors.slate800 : Colors.white),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: danger ? Colors.red.withOpacity(0.12) : context.faintBorder,
+            color: danger ? Colors.red.withValues(alpha: 0.12) : context.faintBorder,
           ),
         ),
       ),
@@ -506,7 +506,7 @@ class _PlaylistSegmentButton extends StatelessWidget {
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withValues(alpha: 0.05),
                     blurRadius: 8,
                     offset: const Offset(0, 3),
                   ),

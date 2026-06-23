@@ -71,7 +71,6 @@ class AppTheme {
       brightness: brightness,
       primary: AppColors.primary600,
       secondary: AppColors.primary500,
-      background: scaffold,
       surface: card,
     );
 
@@ -88,7 +87,7 @@ class AppTheme {
       canvasColor: card,
       appBarTheme: AppBarTheme(
         elevation: 0,
-        backgroundColor: card.withOpacity(0.92),
+        backgroundColor: card.withValues(alpha: 0.92),
         foregroundColor: text,
         centerTitle: false,
       ),

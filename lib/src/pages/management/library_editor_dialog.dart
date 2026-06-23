@@ -403,7 +403,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
             onPressed: _testingConnection ? null : _testConnection,
             style: TextButton.styleFrom(
               backgroundColor: context.isDark
-                  ? AppColors.primary700.withOpacity(0.18)
+                  ? AppColors.primary700.withValues(alpha: 0.18)
                   : AppColors.primary50,
               foregroundColor: AppColors.primary600,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -483,7 +483,7 @@ class _LibraryTypeOption extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected
                 ? (context.isDark
-                    ? AppColors.primary700.withOpacity(0.22)
+                    ? AppColors.primary700.withValues(alpha: 0.22)
                     : AppColors.primary50)
                 : context.cardColor,
             borderRadius: BorderRadius.circular(12),

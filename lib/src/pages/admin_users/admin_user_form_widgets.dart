@@ -177,7 +177,7 @@ class _BookPermissionSearch extends StatelessWidget {
               border: Border.all(color: context.faintBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(context.isDark ? 0.18 : 0.08),
+                  color: Colors.black.withValues(alpha: context.isDark ? 0.18 : 0.08),
                   blurRadius: 18,
                   offset: const Offset(0, 8),
                 ),
@@ -223,7 +223,7 @@ class _SearchSectionHeader extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: context.isDark
-          ? AppColors.slate800.withOpacity(0.55)
+          ? AppColors.slate800.withValues(alpha: 0.55)
           : AppColors.slate50,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       child: Text(

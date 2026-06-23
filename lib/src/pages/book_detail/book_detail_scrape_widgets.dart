@@ -130,7 +130,7 @@ class _ScrapeStepButton extends StatelessWidget {
             : (enabled
                 ? (context.isDark ? AppColors.slate900 : AppColors.slate100)
                 : (context.isDark
-                    ? AppColors.slate900.withOpacity(0.55)
+                    ? AppColors.slate900.withValues(alpha: 0.55)
                     : AppColors.slate50)),
         foregroundColor: selected
             ? Colors.white
@@ -149,7 +149,7 @@ class _ScrapeStepButton extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color:
-                  selected ? Colors.white.withOpacity(0.18) : context.cardColor,
+                  selected ? Colors.white.withValues(alpha: 0.18) : context.cardColor,
               shape: BoxShape.circle,
             ),
             child: Text(
@@ -198,7 +198,7 @@ class _ScrapePanel extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -553,7 +553,7 @@ class _ScrapeSummaryCard extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -648,7 +648,7 @@ class _ScrapeResultCard extends StatelessWidget {
             border: Border.all(color: context.faintBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),
@@ -841,7 +841,7 @@ class _ScrapeResultFieldTile extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -895,7 +895,7 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                               ? AppColors.slate950
                               : AppColors.slate100)
                           : (context.isDark
-                              ? AppColors.slate950.withOpacity(0.55)
+                              ? AppColors.slate950.withValues(alpha: 0.55)
                               : AppColors.slate50),
                   foregroundColor: selected
                       ? Colors.white
@@ -972,7 +972,7 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                   value: _formatScrapeValue(value),
                   color: AppColors.primary500,
                   backgroundColor: context.isDark
-                      ? AppColors.primary950.withOpacity(0.25)
+                      ? AppColors.primary950.withValues(alpha: 0.25)
                       : AppColors.primary50,
                   foregroundColor:
                       context.isDark ? Colors.white : AppColors.slate950,

@@ -225,7 +225,7 @@ class _AppShellState extends State<AppShell> {
 
         return PopScope(
           canPop: false,
-          onPopInvoked: (didPop) {
+          onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
             final handled = _handleSystemBack();
             if (!handled) SystemNavigator.pop();
@@ -544,7 +544,7 @@ class _DesktopSidebar extends StatelessWidget {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: context.isDark
-                      ? AppColors.slate800.withOpacity(0.55)
+                      ? AppColors.slate800.withValues(alpha: 0.55)
                       : AppColors.slate50,
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -677,7 +677,7 @@ class _MobileAdminOverlay extends StatelessWidget {
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
                 child: Container(
-                  color: const Color(0xFF0F172A).withOpacity(0.46),
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.46),
                 ),
               ),
             ),
@@ -696,7 +696,7 @@ class _MobileAdminOverlay extends StatelessWidget {
             right: 22,
             top: topInset + 12,
             child: Material(
-              color: context.cardColor.withOpacity(0.92),
+              color: context.cardColor.withValues(alpha: 0.92),
               shape: const CircleBorder(),
               child: IconButton(
                 tooltip: '关闭',
@@ -868,7 +868,7 @@ class _MobileAdminTile extends StatelessWidget {
       child: Material(
         color: selected ? AppColors.primary600 : Colors.transparent,
         elevation: selected ? 8 : 0,
-        shadowColor: AppColors.primary500.withOpacity(0.28),
+        shadowColor: AppColors.primary500.withValues(alpha: 0.28),
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
@@ -922,7 +922,7 @@ class _DrawerAccountCard extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: context.isDark
-              ? AppColors.slate800.withOpacity(0.55)
+              ? AppColors.slate800.withValues(alpha: 0.55)
               : AppColors.slate50,
           borderRadius: BorderRadius.circular(16),
         ),
@@ -989,11 +989,11 @@ class _BottomNav extends StatelessWidget {
       child: Container(
         height: 64,
         decoration: BoxDecoration(
-          color: context.cardColor.withOpacity(0.94),
+          color: context.cardColor.withValues(alpha: 0.94),
           border: Border(top: BorderSide(color: context.faintBorder)),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+              color: Colors.black.withValues(alpha: 0.05),
               blurRadius: 14,
               offset: const Offset(0, -4),
             ),
@@ -1114,7 +1114,7 @@ class _NavTile extends StatelessWidget {
       child: Material(
         color: selected ? AppColors.primary600 : Colors.transparent,
         elevation: selected ? 8 : 0,
-        shadowColor: AppColors.primary500.withOpacity(0.3),
+        shadowColor: AppColors.primary500.withValues(alpha: 0.3),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: onTap,

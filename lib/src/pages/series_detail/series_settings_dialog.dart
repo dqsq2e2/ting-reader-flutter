@@ -171,7 +171,7 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
             border: Border.all(color: context.faintBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.16),
+                color: Colors.black.withValues(alpha: 0.16),
                 blurRadius: 28,
                 offset: const Offset(0, 18),
               ),
@@ -357,7 +357,7 @@ class _SeriesCoverPreview extends StatelessWidget {
               borderRadius: BorderRadius.circular(18),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.14),
+                  color: Colors.black.withValues(alpha: 0.14),
                   blurRadius: 18,
                   offset: const Offset(0, 10),
                 ),
@@ -499,7 +499,7 @@ class _SeriesBooksEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: context.subtleFill.withOpacity(context.isDark ? 0.2 : 0.58),
+        color: context.subtleFill.withValues(alpha: context.isDark ? 0.2 : 0.58),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: context.faintBorder),
       ),

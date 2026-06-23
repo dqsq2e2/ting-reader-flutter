@@ -51,22 +51,22 @@ class _MiniPlayerState extends State<MiniPlayer> {
         final accentColor = themeColor ?? AppColors.primary600;
         final subduedAccent =
             themeColor != null && !_isPlayerThemeLight(themeColor)
-                ? themeColor.withOpacity(0.72)
+                ? themeColor.withValues(alpha: 0.72)
                 : (context.isDark ? AppColors.slate300 : AppColors.slate500);
         final onAccent = themeColor != null && _isPlayerThemeLight(themeColor)
             ? AppColors.slate600
             : Colors.white;
         final bgColor = themeColor == null
             ? (context.isDark
-                ? AppColors.slate900.withOpacity(0.97)
-                : Colors.white.withOpacity(0.98))
+                ? AppColors.slate900.withValues(alpha: 0.97)
+                : Colors.white.withValues(alpha: 0.98))
             : Color.alphaBlend(
-                themeColor.withOpacity(context.isDark ? 0.18 : 0.12),
+                themeColor.withValues(alpha: context.isDark ? 0.18 : 0.12),
                 context.isDark ? AppColors.slate900 : Colors.white,
               );
         final borderColor = themeColor == null
             ? context.faintBorder
-            : themeColor.withOpacity(context.isDark ? 0.32 : 0.28);
+            : themeColor.withValues(alpha: context.isDark ? 0.32 : 0.28);
 
         if (player.isMiniCollapsed) {
           return _CollapsedMiniPlayer(
@@ -101,7 +101,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 boxShadow: [
                   BoxShadow(
                     color:
-                        Colors.black.withOpacity(context.isDark ? 0.36 : 0.16),
+                        Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
@@ -444,7 +444,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
               border: Border.all(color: context.faintBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(context.isDark ? 0.36 : 0.16),
+                  color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
                   blurRadius: 24,
                   offset: const Offset(0, 12),
                 ),
@@ -475,7 +475,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                             ? AppColors.slate700
                             : AppColors.slate200,
                         thumbColor: AppColors.primary500,
-                        overlayColor: AppColors.primary500.withOpacity(0.14),
+                        overlayColor: AppColors.primary500.withValues(alpha: 0.14),
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 6,
                         ),
@@ -609,7 +609,7 @@ class _MiniProgressSliderState extends State<_MiniProgressSlider> {
           inactiveTrackColor:
               context.isDark ? AppColors.slate800 : AppColors.slate200,
           thumbColor: widget.accentColor,
-          overlayColor: widget.accentColor.withOpacity(0.12),
+          overlayColor: widget.accentColor.withValues(alpha: 0.12),
           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
           overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
           trackShape: const RoundedRectSliderTrackShape(),
@@ -692,12 +692,12 @@ class _CollapsedMiniPlayer extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: borderColor.withOpacity(0.9),
+              color: borderColor.withValues(alpha: 0.9),
               width: 2,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(context.isDark ? 0.36 : 0.16),
+                color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
                 blurRadius: 22,
                 offset: const Offset(0, 10),
               ),
@@ -789,8 +789,8 @@ class _MiniCollapseButton extends StatelessWidget {
                   height: visualSize,
                   decoration: BoxDecoration(
                     color: context.isDark
-                        ? AppColors.slate800.withOpacity(0.52)
-                        : AppColors.slate100.withOpacity(0.86),
+                        ? AppColors.slate800.withValues(alpha: 0.52)
+                        : AppColors.slate100.withValues(alpha: 0.86),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -820,7 +820,7 @@ class _MiniTextButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final light = _isPlayerThemeLight(color);
     return Material(
-      color: color.withOpacity(0.1),
+      color: color.withValues(alpha: 0.1),
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
@@ -934,8 +934,8 @@ class _IconCircle extends StatelessWidget {
             : ghost
                 ? Colors.transparent
                 : (context.isDark
-                    ? AppColors.slate800.withOpacity(0.6)
-                    : Colors.white.withOpacity(0.6)),
+                    ? AppColors.slate800.withValues(alpha: 0.6)
+                    : Colors.white.withValues(alpha: 0.6)),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -1153,7 +1153,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                 boxShadow: [
                   BoxShadow(
                     color:
-                        Colors.black.withOpacity(context.isDark ? 0.48 : 0.18),
+                        Colors.black.withValues(alpha: context.isDark ? 0.48 : 0.18),
                     blurRadius: 30,
                     offset: const Offset(0, 16),
                   ),
@@ -1288,7 +1288,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                 boxShadow: [
                   BoxShadow(
                     color:
-                        Colors.black.withOpacity(context.isDark ? 0.48 : 0.18),
+                        Colors.black.withValues(alpha: context.isDark ? 0.48 : 0.18),
                     blurRadius: 30,
                     offset: const Offset(0, 16),
                   ),
@@ -1360,7 +1360,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: context.isDark
-                          ? AppColors.slate900.withOpacity(0.5)
+                          ? AppColors.slate900.withValues(alpha: 0.5)
                           : AppColors.slate50,
                       borderRadius: BorderRadius.circular(13),
                       border: Border.all(color: context.faintBorder),
@@ -1423,7 +1423,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                             },
                       style: TextButton.styleFrom(
                         backgroundColor: context.isDark
-                            ? const Color(0xff7f1d1d).withOpacity(0.22)
+                            ? const Color(0xff7f1d1d).withValues(alpha: 0.22)
                             : const Color(0xfffff1f2),
                         foregroundColor: const Color(0xffef4444),
                         shape: RoundedRectangleBorder(
@@ -1467,7 +1467,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
       context: context,
       barrierDismissible: true,
       barrierLabel: '播放设置',
-      barrierColor: Colors.black.withOpacity(0.6),
+      barrierColor: Colors.black.withValues(alpha: 0.6),
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (dialogContext, _, __) {
         return Center(
@@ -1484,7 +1484,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   boxShadow: [
                     BoxShadow(
                       color:
-                          Colors.black.withOpacity(context.isDark ? 0.55 : 0.2),
+                          Colors.black.withValues(alpha: context.isDark ? 0.55 : 0.2),
                       blurRadius: 34,
                       offset: const Offset(0, 18),
                     ),
@@ -1569,11 +1569,13 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                 if (dialogContext.mounted) {
                                   Navigator.pop(dialogContext);
                                 }
+                                if (!hostContext.mounted) return;
                                 ScaffoldMessenger.of(hostContext).showSnackBar(
                                   const SnackBar(content: Text('播放设置已保存')),
                                 );
                               } catch (err) {
                                 if (!mounted) return;
+                                if (!hostContext.mounted) return;
                                 ScaffoldMessenger.of(hostContext).showSnackBar(
                                   SnackBar(content: Text('保存失败：$err')),
                                 );
@@ -1582,7 +1584,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                             style: ElevatedButton.styleFrom(
                               elevation: 8,
                               shadowColor:
-                                  AppColors.primary500.withOpacity(0.3),
+                                  AppColors.primary500.withValues(alpha: 0.3),
                               backgroundColor: AppColors.primary600,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1669,7 +1671,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
         final backgroundColor = context.isDark
             ? AppColors.slate950
             : Color.alphaBlend(
-                (themeColor ?? AppColors.primary600).withOpacity(0.08),
+                (themeColor ?? AppColors.primary600).withValues(alpha: 0.08),
                 const Color(0xfffbfaf7),
               );
         final size = MediaQuery.sizeOf(context);
@@ -1724,14 +1726,14 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       end: Alignment.bottomCenter,
                       colors: context.isDark
                           ? [
-                              AppColors.slate950.withOpacity(0.92),
-                              AppColors.slate950.withOpacity(0.86),
-                              AppColors.slate950.withOpacity(0.96),
+                              AppColors.slate950.withValues(alpha: 0.92),
+                              AppColors.slate950.withValues(alpha: 0.86),
+                              AppColors.slate950.withValues(alpha: 0.96),
                             ]
                           : [
-                              backgroundColor.withOpacity(0.90),
-                              backgroundColor.withOpacity(0.72),
-                              backgroundColor.withOpacity(0.94),
+                              backgroundColor.withValues(alpha: 0.90),
+                              backgroundColor.withValues(alpha: 0.72),
+                              backgroundColor.withValues(alpha: 0.94),
                             ],
                     ),
                   ),
@@ -1810,7 +1812,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(
+                                      color: Colors.black.withValues(alpha: 
                                           context.isDark ? 0.44 : 0.18),
                                       blurRadius: 34,
                                       offset: const Offset(0, 22),
@@ -1936,7 +1938,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   ? AppColors.slate800
                                   : AppColors.slate200,
                               thumbColor: accentColor,
-                              overlayColor: accentColor.withOpacity(0.16),
+                              overlayColor: accentColor.withValues(alpha: 0.16),
                             ),
                             child: Slider(
                               min: 0,
@@ -2083,7 +2085,7 @@ Color? _parsePlayerThemeColor(String? raw) {
 }
 
 double _playerThemeLuminance(Color color) {
-  return (0.299 * color.red + 0.587 * color.green + 0.114 * color.blue) / 255;
+  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
 }
 
 bool _isPlayerThemeLight(Color color) => _playerThemeLuminance(color) > 0.65;
@@ -2285,7 +2287,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black
-                            .withOpacity(context.isDark ? 0.5 : 0.18),
+                            .withValues(alpha: context.isDark ? 0.5 : 0.18),
                         blurRadius: 34,
                         offset: const Offset(0, -10),
                       ),
@@ -2379,7 +2381,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                           height: 72,
                           decoration: BoxDecoration(
                             color: context.isDark
-                                ? AppColors.slate800.withOpacity(0.5)
+                                ? AppColors.slate800.withValues(alpha: 0.5)
                                 : AppColors.slate50,
                             border: Border.symmetric(
                               horizontal:
@@ -2556,7 +2558,7 @@ class _ChapterTabButton extends StatelessWidget {
           boxShadow: selected
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
+                    color: Colors.black.withValues(alpha: 0.06),
                     blurRadius: 8,
                     offset: const Offset(0, 2),
                   ),
@@ -2638,7 +2640,7 @@ class _ChapterSheetTile extends StatelessWidget {
     final compact = MediaQuery.sizeOf(context).width < 640;
     return Material(
       color: active
-          ? accent.withOpacity(context.isDark ? 0.16 : 0.1)
+          ? accent.withValues(alpha: context.isDark ? 0.16 : 0.1)
           : context.cardColor,
       borderRadius: BorderRadius.circular(compact ? 10 : 16),
       child: InkWell(
@@ -2649,7 +2651,7 @@ class _ChapterSheetTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(compact ? 10 : 16),
             border: Border.all(
-              color: active ? accent.withOpacity(0.3) : context.faintBorder,
+              color: active ? accent.withValues(alpha: 0.3) : context.faintBorder,
             ),
           ),
           child: Row(

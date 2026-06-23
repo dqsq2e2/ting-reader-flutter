@@ -17,6 +17,8 @@ class AppState extends ChangeNotifier {
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'ignoreAudioFocus',
+    // Kept for backward compatibility so any previously persisted local copy
+    // is stripped from the merged settings; the toggle itself is gone.
     'resume_after_interruption',
     'resumeAfterInterruption',
   };
@@ -506,14 +508,6 @@ class AppState extends ChangeNotifier {
     }
     if (patch.containsKey('ignore_audio_focus')) {
       normalized['ignoreAudioFocus'] = patch['ignore_audio_focus'];
-    }
-    if (patch.containsKey('resumeAfterInterruption')) {
-      normalized['resume_after_interruption'] =
-          patch['resumeAfterInterruption'];
-    }
-    if (patch.containsKey('resume_after_interruption')) {
-      normalized['resumeAfterInterruption'] =
-          patch['resume_after_interruption'];
     }
     return normalized;
   }

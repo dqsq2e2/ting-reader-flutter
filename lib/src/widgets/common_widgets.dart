@@ -30,7 +30,7 @@ class TingCard extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -277,7 +277,7 @@ class PrimaryButton extends StatelessWidget {
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primary600,
         foregroundColor: Colors.white,
-        disabledBackgroundColor: AppColors.primary600.withOpacity(0.5),
+        disabledBackgroundColor: AppColors.primary600.withValues(alpha: 0.5),
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),

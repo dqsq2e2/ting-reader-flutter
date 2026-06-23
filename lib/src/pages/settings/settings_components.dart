@@ -120,7 +120,7 @@ class _ThemeChoiceCard extends StatelessWidget {
     return Material(
       color: selected
           ? (context.isDark
-              ? AppColors.primary700.withOpacity(0.16)
+              ? AppColors.primary700.withValues(alpha: 0.16)
               : AppColors.primary50)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(16),
@@ -390,7 +390,7 @@ class _EmbedButton extends StatelessWidget {
     return Material(
       color: selected
           ? (context.isDark
-              ? AppColors.primary700.withOpacity(0.18)
+              ? AppColors.primary700.withValues(alpha: 0.18)
               : AppColors.primary50)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
@@ -582,7 +582,7 @@ class _SavedBadge extends StatelessWidget {
         vertical: compact ? 4 : 8,
       ),
       decoration: BoxDecoration(
-        color: Colors.green.withOpacity(0.1),
+        color: Colors.green.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

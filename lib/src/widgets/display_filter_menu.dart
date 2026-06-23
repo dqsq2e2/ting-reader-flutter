@@ -38,7 +38,7 @@ class DisplayFilterMenu extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       elevation: 16,
-      shadowColor: Colors.black.withOpacity(0.16),
+      shadowColor: Colors.black.withValues(alpha: 0.16),
       borderRadius: BorderRadius.circular(14),
       child: Container(
         width: 224,
@@ -146,7 +146,7 @@ class _DisplayFilterOption extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color:
-          selected ? AppColors.primary50.withOpacity(0.7) : Colors.transparent,
+          selected ? AppColors.primary50.withValues(alpha: 0.7) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Padding(

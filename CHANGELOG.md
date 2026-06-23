@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.5 - 2026-06-23
+
+- 修复被通话、其他应用等短暂打断后播放无法自动恢复的问题，改由 just_audio 内置的中断管线统一处理 begin/end 事件。
+- 修复耳机断开连接时播放不会自动暂停的问题，让 audio_session 的 noisy 接收器在每次申请音频焦点时正确注册。
+- 将"被其他应用暂停后自动恢复"从设置中移除，默认始终启用，无需用户切换。
+- 清理项目中残留的 lint 警告（`withOpacity`、`Color.red/green/blue`、`PopScope.onPopInvoked`、`ColorScheme.background`、`DropdownButtonFormField.value` 等弃用 API）。
+
 ## 1.0.4 - 2026-06-22
 
 - 修复插件卡片把 `作者/仓库` 短路径直接当作网址打开的问题，统一跳转对应的 GitHub 仓库。

@@ -172,7 +172,7 @@ class _LibrariesEmptyState extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 80),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate900.withOpacity(0.5)
+            ? AppColors.slate900.withValues(alpha: 0.5)
             : AppColors.slate50,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
@@ -223,7 +223,7 @@ class _LibraryCard extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.05),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.05),
             blurRadius: 2,
             offset: const Offset(0, 1),
           ),
@@ -240,7 +240,7 @@ class _LibraryCard extends StatelessWidget {
                 height: 56,
                 decoration: BoxDecoration(
                   color: context.isDark
-                      ? AppColors.primary700.withOpacity(0.18)
+                      ? AppColors.primary700.withValues(alpha: 0.18)
                       : AppColors.primary50,
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -355,7 +355,7 @@ class _LibraryTypeChip extends StatelessWidget {
     final bg = local
         ? const Color(0xfffffbeb)
         : (context.isDark
-            ? AppColors.primary700.withOpacity(0.22)
+            ? AppColors.primary700.withValues(alpha: 0.22)
             : AppColors.primary100);
     final fg = local ? const Color(0xffd97706) : AppColors.primary600;
 
@@ -363,7 +363,7 @@ class _LibraryTypeChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: context.isDark && local
-            ? const Color(0xff78350f).withOpacity(0.22)
+            ? const Color(0xff78350f).withValues(alpha: 0.22)
             : bg,
         borderRadius: BorderRadius.circular(999),
       ),
@@ -434,7 +434,7 @@ class _LibrarySyncButtonState extends State<_LibrarySyncButton> {
     final activeHover = _hovered && !widget.scanning;
     final background = activeHover
         ? (context.isDark
-            ? AppColors.primary700.withOpacity(0.2)
+            ? AppColors.primary700.withValues(alpha: 0.2)
             : AppColors.primary50)
         : (context.isDark ? AppColors.slate800 : AppColors.slate100);
     final foreground = activeHover
@@ -573,10 +573,10 @@ class _SoftIconButtonState extends State<_SoftIconButton> {
         widget.danger ? const Color(0xffef4444) : AppColors.primary600;
     final hoverBackground = widget.danger
         ? (context.isDark
-            ? const Color(0xff7f1d1d).withOpacity(0.2)
+            ? const Color(0xff7f1d1d).withValues(alpha: 0.2)
             : const Color(0xfffff1f2))
         : (context.isDark
-            ? AppColors.primary700.withOpacity(0.2)
+            ? AppColors.primary700.withValues(alpha: 0.2)
             : AppColors.primary50);
 
     return Tooltip(

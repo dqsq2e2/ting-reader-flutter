@@ -125,7 +125,7 @@ class _LoginPageState extends State<LoginPage> {
                   border: Border.all(color: context.faintBorder),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(
+                      color: Colors.black.withValues(alpha: 
                         context.isDark ? 0.24 : 0.08,
                       ),
                       blurRadius: 30,
@@ -460,7 +460,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
           boxShadow: widget.asPage
               ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(
+                    color: Colors.black.withValues(alpha: 
                       context.isDark ? 0.24 : 0.08,
                     ),
                     blurRadius: 30,
@@ -635,9 +635,9 @@ class _ErrorBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.08),
+        color: Colors.red.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.red.withOpacity(0.16)),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.16)),
       ),
       child: Text(
         message,
@@ -672,12 +672,12 @@ class _InfoBox extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.primary600.withOpacity(0.12)
+            ? AppColors.primary600.withValues(alpha: 0.12)
             : AppColors.primary50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: context.isDark
-              ? AppColors.primary600.withOpacity(0.24)
+              ? AppColors.primary600.withValues(alpha: 0.24)
               : AppColors.primary100,
         ),
       ),

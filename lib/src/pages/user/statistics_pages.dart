@@ -317,7 +317,7 @@ class _StatisticsMetricTile extends StatelessWidget {
                           ? 38
                           : 42,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(tiny ? 11 : 13),
                   ),
                   child: Icon(icon, color: color, size: tiny ? 18 : 21),
@@ -828,7 +828,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
       padding: EdgeInsets.all(compact ? 16 : 22),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate950.withOpacity(0.45)
+            ? AppColors.slate950.withValues(alpha: 0.45)
             : AppColors.slate50,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: context.faintBorder),
@@ -1277,7 +1277,7 @@ class _TypeBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(9),
       ),
       child: Text(

@@ -216,7 +216,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(context.isDark ? 0.12 : 0.035),
+            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -752,10 +752,10 @@ class _ChapterListRowState extends State<_ChapterListRow> {
     final themeTextColor = themeColor != null && _isThemeLight(themeColor)
         ? AppColors.slate600
         : Colors.white;
-    final bg = themedActive ? themeColor.withOpacity(0.1) : context.cardColor;
+    final bg = themedActive ? themeColor.withValues(alpha: 0.1) : context.cardColor;
     final borderColor = widget.active
         ? (themeColor != null && !context.isDark
-            ? themeColor.withOpacity(0.3)
+            ? themeColor.withValues(alpha: 0.3)
             : (context.isDark ? AppColors.slate600 : AppColors.slate900))
         : (_hovered ? AppColors.primary100 : context.faintBorder);
 
@@ -1147,7 +1147,7 @@ class _ChapterDownloadPill extends StatelessWidget {
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.18 : 0.10),
+        color: color.withValues(alpha: context.isDark ? 0.18 : 0.10),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(

@@ -235,14 +235,14 @@ class _HomeLayoutItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final bg = checked
         ? (context.isDark
-            ? AppColors.primary700.withOpacity(0.16)
-            : AppColors.primary50.withOpacity(0.8))
+            ? AppColors.primary700.withValues(alpha: 0.16)
+            : AppColors.primary50.withValues(alpha: 0.8))
         : (context.isDark
-            ? AppColors.slate800.withOpacity(0.5)
+            ? AppColors.slate800.withValues(alpha: 0.5)
             : AppColors.slate50);
     final border = checked
         ? (context.isDark
-            ? AppColors.primary700.withOpacity(0.55)
+            ? AppColors.primary700.withValues(alpha: 0.55)
             : AppColors.primary200)
         : context.faintBorder;
 
@@ -302,26 +302,22 @@ class _PlaybackSection extends StatelessWidget {
     required this.autoPreload,
     required this.autoCache,
     required this.ignoreAudioFocus,
-    required this.resumeAfterInterruption,
     required this.showAudioFocusSetting,
     required this.onSpeed,
     required this.onAutoPreload,
     required this.onAutoCache,
     required this.onIgnoreAudioFocus,
-    required this.onResumeAfterInterruption,
   });
 
   final double playbackSpeed;
   final bool autoPreload;
   final bool autoCache;
   final bool ignoreAudioFocus;
-  final bool resumeAfterInterruption;
   final bool showAudioFocusSetting;
   final ValueChanged<double> onSpeed;
   final ValueChanged<bool> onAutoPreload;
   final ValueChanged<bool> onAutoCache;
   final ValueChanged<bool> onIgnoreAudioFocus;
-  final ValueChanged<bool> onResumeAfterInterruption;
 
   @override
   Widget build(BuildContext context) {
@@ -383,15 +379,8 @@ class _PlaybackSection extends StatelessWidget {
           if (showAudioFocusSetting) ...[
             _SettingDivider(),
             _ToggleSettingRow(
-              title: '被其他应用暂停后自动恢复',
-              subtitle: '关闭混音时，通话或其他应用短暂打断后自动继续播放',
-              value: resumeAfterInterruption,
-              onChanged: onResumeAfterInterruption,
-            ),
-            _SettingDivider(),
-            _ToggleSettingRow(
               title: '与其他应用同时播放',
-              subtitle: '允许和其他应用声音共存，可能不会收到中断恢复事件',
+              subtitle: '允许和其他应用声音共存',
               value: ignoreAudioFocus,
               onChanged: onIgnoreAudioFocus,
             ),

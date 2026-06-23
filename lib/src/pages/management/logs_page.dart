@@ -643,7 +643,7 @@ class _AutoRefreshSwitch extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 4,
                         offset: const Offset(0, 1),
                       ),
@@ -777,7 +777,7 @@ class _LogIcon extends StatelessWidget {
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.18 : 0.1),
+        color: color.withValues(alpha: context.isDark ? 0.18 : 0.1),
         borderRadius: BorderRadius.circular(14),
       ),
       alignment: Alignment.center,
@@ -872,8 +872,8 @@ class _LogFieldsGrid extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: context.isDark
-            ? AppColors.slate950.withOpacity(0.35)
-            : AppColors.slate50.withOpacity(0.8),
+            ? AppColors.slate950.withValues(alpha: 0.35)
+            : AppColors.slate50.withValues(alpha: 0.8),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: context.faintBorder),
       ),
@@ -908,7 +908,7 @@ class _LogFieldsGrid extends StatelessWidget {
                   border: Border.all(color: context.faintBorder),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(
+                      color: Colors.black.withValues(alpha: 
                         context.isDark ? 0.08 : 0.03,
                       ),
                       blurRadius: 8,
@@ -1049,7 +1049,7 @@ class _LevelChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(context.isDark ? 0.18 : 0.1),
+        color: color.withValues(alpha: context.isDark ? 0.18 : 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -1076,7 +1076,7 @@ class _TaskStatusChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: icon.$2.withOpacity(context.isDark ? 0.18 : 0.1),
+        color: icon.$2.withValues(alpha: context.isDark ? 0.18 : 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
