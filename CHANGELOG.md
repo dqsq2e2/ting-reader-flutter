@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.7 - 2026-06-23
+
+- 重构 `lib/` 项目结构：将原本平铺的 `pages/` 与 `widgets/` 重组为 `core/`、`shared/`、`features/` 三层，按功能模块划分目录，消除组件与页面混杂的旧布局。
+- 拆分超大文件：`models.dart`（842 行）按领域拆为 14 个文件；`download_state.dart`（1450 行）拆出 models / helpers part；`mini_player.dart`（3136 行）按职责拆为 6 个 part 文件（章节弹窗、展开播放器、折叠条、滚动标题、控件、主题工具）。
+- 抽取重复的私有 `_DialogLabel` 为共享的 `DialogLabel`，删除两处实现冗余。
+- 同步 Web 前端的通知设置页：移除 Webhook 添加 / 编辑弹窗中的 Secret 输入框，不再向服务端提交 `secret` 字段。
+- 重构覆盖率：`dart analyze --fatal-warnings` 通过，public API 100% 兼容（仅新增 `DialogLabel` 一个共享组件），功能 0 改动。
+
 ## 1.0.6 - 2026-06-23
 
 - 修复 Android 永久音频焦点丢失后无法恢复的根因：`audio_session` 收到
