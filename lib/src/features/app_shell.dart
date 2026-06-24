@@ -354,6 +354,7 @@ class _AppShellState extends State<AppShell> {
         return HomePage(
           openBook: _openBook,
           openBookshelf: () => _go(AppDestination.bookshelf),
+          openHistory: () => _go(AppDestination.history),
           openSearch: () => _openSearch(AppDestination.home),
           openPlaylists: () => _go(AppDestination.playlists),
         );

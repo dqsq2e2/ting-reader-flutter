@@ -20,12 +20,14 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.openBook,
     required this.openBookshelf,
+    required this.openHistory,
     required this.openSearch,
     required this.openPlaylists,
   });
 
   final ValueChanged<String> openBook;
   final VoidCallback openBookshelf;
+  final VoidCallback openHistory;
   final VoidCallback openSearch;
   final VoidCallback openPlaylists;
 
@@ -293,7 +295,7 @@ class _HomePageState extends State<HomePage> {
             iconColor: AppColors.primary600,
             title: '最近收听',
             action: '查看历史',
-            onAction: () {},
+            onAction: widget.openHistory,
           ),
           const SizedBox(height: 16),
           if (_recentBookPlays.isEmpty)
