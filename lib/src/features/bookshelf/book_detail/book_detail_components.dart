@@ -78,7 +78,10 @@ class _CollapsibleBookTags extends StatelessWidget {
   });
 
   static const double _spacing = 8;
+  static const double _runSpacing = 8;
   static const double _tagHorizontalPadding = 20;
+  static const double _tagVerticalPadding = 10;
+  static const double _layoutTolerance = 2;
   static const TextStyle _tagTextStyle = TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w700,
@@ -104,9 +107,13 @@ class _CollapsibleBookTags extends StatelessWidget {
         }
 
         final direction = Directionality.of(context);
+        final textStyle =
+            DefaultTextStyle.of(context).style.merge(_tagTextStyle);
         final tagWidths = [
           for (final tag in tags)
-            _measureText(tag, direction) + _tagHorizontalPadding,
+            _measureText(tag, textStyle, direction) +
+                _tagHorizontalPadding +
+                _layoutTolerance,
         ];
         final overflowing = _wrapsToMultipleRows(tagWidths, maxWidth);
 
@@ -126,10 +133,7 @@ class _CollapsibleBookTags extends StatelessWidget {
           );
         }
 
-        final moreWidth = _BookTagToggle.estimatedWidth('更多', direction);
-        final availableForTags = math.max(0.0, maxWidth - moreWidth - _spacing);
-        final visibleCount = _visibleTagCount(tagWidths, availableForTags);
-        final visibleTags = tags.take(visibleCount).toList();
+        final rowHeight = _tagRowHeight(textStyle, direction);
 
         return Row(
           mainAxisAlignment: alignment == WrapAlignment.center
@@ -139,9 +143,17 @@ class _CollapsibleBookTags extends StatelessWidget {
           children: [
             Flexible(
               fit: FlexFit.loose,
-              child: _TagWrap(
-                tags: visibleTags,
-                alignment: alignment,
+              child: SizedBox(
+                height: rowHeight,
+                child: ClipRect(
+                  child: Align(
+                    alignment: Alignment.topLeft,
+                    child: _TagWrap(
+                      tags: tags,
+                      alignment: alignment,
+                    ),
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: _spacing),
@@ -156,13 +168,26 @@ class _CollapsibleBookTags extends StatelessWidget {
     );
   }
 
-  static double _measureText(String text, TextDirection direction) {
+  static double _measureText(
+    String text,
+    TextStyle style,
+    TextDirection direction,
+  ) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: _tagTextStyle),
+      text: TextSpan(text: text, style: style),
       textDirection: direction,
       maxLines: 1,
     )..layout();
     return painter.width;
+  }
+
+  static double _tagRowHeight(TextStyle style, TextDirection direction) {
+    final painter = TextPainter(
+      text: TextSpan(text: '标签', style: style),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+    return painter.height + _tagVerticalPadding + _layoutTolerance;
   }
 
   static bool _wrapsToMultipleRows(List<double> widths, double maxWidth) {
@@ -173,18 +198,6 @@ class _CollapsibleBookTags extends StatelessWidget {
       rowWidth = width > maxWidth ? maxWidth : nextWidth;
     }
     return false;
-  }
-
-  static int _visibleTagCount(List<double> widths, double maxWidth) {
-    var rowWidth = 0.0;
-    var count = 0;
-    for (final width in widths) {
-      final nextWidth = rowWidth == 0 ? width : rowWidth + _spacing + width;
-      if (nextWidth > maxWidth && rowWidth > 0) break;
-      rowWidth = width > maxWidth ? maxWidth : nextWidth;
-      count++;
-    }
-    return count;
   }
 }
 
@@ -204,7 +217,7 @@ class _TagWrap extends StatelessWidget {
     return Wrap(
       alignment: alignment,
       spacing: 8,
-      runSpacing: 8,
+      runSpacing: _CollapsibleBookTags._runSpacing,
       children: [
         for (final tag in tags) _BookTag(label: tag),
         if (trailing != null) trailing!,
@@ -223,18 +236,6 @@ class _BookTagToggle extends StatelessWidget {
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-
-  static double estimatedWidth(String label, TextDirection direction) {
-    final painter = TextPainter(
-      text: TextSpan(
-        text: label,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      ),
-      textDirection: direction,
-      maxLines: 1,
-    )..layout();
-    return painter.width + 12 + 3 + 18;
-  }
 
   @override
   Widget build(BuildContext context) {
