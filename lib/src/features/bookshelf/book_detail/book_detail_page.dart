@@ -53,6 +53,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   String _activeTab = 'main';
   int _groupIndex = 0;
   bool _chapterAscending = true;
+  bool _tagsExpanded = false;
   CoverShapePreference _coverShape = CoverShapePreference.rect;
   final _chapterSectionKey = GlobalKey();
   final Map<String, GlobalKey> _chapterRowKeys = {};
@@ -102,6 +103,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
         _chapterRowKeys.clear();
         _favorite = book.isFavorite;
         _activeTab = 'main';
+        _tagsExpanded = false;
         _coverShape = (settings['bookshelf_cover_shape'] ??
                     settings['bookshelfCoverShape']) ==
                 'square'
@@ -532,17 +534,18 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 ),
                 if ((book.tags ?? '').isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  Wrap(
-                    alignment:
-                        compact ? WrapAlignment.center : WrapAlignment.start,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: book.tags!
+                  _CollapsibleBookTags(
+                    tags: book.tags!
                         .split(RegExp(r'[,，]'))
                         .map((tag) => tag.trim())
                         .where((tag) => tag.isNotEmpty)
-                        .map((tag) => _BookTag(label: tag))
                         .toList(),
+                    expanded: _tagsExpanded,
+                    alignment:
+                        compact ? WrapAlignment.center : WrapAlignment.start,
+                    onExpandedChanged: (value) {
+                      setState(() => _tagsExpanded = value);
+                    },
                   ),
                 ],
                 const SizedBox(height: 24),

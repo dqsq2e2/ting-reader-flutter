@@ -69,6 +69,222 @@ class _BookTag extends StatelessWidget {
   }
 }
 
+class _CollapsibleBookTags extends StatelessWidget {
+  const _CollapsibleBookTags({
+    required this.tags,
+    required this.expanded,
+    required this.alignment,
+    required this.onExpandedChanged,
+  });
+
+  static const double _spacing = 8;
+  static const double _tagHorizontalPadding = 20;
+  static const TextStyle _tagTextStyle = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w700,
+  );
+
+  final List<String> tags;
+  final bool expanded;
+  final WrapAlignment alignment;
+  final ValueChanged<bool> onExpandedChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    if (tags.isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        if (!maxWidth.isFinite || maxWidth <= 0) {
+          return _TagWrap(
+            tags: tags,
+            alignment: alignment,
+          );
+        }
+
+        final direction = Directionality.of(context);
+        final tagWidths = [
+          for (final tag in tags)
+            _measureText(tag, direction) + _tagHorizontalPadding,
+        ];
+        final overflowing = _wrapsToMultipleRows(tagWidths, maxWidth);
+
+        if (!overflowing) {
+          return _TagWrap(tags: tags, alignment: alignment);
+        }
+
+        if (expanded) {
+          return _TagWrap(
+            tags: tags,
+            alignment: alignment,
+            trailing: _BookTagToggle(
+              label: '收起',
+              icon: Icons.keyboard_arrow_up_rounded,
+              onTap: () => onExpandedChanged(false),
+            ),
+          );
+        }
+
+        final moreWidth = _BookTagToggle.estimatedWidth('更多', direction);
+        final availableForTags = math.max(0.0, maxWidth - moreWidth - _spacing);
+        final visibleCount = _visibleTagCount(tagWidths, availableForTags);
+        final visibleTags = tags.take(visibleCount).toList();
+
+        return Row(
+          mainAxisAlignment: alignment == WrapAlignment.center
+              ? MainAxisAlignment.center
+              : MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Flexible(
+              fit: FlexFit.loose,
+              child: _TagWrap(
+                tags: visibleTags,
+                alignment: alignment,
+              ),
+            ),
+            const SizedBox(width: _spacing),
+            _BookTagToggle(
+              label: '更多',
+              icon: Icons.keyboard_arrow_down_rounded,
+              onTap: () => onExpandedChanged(true),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  static double _measureText(String text, TextDirection direction) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: _tagTextStyle),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+    return painter.width;
+  }
+
+  static bool _wrapsToMultipleRows(List<double> widths, double maxWidth) {
+    var rowWidth = 0.0;
+    for (final width in widths) {
+      final nextWidth = rowWidth == 0 ? width : rowWidth + _spacing + width;
+      if (nextWidth > maxWidth && rowWidth > 0) return true;
+      rowWidth = width > maxWidth ? maxWidth : nextWidth;
+    }
+    return false;
+  }
+
+  static int _visibleTagCount(List<double> widths, double maxWidth) {
+    var rowWidth = 0.0;
+    var count = 0;
+    for (final width in widths) {
+      final nextWidth = rowWidth == 0 ? width : rowWidth + _spacing + width;
+      if (nextWidth > maxWidth && rowWidth > 0) break;
+      rowWidth = width > maxWidth ? maxWidth : nextWidth;
+      count++;
+    }
+    return count;
+  }
+}
+
+class _TagWrap extends StatelessWidget {
+  const _TagWrap({
+    required this.tags,
+    required this.alignment,
+    this.trailing,
+  });
+
+  final List<String> tags;
+  final WrapAlignment alignment;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: alignment,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final tag in tags) _BookTag(label: tag),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
+
+class _BookTagToggle extends StatelessWidget {
+  const _BookTagToggle({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  static double estimatedWidth(String label, TextDirection direction) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+    return painter.width + 12 + 3 + 18;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const color = AppColors.primary600;
+    return Material(
+      color: context.isDark
+          ? AppColors.primary600.withValues(alpha: 0.14)
+          : AppColors.primary50,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: context.isDark
+                  ? AppColors.primary600.withValues(alpha: 0.24)
+                  : AppColors.primary100,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary600.withValues(alpha: 0.12),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 12, color: color),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: color,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BookActionPanel extends StatelessWidget {
   const _BookActionPanel({
     required this.favorite,
