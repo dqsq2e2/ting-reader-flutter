@@ -196,7 +196,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                   width: width,
                   label: '已关闭',
                   value: disabledCount.toString(),
-                  icon: Icons.radio_button_unchecked_rounded,
+                  icon: Icons.power_off_rounded,
                   color: AppColors.slate500,
                 ),
                 _NotificationStatCard(
