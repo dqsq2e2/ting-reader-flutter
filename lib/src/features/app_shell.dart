@@ -62,6 +62,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   AppDestination _destination = AppDestination.home;
   String? _bookId;
+  String? _bookInitialChapterId;
   String? _seriesId;
   String? _playlistId;
   AppDestination _searchOrigin = AppDestination.bookshelf;
@@ -73,6 +74,7 @@ class _AppShellState extends State<AppShell> {
     final params = Uri.base.queryParameters;
     _destination = _destinationFromQuery(params['page']);
     _bookId = params['book'];
+    _bookInitialChapterId = params['chapter'];
     _seriesId = params['series'];
     _playlistId = params['playlist'];
   }
@@ -118,6 +120,7 @@ class _AppShellState extends State<AppShell> {
       _mobileAdminDrawerOpen = false;
       _destination = destination;
       _bookId = null;
+      _bookInitialChapterId = null;
       _seriesId = null;
       _playlistId = null;
     });
@@ -136,6 +139,16 @@ class _AppShellState extends State<AppShell> {
   void _openBook(String id) {
     setState(() {
       _bookId = id;
+      _bookInitialChapterId = null;
+      _seriesId = null;
+      _playlistId = null;
+    });
+  }
+
+  void _openBookAtChapter(String id, String? chapterId) {
+    setState(() {
+      _bookId = id;
+      _bookInitialChapterId = chapterId;
       _seriesId = null;
       _playlistId = null;
     });
@@ -145,6 +158,7 @@ class _AppShellState extends State<AppShell> {
     setState(() {
       _seriesId = id;
       _bookId = null;
+      _bookInitialChapterId = null;
       _playlistId = null;
     });
   }
@@ -153,6 +167,7 @@ class _AppShellState extends State<AppShell> {
     setState(() {
       _playlistId = id;
       _bookId = null;
+      _bookInitialChapterId = null;
       _seriesId = null;
     });
   }
@@ -165,6 +180,7 @@ class _AppShellState extends State<AppShell> {
   void _backFromDetail() {
     setState(() {
       _bookId = null;
+      _bookInitialChapterId = null;
       _seriesId = null;
       _playlistId = null;
     });
@@ -311,7 +327,11 @@ class _AppShellState extends State<AppShell> {
       return const DownloadsPage();
     }
     if (_bookId != null) {
-      return BookDetailPage(bookId: _bookId!, onBack: _backFromDetail);
+      return BookDetailPage(
+        bookId: _bookId!,
+        initialChapterId: _bookInitialChapterId,
+        onBack: _backFromDetail,
+      );
     }
     if (_playlistId != null) {
       return PlaylistDetailPage(
@@ -367,7 +387,7 @@ class _AppShellState extends State<AppShell> {
         );
       case AppDestination.history:
         return HistoryPage(
-          openBook: _openBook,
+          openBook: _openBookAtChapter,
           onBack: () => _go(AppDestination.mine),
           openBookshelf: () => _go(AppDestination.bookshelf),
         );

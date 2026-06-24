@@ -25,10 +25,12 @@ class BookDetailPage extends StatefulWidget {
   const BookDetailPage({
     super.key,
     required this.bookId,
+    this.initialChapterId,
     required this.onBack,
   });
 
   final String bookId;
+  final String? initialChapterId;
   final VoidCallback onBack;
 
   @override
@@ -64,7 +66,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
   @override
   void didUpdateWidget(covariant BookDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bookId != widget.bookId) _load();
+    if (oldWidget.bookId != widget.bookId ||
+        oldWidget.initialChapterId != widget.initialChapterId) {
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -96,6 +101,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
         _extraChapterTotal = 0;
         _chapterRowKeys.clear();
         _favorite = book.isFavorite;
+        _activeTab = 'main';
         _coverShape = (settings['bookshelf_cover_shape'] ??
                     settings['bookshelfCoverShape']) ==
                 'square'
@@ -103,7 +109,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
             : CoverShapePreference.rect;
         _groupIndex = 0;
       });
-      await _loadChapterPage(targetChapterId: progress?.chapterId);
+      await _loadChapterPage(
+        targetChapterId: widget.initialChapterId,
+        scrollToTarget: widget.initialChapterId != null,
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -192,6 +201,21 @@ class _BookDetailPageState extends State<BookDetailPage> {
   Future<Chapter?> _resolveResumeChapter() async {
     final current = AppScope.playerOf(context).currentChapter;
     if (current?.bookId == _book?.id) return current;
+    final initialChapterId = widget.initialChapterId;
+    if (initialChapterId != null) {
+      final local =
+          _chapters.where((chapter) => chapter.id == initialChapterId);
+      if (local.isNotEmpty) return local.first;
+      final page = await _loadChapterPage(
+        targetChapterId: initialChapterId,
+        scrollToTarget: false,
+      );
+      if (page != null) {
+        final match =
+            page.chapters.where((chapter) => chapter.id == initialChapterId);
+        if (match.isNotEmpty) return match.first;
+      }
+    }
     final progressChapterId = _bookProgress?.chapterId;
     if (progressChapterId != null) {
       final local =
@@ -207,9 +231,6 @@ class _BookDetailPageState extends State<BookDetailPage> {
         if (match.isNotEmpty) return match.first;
       }
     }
-    if (_chapters.isNotEmpty) return _chapters.first;
-    final page = await _loadChapterPage(tab: 'main', groupIndex: 0);
-    if (page != null && page.chapters.isNotEmpty) return page.chapters.first;
     return null;
   }
 
@@ -218,6 +239,31 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (book == null || _chapters.isEmpty) return null;
     final player = AppScope.playerOf(context);
     if (player.currentChapter?.bookId == book.id) return player.currentChapter;
+    final initialChapterId = widget.initialChapterId;
+    if (initialChapterId != null) {
+      final initial =
+          _chapters.where((chapter) => chapter.id == initialChapterId);
+      if (initial.isNotEmpty) return initial.first;
+    }
+    final progress = _bookProgress;
+    final progressChapterId = progress?.chapterId;
+    if (progress != null &&
+        progressChapterId != null &&
+        progressChapterId.isNotEmpty) {
+      final local =
+          _chapters.where((chapter) => chapter.id == progressChapterId);
+      if (local.isNotEmpty) return local.first;
+      return Chapter(
+        id: progressChapterId,
+        bookId: book.id,
+        title: progress.chapterTitle ?? '上次收听章节',
+        path: '',
+        chapterIndex: 0,
+        duration: progress.chapterDuration ?? progress.duration.round(),
+        progressPosition: progress.position,
+        progressUpdatedAt: progress.updatedAt,
+      );
+    }
     final played = _chapters
         .where((chapter) => chapter.progressUpdatedAt != null)
         .toList()
@@ -226,7 +272,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
           .compareTo(
               DateTime.tryParse(a.progressUpdatedAt ?? '') ?? DateTime(1970)));
     if (played.isNotEmpty) return played.first;
-    return _chapters.first;
+    return null;
   }
 
   Future<void> _toggleFavorite() async {
@@ -254,7 +300,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
       return;
     }
     final chapter = await _resolveResumeChapter();
-    if (chapter == null) return;
+    if (chapter == null) {
+      if (_chapters.isEmpty) {
+        await _loadChapterPage(tab: 'main', groupIndex: 0);
+      }
+      if (_chapters.isEmpty) return;
+      await _playChapter(_chapters.first);
+      return;
+    }
     await _locateChapter(chapter, loadPage: true);
     await _playChapter(chapter);
   }
@@ -390,7 +443,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final currentChapter = player.currentChapter;
     final sameBookCurrentChapter =
         currentChapter?.bookId == book.id ? currentChapter : null;
-    final highlightedChapterId = sameBookCurrentChapter?.id ?? resume?.id;
+    final initialChapterId = widget.initialChapterId;
+    final highlightedChapterId = initialChapterId != null &&
+            _chapters.any((chapter) => chapter.id == initialChapterId)
+        ? initialChapterId
+        : sameBookCurrentChapter?.id ?? resume?.id;
     final playLabel = sameBookCurrentChapter != null
         ? '正在播放：${sameBookCurrentChapter.title}'
         : resume == null

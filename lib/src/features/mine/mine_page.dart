@@ -310,7 +310,7 @@ class HistoryPage extends StatefulWidget {
     required this.openBookshelf,
   });
 
-  final ValueChanged<String> openBook;
+  final void Function(String bookId, String? chapterId) openBook;
   final VoidCallback onBack;
   final VoidCallback openBookshelf;
 
@@ -1192,7 +1192,7 @@ class _HistoryBookCard extends StatelessWidget {
   final VoidCallback onToggleExpanded;
   final VoidCallback onToggleBook;
   final ValueChanged<ProgressItem> onToggleItem;
-  final ValueChanged<String> onOpenBook;
+  final void Function(String bookId, String? chapterId) onOpenBook;
 
   @override
   Widget build(BuildContext context) {
@@ -1356,7 +1356,10 @@ class _HistoryBookCard extends StatelessWidget {
                       selected:
                           selectedIds.contains(historyKey(group.chapters[i])),
                       onToggle: () => onToggleItem(group.chapters[i]),
-                      onTap: () => onOpenBook(group.bookId),
+                      onTap: () => onOpenBook(
+                        group.bookId,
+                        group.chapters[i].chapterId,
+                      ),
                     ),
                   ],
                 ],
