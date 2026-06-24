@@ -504,11 +504,10 @@ class _HistoryPageState extends State<HistoryPage> {
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _HistoryActionButton(
-                          icon: _allSelected
-                              ? Icons.check_box_rounded
-                              : Icons.check_box_outline_blank_rounded,
+                        BatchSelectButton(
+                          checked: _allSelected,
                           label: '全选',
+                          compact: compactActions,
                           onPressed: _deleting ? null : _toggleAll,
                         ),
                         _HistoryActionButton(
@@ -1139,32 +1138,14 @@ class _HistoryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = danger ? const Color(0xffef4444) : context.secondaryText;
-    return TextButton.icon(
+    final compact = MediaQuery.sizeOf(context).width < 420;
+    return BatchActionButton(
+      label: label,
       onPressed: onPressed,
-      icon: loading
-          ? SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: color,
-              ),
-            )
-          : Icon(icon, size: 18),
-      label: Text(label),
-      style: TextButton.styleFrom(
-        foregroundColor: color,
-        backgroundColor: danger
-            ? const Color(0xfffff1f2)
-            : (context.isDark ? AppColors.slate800 : Colors.white),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(
-              color: danger ? Colors.transparent : context.faintBorder),
-        ),
-      ),
+      icon: icon,
+      danger: danger,
+      loading: loading,
+      compact: compact,
     );
   }
 }
@@ -1468,16 +1449,10 @@ class _HistoryCheckbox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkResponse(
-      onTap: onTap,
-      radius: 22,
-      child: Icon(
-        checked
-            ? Icons.check_box_rounded
-            : Icons.check_box_outline_blank_rounded,
-        color: checked ? AppColors.primary600 : AppColors.slate400,
-        size: 24,
-      ),
+    return BatchCheckbox(
+      checked: checked,
+      compact: MediaQuery.sizeOf(context).width < 640,
+      onChanged: onTap,
     );
   }
 }

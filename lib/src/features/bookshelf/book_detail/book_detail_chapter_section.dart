@@ -435,83 +435,59 @@ class _ChapterSectionState extends State<_ChapterSection> {
           const SizedBox(height: 24),
           if (_selectionMode) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: context.isDark ? AppColors.slate800 : AppColors.slate50,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: context.faintBorder),
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 420;
-                  final buttonPadding = EdgeInsets.symmetric(
-                    horizontal: compact ? 7 : 10,
-                    vertical: compact ? 5 : 7,
-                  );
-                  final selectButton = TextButton.icon(
+                  final compact = constraints.maxWidth < 520;
+                  final veryNarrow = constraints.maxWidth < 390;
+                  final selectButton = BatchSelectButton(
+                    checked: allPageSelected,
+                    label: allPageSelected ? '取消本页' : '全选本页',
+                    compact: compact,
                     onPressed: downloadable.isEmpty
                         ? null
                         : () => _toggleCurrentPage(downloadState),
-                    icon: Icon(
-                      allPageSelected
-                          ? Icons.check_box_rounded
-                          : Icons.check_box_outline_blank_rounded,
-                      size: compact ? 16 : 18,
-                    ),
-                    label: Text(
-                      allPageSelected ? '取消本页' : '全选本页',
-                      style: TextStyle(fontSize: compact ? 13 : 14),
-                    ),
-                    style: TextButton.styleFrom(
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: buttonPadding,
-                      foregroundColor: AppColors.primary600,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
                   );
-                  final downloadButton = TextButton.icon(
+                  final countBadge = BatchCountBadge(
+                    label: '已选 $selectedDownloadable',
+                    compact: compact,
+                  );
+                  final downloadButton = BatchActionButton(
+                    icon: Icons.download_rounded,
+                    label: compact ? '下载' : '下载选中',
+                    filled: true,
+                    compact: compact,
                     onPressed:
                         selectedDownloadable == 0 ? null : _downloadSelected,
-                    icon: Icon(Icons.download_rounded, size: compact ? 16 : 18),
-                    label: Text(
-                      compact ? '下载' : '下载选中',
-                      style: TextStyle(
-                        fontSize: compact ? 13 : 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    style: TextButton.styleFrom(
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: buttonPadding,
-                      foregroundColor: Colors.white,
-                      disabledForegroundColor: context.mutedText,
-                      backgroundColor: AppColors.primary600,
-                      disabledBackgroundColor: context.isDark
-                          ? AppColors.slate700
-                          : AppColors.slate100,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(11),
-                      ),
-                    ),
                   );
-                  return Row(
-                    children: [
-                      selectButton,
-                      const Spacer(),
-                      Text(
-                        '已选 $selectedDownloadable',
-                        style: TextStyle(
-                          color: context.mutedText,
-                          fontSize: compact ? 13 : 14,
+                  final trailing = Wrap(
+                    spacing: compact ? 8 : 10,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    alignment:
+                        veryNarrow ? WrapAlignment.start : WrapAlignment.end,
+                    children: [countBadge, downloadButton],
+                  );
+                  if (veryNarrow) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: selectButton,
                         ),
-                      ),
-                      SizedBox(width: compact ? 6 : 12),
-                      downloadButton,
-                    ],
+                        const SizedBox(height: 8),
+                        trailing,
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [selectButton, const Spacer(), trailing],
                   );
                 },
               ),
@@ -778,18 +754,16 @@ class _ChapterListRowState extends State<_ChapterListRow> {
           child: Row(
             children: [
               if (widget.selectionMode) ...[
-                SizedBox(
-                  width: compact ? 30 : 34,
-                  child: Checkbox(
-                    value: widget.selected,
-                    onChanged: widget.downloaded || widget.task != null
-                        ? null
-                        : (_) => widget.onSelected(),
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
+                BatchCheckbox(
+                  checked: widget.selected,
+                  compact: compact,
+                  enabled: !widget.downloaded && widget.task == null,
+                  tooltip: widget.selected ? '取消选择' : '选择章节',
+                  onChanged: widget.downloaded || widget.task != null
+                      ? null
+                      : widget.onSelected,
                 ),
-                SizedBox(width: compact ? 6 : 10),
+                SizedBox(width: compact ? 4 : 8),
               ],
               if (!compact) ...[
                 Container(

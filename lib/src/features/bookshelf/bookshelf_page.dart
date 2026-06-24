@@ -488,16 +488,18 @@ class _Header extends StatelessWidget {
               child: _SearchEntry(onTap: onSearchOpen),
             ),
             if (selectionMode) ...[
-              Chip(label: Text('已选 $selectedCount')),
-              _ToolbarButton(
+              BatchCountBadge(label: '已选 $selectedCount', compact: mobile),
+              BatchActionButton(
                 icon: Icons.select_all_rounded,
                 label: '全选',
+                compact: mobile,
                 onPressed: onSelectAll,
               ),
-              _ToolbarButton(
+              BatchActionButton(
                 icon: Icons.layers_rounded,
                 label: '创建系列',
                 filled: true,
+                compact: mobile,
                 onPressed: onCreateSeries,
               ),
               _SquareToolbarButton(
@@ -505,9 +507,10 @@ class _Header extends StatelessWidget {
                 onPressed: onCancelSelection,
               ),
             ] else if (isAdmin)
-              _ToolbarButton(
+              BatchActionButton(
                 icon: Icons.layers_rounded,
                 label: '选择模式',
+                compact: mobile,
                 onPressed: onSelectionMode,
               ),
             if (libraries.isNotEmpty)
@@ -546,16 +549,18 @@ class _Header extends StatelessWidget {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Chip(label: Text('已选 $selectedCount')),
-                _ToolbarButton(
+                BatchCountBadge(label: '已选 $selectedCount', compact: mobile),
+                BatchActionButton(
                   icon: Icons.select_all_rounded,
                   label: '全选',
+                  compact: mobile,
                   onPressed: onSelectAll,
                 ),
-                _ToolbarButton(
+                BatchActionButton(
                   icon: Icons.layers_rounded,
                   label: '创建系列',
                   filled: true,
+                  compact: mobile,
                   onPressed: onCreateSeries,
                 ),
                 _SquareToolbarButton(
@@ -567,7 +572,7 @@ class _Header extends StatelessWidget {
           }
 
           final modeButton = isAdmin
-              ? _ToolbarButton(
+              ? BatchActionButton(
                   icon: Icons.layers_rounded,
                   label: mobile ? '选择' : '选择模式',
                   onPressed: onSelectionMode,
@@ -753,61 +758,6 @@ class _LibraryDropdown extends StatelessWidget {
           .toList(),
       items: items,
       onChanged: onChanged,
-    );
-  }
-}
-
-class _ToolbarButton extends StatelessWidget {
-  const _ToolbarButton({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-    this.filled = false,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-  final bool filled;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = filled ? Colors.white : AppColors.slate600;
-    return SizedBox(
-      height: 48,
-      child: filled
-          ? FilledButton.icon(
-              onPressed: onPressed,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.primary600,
-                foregroundColor: foreground,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              icon: Icon(icon, size: 18),
-              label: Text(
-                label,
-              ),
-            )
-          : OutlinedButton.icon(
-              onPressed: onPressed,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: foreground,
-                backgroundColor: context.cardColor,
-                side: BorderSide(color: context.faintBorder),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-              ),
-              icon: Icon(icon, size: 18),
-              label: Text(
-                label,
-              ),
-            ),
     );
   }
 }

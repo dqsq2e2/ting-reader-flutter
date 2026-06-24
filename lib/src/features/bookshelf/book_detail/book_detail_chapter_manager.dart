@@ -509,17 +509,17 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                     ),
                     if (_selectionMode) ...[
                       const SizedBox(width: 12),
-                      TextButton.icon(
+                      BatchSelectButton(
+                        checked: _selectedIds.length == filtered.length &&
+                            filtered.isNotEmpty,
+                        label: '全选 (${filtered.length})',
+                        compact: compact,
                         onPressed: filtered.isEmpty ? null : _toggleAll,
-                        icon: Icon(_selectedIds.length == filtered.length &&
-                                filtered.isNotEmpty
-                            ? Icons.check_box_rounded
-                            : Icons.check_box_outline_blank_rounded),
-                        label: Text('全选 (${filtered.length})'),
                       ),
-                      Text(
-                        '已选 ${_selectedIds.length}',
-                        style: TextStyle(color: context.mutedText),
+                      const SizedBox(width: 8),
+                      BatchCountBadge(
+                        label: '已选 ${_selectedIds.length}',
+                        compact: compact,
                       ),
                     ],
                     const Spacer(),
@@ -672,15 +672,11 @@ class _ChapterManagerRow extends StatelessWidget {
       child: Row(
         children: [
           if (selectionMode) ...[
-            IconButton(
+            BatchCheckbox(
+              checked: selected,
+              compact: MediaQuery.sizeOf(context).width < 640,
               tooltip: selected ? '取消选择' : '选择章节',
-              onPressed: onSelected,
-              icon: Icon(
-                selected
-                    ? Icons.check_box_rounded
-                    : Icons.check_box_outline_blank_rounded,
-                color: selected ? AppColors.primary600 : context.mutedText,
-              ),
+              onChanged: onSelected,
             ),
             const SizedBox(width: 4),
           ],

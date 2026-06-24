@@ -30,7 +30,8 @@ class TingCard extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
+            color:
+                Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -187,6 +188,273 @@ class AppBackButton extends StatelessWidget {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class BatchCheckbox extends StatelessWidget {
+  const BatchCheckbox({
+    super.key,
+    required this.checked,
+    this.onChanged,
+    this.compact,
+    this.enabled = true,
+    this.interactive = true,
+    this.tooltip,
+    this.visualSize,
+  });
+
+  final bool checked;
+  final VoidCallback? onChanged;
+  final bool? compact;
+  final bool enabled;
+  final bool interactive;
+  final String? tooltip;
+  final double? visualSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = compact ?? MediaQuery.sizeOf(context).width < 640;
+    final active = enabled && onChanged != null;
+    final boxSize = visualSize ?? (narrow ? 21.0 : 23.0);
+    final tapSize = narrow ? 34.0 : 38.0;
+    final borderColor = checked
+        ? AppColors.primary600
+        : (context.isDark ? AppColors.slate500 : AppColors.slate400);
+    final fillColor = checked
+        ? AppColors.primary600
+        : (context.isDark ? AppColors.slate900 : Colors.white);
+    final check = AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOut,
+      width: boxSize,
+      height: boxSize,
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(narrow ? 5 : 6),
+        border: Border.all(
+          color: active ? borderColor : borderColor.withValues(alpha: 0.55),
+          width: checked ? 0 : 1.8,
+        ),
+        boxShadow: checked
+            ? [
+                BoxShadow(
+                  color: AppColors.primary600.withValues(alpha: 0.24),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      child: checked
+          ? Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: boxSize * 0.72,
+            )
+          : null,
+    );
+    final visual = Opacity(
+      opacity: enabled ? 1 : 0.48,
+      child: SizedBox.square(
+        dimension: interactive ? tapSize : boxSize,
+        child: Center(child: check),
+      ),
+    );
+
+    Widget result = interactive
+        ? Material(
+            color: Colors.transparent,
+            child: InkResponse(
+              onTap: active ? onChanged : null,
+              radius: tapSize / 2,
+              child: visual,
+            ),
+          )
+        : visual;
+    if (tooltip != null) {
+      result = Tooltip(message: tooltip!, child: result);
+    }
+    return result;
+  }
+}
+
+class BatchSelectButton extends StatelessWidget {
+  const BatchSelectButton({
+    super.key,
+    required this.checked,
+    required this.label,
+    this.onPressed,
+    this.compact,
+  });
+
+  final bool checked;
+  final String label;
+  final VoidCallback? onPressed;
+  final bool? compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = compact ?? MediaQuery.sizeOf(context).width < 640;
+    return BatchActionButton(
+      label: label,
+      onPressed: onPressed,
+      compact: narrow,
+      leading: BatchCheckbox(
+        checked: checked,
+        enabled: onPressed != null,
+        interactive: false,
+        compact: narrow,
+      ),
+    );
+  }
+}
+
+class BatchActionButton extends StatelessWidget {
+  const BatchActionButton({
+    super.key,
+    required this.label,
+    this.icon,
+    this.leading,
+    this.onPressed,
+    this.compact,
+    this.filled = false,
+    this.danger = false,
+    this.loading = false,
+  });
+
+  final String label;
+  final IconData? icon;
+  final Widget? leading;
+  final VoidCallback? onPressed;
+  final bool? compact;
+  final bool filled;
+  final bool danger;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = compact ?? MediaQuery.sizeOf(context).width < 640;
+    final height = narrow ? 40.0 : 44.0;
+    final enabled = onPressed != null && !loading;
+    final accent = danger ? const Color(0xffef4444) : AppColors.primary600;
+    final background = !enabled
+        ? (context.isDark ? AppColors.slate800 : AppColors.slate100)
+        : filled
+            ? accent
+            : danger
+                ? (context.isDark
+                    ? const Color(0xff3f1d22)
+                    : const Color(0xfffff1f2))
+                : (context.isDark ? AppColors.slate800 : Colors.white);
+    final foreground = !enabled
+        ? context.mutedText
+        : filled
+            ? Colors.white
+            : danger
+                ? accent
+                : context.secondaryText;
+    final borderColor = filled
+        ? Colors.transparent
+        : danger
+            ? accent.withValues(alpha: context.isDark ? 0.38 : 0.18)
+            : context.faintBorder;
+    final loader = SizedBox(
+      width: narrow ? 15 : 16,
+      height: narrow ? 15 : 16,
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        color: foreground,
+      ),
+    );
+    final iconWidget = loading
+        ? loader
+        : leading ??
+            (icon == null
+                ? null
+                : Icon(icon, size: narrow ? 17 : 18, color: foreground));
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height),
+      child: Material(
+        color: background,
+        borderRadius: BorderRadius.circular(narrow ? 12 : 14),
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(narrow ? 12 : 14),
+          child: Container(
+            constraints: BoxConstraints(minHeight: height),
+            padding: EdgeInsets.symmetric(
+              horizontal: narrow ? 12 : 15,
+              vertical: narrow ? 8 : 10,
+            ),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(narrow ? 12 : 14),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (iconWidget != null) ...[
+                  iconWidget,
+                  SizedBox(width: narrow ? 6 : 8),
+                ],
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: narrow ? 13 : 14,
+                    fontWeight: FontWeight.w700,
+                    height: 1.15,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BatchCountBadge extends StatelessWidget {
+  const BatchCountBadge({
+    super.key,
+    required this.label,
+    this.compact,
+  });
+
+  final String label;
+  final bool? compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = compact ?? MediaQuery.sizeOf(context).width < 640;
+    return Container(
+      constraints: BoxConstraints(minHeight: narrow ? 36 : 40),
+      padding: EdgeInsets.symmetric(
+        horizontal: narrow ? 12 : 14,
+        vertical: narrow ? 8 : 9,
+      ),
+      decoration: BoxDecoration(
+        color: context.isDark ? AppColors.slate800 : AppColors.slate50,
+        borderRadius: BorderRadius.circular(narrow ? 12 : 14),
+        border: Border.all(color: context.faintBorder),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: context.secondaryText,
+          fontSize: narrow ? 13 : 14,
+          fontWeight: FontWeight.w700,
+          height: 1.15,
         ),
       ),
     );

@@ -133,27 +133,26 @@ class BookCard extends StatelessWidget {
                 ),
                 if (selectionMode)
                   Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      width: 26,
-                      height: 26,
+                    right: 6,
+                    top: 6,
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.primary600
-                            : context.cardColor.withValues(alpha: 0.86),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: selected
-                              ? AppColors.primary600
-                              : AppColors.slate300,
-                          width: 2,
-                        ),
+                        color: context.cardColor.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: selected
-                          ? const Icon(Icons.check_rounded,
-                              color: Colors.white, size: 16)
-                          : null,
+                      child: BatchCheckbox(
+                        checked: selected,
+                        compact: true,
+                        interactive: false,
+                        visualSize: 20,
+                      ),
                     ),
                   ),
               ],

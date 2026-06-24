@@ -1234,15 +1234,17 @@ class _DownloadChapterRow extends StatelessWidget {
       ),
       leading: selectionMode
           ? SizedBox(
-              width: compact ? 56 : 78,
+              width: compact ? 52 : 68,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Checkbox(
-                    value: selected,
-                    onChanged: (value) => onSelected(value ?? false),
-                    visualDensity: VisualDensity.compact,
+                  BatchCheckbox(
+                    checked: selected,
+                    compact: compact,
+                    tooltip: selected ? '取消选择' : '选择章节',
+                    onChanged: () => onSelected(!selected),
                   ),
+                  SizedBox(width: compact ? 2 : 6),
                   _DownloadChapterIndex(item: item, compact: compact),
                 ],
               ),
@@ -1313,70 +1315,62 @@ class _DownloadSelectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? AppColors.slate900.withValues(alpha: 0.28)
-            : Colors.white,
-        border: Border(top: BorderSide(color: context.faintBorder)),
-      ),
-      child: Row(
-        children: [
-          TextButton.icon(
-            onPressed: onSelectPage,
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.primary600,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              minimumSize: const Size(0, 36),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
-                fontSize: 13,
-                height: 1.2,
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 520;
+        final veryNarrow = constraints.maxWidth < 390;
+        final selectButton = BatchSelectButton(
+          checked: allSelected,
+          label: allSelected ? '取消全选' : '全选本页',
+          compact: compact,
+          onPressed: onSelectPage,
+        );
+        final trailing = Wrap(
+          spacing: compact ? 8 : 10,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          alignment: veryNarrow ? WrapAlignment.start : WrapAlignment.end,
+          children: [
+            BatchCountBadge(label: '已选 $selectedCount 章', compact: compact),
+            BatchActionButton(
+              icon: Icons.delete_outline_rounded,
+              label: compact ? '删除' : '删除选中',
+              danger: true,
+              compact: compact,
+              onPressed: onDelete == null ? null : () => onDelete!(),
             ),
-            icon: Icon(
-              allSelected
-                  ? Icons.check_box_rounded
-                  : Icons.check_box_outline_blank_rounded,
-              size: 17,
-            ),
-            label: Text(
-              allSelected ? '取消全选' : '全选本页',
-              style: const TextStyle(fontSize: 13, height: 1.2),
-            ),
+          ],
+        );
+        return Container(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 12 : 16,
+            compact ? 10 : 12,
+            compact ? 12 : 16,
+            compact ? 12 : 14,
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '已选 $selectedCount 章',
-              style: TextStyle(
-                color: context.mutedText,
-                fontSize: 13,
-              ),
-            ),
+          decoration: BoxDecoration(
+            color: context.isDark
+                ? AppColors.slate900.withValues(alpha: 0.28)
+                : Colors.white,
+            border: Border(top: BorderSide(color: context.faintBorder)),
           ),
-          FilledButton.icon(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline_rounded, size: 18),
-            label: const Text(
-              '删除选中',
-              style: TextStyle(fontSize: 13, height: 1.2),
-            ),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              minimumSize: const Size(0, 38),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
-                fontSize: 13,
-                height: 1.2,
-              ),
-            ),
-          ),
-        ],
-      ),
+          child: veryNarrow
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: selectButton,
+                    ),
+                    const SizedBox(height: 8),
+                    trailing,
+                  ],
+                )
+              : Row(
+                  children: [selectButton, const Spacer(), trailing],
+                ),
+        );
+      },
     );
   }
 }
