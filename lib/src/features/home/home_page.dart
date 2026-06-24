@@ -104,12 +104,31 @@ class _HomePageState extends State<HomePage> {
           if (book.id.isNotEmpty) book.id: book,
       };
 
+  List<ProgressItem> get _recentBookPlays {
+    final map = <String, ProgressItem>{};
+    for (final progress in _recent) {
+      if (progress.bookId.isEmpty) continue;
+      final existing = map[progress.bookId];
+      if (existing == null ||
+          _progressTime(progress).isAfter(_progressTime(existing))) {
+        map[progress.bookId] = progress;
+      }
+    }
+    final items = map.values.toList();
+    items.sort((a, b) => _progressTime(b).compareTo(_progressTime(a)));
+    return items;
+  }
+
+  DateTime _progressTime(ProgressItem item) {
+    return DateTime.tryParse(item.updatedAt ?? '') ?? DateTime(1970);
+  }
+
   List<_HeroItem> get _heroItems {
     final seen = <String>{};
     final items = <_HeroItem>[];
     final map = _bookMap;
 
-    for (final progress in _recent) {
+    for (final progress in _recentBookPlays) {
       final book = map[progress.bookId];
       final id = book?.id ?? progress.bookId;
       if (id.isEmpty || seen.contains(id)) continue;
@@ -159,7 +178,7 @@ class _HomePageState extends State<HomePage> {
     final source = <Book?>[
       _activeHero?.book,
       ..._favorites,
-      ..._recent.map((item) => _bookMap[item.bookId]),
+      ..._recentBookPlays.map((item) => _bookMap[item.bookId]),
       ..._recentlyAdded,
     ];
     return source
@@ -277,7 +296,7 @@ class _HomePageState extends State<HomePage> {
             onAction: () {},
           ),
           const SizedBox(height: 16),
-          if (_recent.isEmpty)
+          if (_recentBookPlays.isEmpty)
             EmptyState(
               icon: Icons.play_arrow_rounded,
               title: '暂无播放记录',
@@ -290,7 +309,7 @@ class _HomePageState extends State<HomePage> {
             )
           else
             _RecentGrid(
-              items: _recent.take(4).toList(),
+              items: _recentBookPlays.take(4).toList(),
               coverShape: coverShape,
               onBook: widget.openBook,
             ),
