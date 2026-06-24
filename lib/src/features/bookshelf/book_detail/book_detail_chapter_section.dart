@@ -444,7 +444,6 @@ class _ChapterSectionState extends State<_ChapterSection> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   final compact = constraints.maxWidth < 520;
-                  final veryNarrow = constraints.maxWidth < 390;
                   final selectButton = BatchSelectButton(
                     checked: allPageSelected,
                     label: allPageSelected ? '取消本页' : '全选本页',
@@ -465,27 +464,25 @@ class _ChapterSectionState extends State<_ChapterSection> {
                     onPressed:
                         selectedDownloadable == 0 ? null : _downloadSelected,
                   );
-                  final trailing = Wrap(
-                    spacing: compact ? 8 : 10,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment:
-                        veryNarrow ? WrapAlignment.start : WrapAlignment.end,
-                    children: [countBadge, downloadButton],
-                  );
-                  if (veryNarrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                  if (compact) {
+                    return Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: selectButton,
-                        ),
-                        const SizedBox(height: 8),
-                        trailing,
+                        selectButton,
+                        countBadge,
+                        downloadButton,
                       ],
                     );
                   }
+                  final trailing = Wrap(
+                    spacing: 10,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    alignment: WrapAlignment.end,
+                    children: [countBadge, downloadButton],
+                  );
                   return Row(
                     children: [selectButton, const Spacer(), trailing],
                   );

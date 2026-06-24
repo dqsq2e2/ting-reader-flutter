@@ -1318,7 +1318,6 @@ class _DownloadSelectionBar extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 520;
-        final veryNarrow = constraints.maxWidth < 390;
         final selectButton = BatchSelectButton(
           checked: allSelected,
           label: allSelected ? '取消全选' : '全选本页',
@@ -1326,10 +1325,10 @@ class _DownloadSelectionBar extends StatelessWidget {
           onPressed: onSelectPage,
         );
         final trailing = Wrap(
-          spacing: compact ? 8 : 10,
+          spacing: 10,
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
-          alignment: veryNarrow ? WrapAlignment.start : WrapAlignment.end,
+          alignment: WrapAlignment.end,
           children: [
             BatchCountBadge(label: '已选 $selectedCount 章', compact: compact),
             BatchActionButton(
@@ -1341,6 +1340,29 @@ class _DownloadSelectionBar extends StatelessWidget {
             ),
           ],
         );
+        final content = compact
+            ? Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  selectButton,
+                  BatchCountBadge(
+                    label: '已选 $selectedCount 章',
+                    compact: compact,
+                  ),
+                  BatchActionButton(
+                    icon: Icons.delete_outline_rounded,
+                    label: '删除',
+                    danger: true,
+                    compact: compact,
+                    onPressed: onDelete == null ? null : () => onDelete!(),
+                  ),
+                ],
+              )
+            : Row(
+                children: [selectButton, const Spacer(), trailing],
+              );
         return Container(
           padding: EdgeInsets.fromLTRB(
             compact ? 12 : 16,
@@ -1354,21 +1376,7 @@ class _DownloadSelectionBar extends StatelessWidget {
                 : Colors.white,
             border: Border(top: BorderSide(color: context.faintBorder)),
           ),
-          child: veryNarrow
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: selectButton,
-                    ),
-                    const SizedBox(height: 8),
-                    trailing,
-                  ],
-                )
-              : Row(
-                  children: [selectButton, const Spacer(), trailing],
-                ),
+          child: content,
         );
       },
     );

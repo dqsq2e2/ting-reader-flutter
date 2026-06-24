@@ -445,16 +445,19 @@ class BatchCountBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(narrow ? 12 : 14),
         border: Border.all(color: context.faintBorder),
       ),
-      alignment: Alignment.center,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: context.secondaryText,
-          fontSize: narrow ? 13 : 14,
-          fontWeight: FontWeight.w700,
-          height: 1.15,
+      child: Center(
+        widthFactor: 1,
+        heightFactor: 1,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: context.secondaryText,
+            fontSize: narrow ? 13 : 14,
+            fontWeight: FontWeight.w700,
+            height: 1.15,
+          ),
         ),
       ),
     );
