@@ -693,6 +693,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   Size _expandedCoverBounds({
     required Size screenSize,
     required EdgeInsets safePadding,
+    required double bottomContentPadding,
     required bool tightControls,
     required double mainButtonSize,
     required bool hasError,
@@ -720,9 +721,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     final controlsGap = tightControls ? 20.0 : 26.0;
     final errorHeight = hasError ? 72.0 : 0.0;
     final reservedHeight = safePadding.top +
-        safePadding.bottom * 2 +
+        safePadding.bottom +
         18 +
-        28 +
         38 +
         28 +
         afterCoverGap +
@@ -736,7 +736,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
         48 +
         42 +
         controlsGap +
-        mainButtonSize;
+        mainButtonSize +
+        bottomContentPadding;
     final availableCoverHeight = screenSize.height - reservedHeight;
     final minCoverHeight = _coverShape == CoverShape.square ? 132.0 : 156.0;
     final coverMaxHeight =
@@ -744,11 +745,31 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     return Size(baseMaxWidth, coverMaxHeight);
   }
 
+  double _expandedBottomContentPadding({
+    required Size screenSize,
+    required EdgeInsets safePadding,
+  }) {
+    final portraitPhone =
+        screenSize.height > screenSize.width && screenSize.width < 600;
+    if (!portraitPhone) return 28.0;
+
+    const referencePortraitHeight = 900.0;
+    const referenceBottomPadding = 28.0;
+    final heightRatio =
+        (screenSize.height / referencePortraitHeight).clamp(0.0, 1.0);
+    final scaledPadding = (referenceBottomPadding * heightRatio)
+        .clamp(12.0, referenceBottomPadding)
+        .toDouble();
+    final safeAreaAdjustment = safePadding.bottom * 0.65;
+    return (scaledPadding - safeAreaAdjustment)
+        .clamp(8.0, referenceBottomPadding)
+        .toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final mediaPadding = MediaQuery.paddingOf(context);
-    final bottom = mediaPadding.bottom;
 
     return AnimatedBuilder(
       animation: widget.player,
@@ -790,9 +811,14 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
             tightControls ? 22.0 : (compactControls ? 24.0 : 26.0);
         final controlGap =
             tightControls ? 14.0 : (compactControls ? 18.0 : 22.0);
+        final bottomContentPadding = _expandedBottomContentPadding(
+          screenSize: size,
+          safePadding: mediaPadding,
+        );
         final coverBounds = _expandedCoverBounds(
           screenSize: size,
           safePadding: mediaPadding,
+          bottomContentPadding: bottomContentPadding,
           tightControls: tightControls,
           mainButtonSize: mainButtonSize,
           hasError: player.error != null,
@@ -845,7 +871,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
               ),
               SafeArea(
                 child: SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(22, 18, 22, 28 + bottom),
+                  padding:
+                      EdgeInsets.fromLTRB(22, 18, 22, bottomContentPadding),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 560),

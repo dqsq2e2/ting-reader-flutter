@@ -2,6 +2,7 @@ import '_helpers.dart';
 
 class ProgressItem {
   const ProgressItem({
+    required this.id,
     required this.bookId,
     this.chapterId,
     this.position = 0,
@@ -14,6 +15,7 @@ class ProgressItem {
     this.chapterDuration,
   });
 
+  final String id;
   final String bookId;
   final String? chapterId;
   final double position;
@@ -27,6 +29,7 @@ class ProgressItem {
 
   factory ProgressItem.fromJson(Map<String, dynamic> json) {
     return ProgressItem(
+      id: readString(json, 'id') ?? '',
       bookId: readString(json, 'book_id', 'bookId') ?? '',
       chapterId: readString(json, 'chapter_id', 'chapterId'),
       position: readDouble(json, 'position') ?? 0,

@@ -90,7 +90,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         appState.api.get(
           '/api/books',
           params: {
-            if (_selectedLibraryId.isNotEmpty) 'libraryId': _selectedLibraryId,
+            if (_selectedLibraryId.isNotEmpty) 'library_id': _selectedLibraryId,
           },
         ),
         appState.api.get(

@@ -73,7 +73,7 @@ class _PluginsPageState extends State<PluginsPage> {
     try {
       await AppScope.appOf(context).api.post(
         '/api/v1/store/install',
-        data: {'plugin_id': item.id, 'pluginId': item.id},
+        data: {'plugin_id': item.id},
       );
       if (!mounted) return;
       _showSnack('Plugin installed successfully!');

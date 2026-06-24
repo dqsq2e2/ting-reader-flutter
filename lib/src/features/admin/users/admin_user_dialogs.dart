@@ -28,7 +28,8 @@ class _ConfirmActionDialog extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: context.isDark ? 0.34 : 0.18),
+                color: Colors.black
+                    .withValues(alpha: context.isDark ? 0.34 : 0.18),
                 blurRadius: 32,
                 offset: const Offset(0, 22),
               ),
@@ -279,8 +280,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
         if (_password.text.isNotEmpty) data['password'] = _password.text;
         if (_role != user.role) data['role'] = _role;
         if (_role == 'user') {
-          data['librariesAccessible'] = _libraryIds.toList();
-          data['booksAccessible'] = _bookIds.toList();
+          data['libraries_accessible'] = _libraryIds.toList();
+          data['books_accessible'] = _bookIds.toList();
         }
         if (data.isNotEmpty) {
           await api.patch('/api/users/${user.id}', data: data);
@@ -290,8 +291,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
           'username': username,
           'password': _password.text,
           'role': _role,
-          if (_role == 'user') 'librariesAccessible': _libraryIds.toList(),
-          if (_role == 'user') 'booksAccessible': _bookIds.toList(),
+          if (_role == 'user') 'libraries_accessible': _libraryIds.toList(),
+          if (_role == 'user') 'books_accessible': _bookIds.toList(),
         };
         await api.post('/api/users', data: data);
       }
@@ -324,7 +325,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: context.isDark ? 0.34 : 0.18),
+                color: Colors.black
+                    .withValues(alpha: context.isDark ? 0.34 : 0.18),
                 blurRadius: 34,
                 offset: const Offset(0, 24),
               ),
