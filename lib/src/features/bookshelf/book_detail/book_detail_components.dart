@@ -134,35 +134,27 @@ class _CollapsibleBookTags extends StatelessWidget {
         }
 
         final rowHeight = _tagRowHeight(textStyle, direction);
+        final moreWidth = _toggleWidth('更多', textStyle, direction);
+        final availableForTags = math.max(0.0, maxWidth - moreWidth - _spacing);
+        final visibleTags =
+            tags.take(_visibleTagCount(tagWidths, availableForTags)).toList();
 
-        return Row(
-          mainAxisAlignment: alignment == WrapAlignment.center
-              ? MainAxisAlignment.center
-              : MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Flexible(
-              fit: FlexFit.loose,
-              child: SizedBox(
-                height: rowHeight,
-                child: ClipRect(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: _TagWrap(
-                      tags: tags,
-                      alignment: alignment,
-                    ),
-                  ),
+        return SizedBox(
+          height: rowHeight,
+          child: ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: _TagWrap(
+                tags: visibleTags,
+                alignment: alignment,
+                trailing: _BookTagToggle(
+                  label: '更多',
+                  icon: Icons.keyboard_arrow_down_rounded,
+                  onTap: () => onExpandedChanged(true),
                 ),
               ),
             ),
-            const SizedBox(width: _spacing),
-            _BookTagToggle(
-              label: '更多',
-              icon: Icons.keyboard_arrow_down_rounded,
-              onTap: () => onExpandedChanged(true),
-            ),
-          ],
+          ),
         );
       },
     );
@@ -190,6 +182,19 @@ class _CollapsibleBookTags extends StatelessWidget {
     return painter.height + _tagVerticalPadding + _layoutTolerance;
   }
 
+  static double _toggleWidth(
+    String label,
+    TextStyle style,
+    TextDirection direction,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: direction,
+      maxLines: 1,
+    )..layout();
+    return painter.width + 12 + 3 + 18 + _layoutTolerance;
+  }
+
   static bool _wrapsToMultipleRows(List<double> widths, double maxWidth) {
     var rowWidth = 0.0;
     for (final width in widths) {
@@ -198,6 +203,18 @@ class _CollapsibleBookTags extends StatelessWidget {
       rowWidth = width > maxWidth ? maxWidth : nextWidth;
     }
     return false;
+  }
+
+  static int _visibleTagCount(List<double> widths, double maxWidth) {
+    var rowWidth = 0.0;
+    var count = 0;
+    for (final width in widths) {
+      final nextWidth = rowWidth == 0 ? width : rowWidth + _spacing + width;
+      if (nextWidth > maxWidth && rowWidth > 0) break;
+      rowWidth = width > maxWidth ? maxWidth : nextWidth;
+      count++;
+    }
+    return count;
   }
 }
 
