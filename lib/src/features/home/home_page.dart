@@ -188,7 +188,7 @@ class _HomePageState extends State<HomePage> {
           seen.add(book.id);
           return true;
         })
-        .take(8)
+        .take(6)
         .toList();
   }
 
