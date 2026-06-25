@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -57,7 +58,6 @@ class HorizontalScrollControls extends StatefulWidget {
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.controlsBreakpoint = 640,
     this.scrollFraction = 0.72,
     this.controlInset = 2,
     this.controlSize = 32,
@@ -65,7 +65,6 @@ class HorizontalScrollControls extends StatefulWidget {
 
   final Widget child;
   final EdgeInsetsGeometry padding;
-  final double controlsBreakpoint;
   final double scrollFraction;
   final double controlInset;
   final double controlSize;
@@ -80,6 +79,7 @@ class _HorizontalScrollControlsState extends State<HorizontalScrollControls> {
   bool _canScrollStart = false;
   bool _canScrollEnd = false;
   bool _updateScheduled = false;
+  bool _hovering = false;
 
   @override
   void initState() {
@@ -136,84 +136,89 @@ class _HorizontalScrollControlsState extends State<HorizontalScrollControls> {
   @override
   Widget build(BuildContext context) {
     _scheduleExtentUpdate();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final showControls = constraints.maxWidth >= widget.controlsBreakpoint;
-        return Stack(
-          clipBehavior: Clip.hardEdge,
-          alignment: Alignment.centerLeft,
-          children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (_) {
-                _scheduleExtentUpdate();
-                return false;
-              },
-              child: SingleChildScrollView(
-                controller: _controller,
-                padding: showControls
-                    ? _withHorizontalControlSpace(widget.padding)
-                    : widget.padding,
-                scrollDirection: Axis.horizontal,
-                child: widget.child,
+    final hasOverflow = _canScrollStart || _canScrollEnd;
+    final showControls = _hovering && hasOverflow;
+    return MouseRegion(
+      onEnter: (event) {
+        if (event.kind == PointerDeviceKind.mouse) {
+          setState(() => _hovering = true);
+        }
+      },
+      onExit: (_) => setState(() => _hovering = false),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        alignment: Alignment.centerLeft,
+        children: [
+          NotificationListener<ScrollNotification>(
+            onNotification: (_) {
+              _scheduleExtentUpdate();
+              return false;
+            },
+            child: SingleChildScrollView(
+              controller: _controller,
+              padding: hasOverflow
+                  ? _withHorizontalControlSpace(widget.padding)
+                  : widget.padding,
+              scrollDirection: Axis.horizontal,
+              child: widget.child,
+            ),
+          ),
+          if (showControls && _canScrollStart)
+            Positioned.fill(
+              right: null,
+              child: IgnorePointer(
+                child: Container(
+                  width: widget.controlSize + 18,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        context.cardColor,
+                        context.cardColor.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-            if (showControls && _canScrollStart)
-              Positioned.fill(
-                right: null,
-                child: IgnorePointer(
-                  child: Container(
-                    width: widget.controlSize + 18,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          context.cardColor,
-                          context.cardColor.withValues(alpha: 0),
-                        ],
-                      ),
+          if (showControls && _canScrollEnd)
+            Positioned.fill(
+              left: null,
+              child: IgnorePointer(
+                child: Container(
+                  width: widget.controlSize + 18,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        context.cardColor,
+                        context.cardColor.withValues(alpha: 0),
+                      ],
                     ),
                   ),
                 ),
               ),
-            if (showControls && _canScrollEnd)
-              Positioned.fill(
-                left: null,
-                child: IgnorePointer(
-                  child: Container(
-                    width: widget.controlSize + 18,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.centerRight,
-                        end: Alignment.centerLeft,
-                        colors: [
-                          context.cardColor,
-                          context.cardColor.withValues(alpha: 0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+            ),
+          if (showControls && _canScrollStart)
+            Positioned(
+              left: widget.controlInset,
+              child: _HorizontalScrollButton(
+                icon: Icons.chevron_left_rounded,
+                size: widget.controlSize,
+                onTap: () => _scrollBy(-1),
               ),
-            if (showControls && _canScrollStart)
-              Positioned(
-                left: widget.controlInset,
-                child: _HorizontalScrollButton(
-                  icon: Icons.chevron_left_rounded,
-                  size: widget.controlSize,
-                  onTap: () => _scrollBy(-1),
-                ),
+            ),
+          if (showControls && _canScrollEnd)
+            Positioned(
+              right: widget.controlInset,
+              child: _HorizontalScrollButton(
+                icon: Icons.chevron_right_rounded,
+                size: widget.controlSize,
+                onTap: () => _scrollBy(1),
               ),
-            if (showControls && _canScrollEnd)
-              Positioned(
-                right: widget.controlInset,
-                child: _HorizontalScrollButton(
-                  icon: Icons.chevron_right_rounded,
-                  size: widget.controlSize,
-                  onTap: () => _scrollBy(1),
-                ),
-              ),
-          ],
-        );
-      },
+            ),
+        ],
+      ),
     );
   }
 
