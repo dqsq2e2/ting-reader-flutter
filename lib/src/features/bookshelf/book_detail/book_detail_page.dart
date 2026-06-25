@@ -19,7 +19,11 @@ part 'book_detail_editing.dart';
 part 'book_detail_scrape.dart';
 part 'book_detail_scrape_compare.dart';
 part 'book_detail_scrape_widgets.dart';
-part 'book_detail_chapter_manager.dart';
+part 'chapter_manager/state.dart';
+part 'chapter_manager/layout.dart';
+part 'chapter_manager/list.dart';
+part 'chapter_manager/controls.dart';
+part 'chapter_manager/edit.dart';
 
 class BookDetailPage extends StatefulWidget {
   const BookDetailPage({

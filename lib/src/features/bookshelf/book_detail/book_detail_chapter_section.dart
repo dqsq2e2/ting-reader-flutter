@@ -398,8 +398,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
           ),
           if (widget.groupCount > 1) ...[
             const SizedBox(height: 24),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            HorizontalScrollControls(
               child: Row(
                 children: [
                   for (var i = 0; i < widget.groupCount; i++)

@@ -12,7 +12,6 @@ class _ChapterPageGroup {
   final List<Chapter> chapters;
 }
 
-
 class _ChapterSheetList extends StatefulWidget {
   const _ChapterSheetList({
     required this.player,
@@ -25,7 +24,6 @@ class _ChapterSheetList extends StatefulWidget {
   @override
   State<_ChapterSheetList> createState() => _ChapterSheetListState();
 }
-
 
 class _ChapterSheetListState extends State<_ChapterSheetList> {
   static const _chaptersPerGroup = 100;
@@ -290,12 +288,11 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                   BorderSide(color: context.faintBorder),
                             ),
                           ),
-                          child: SingleChildScrollView(
+                          child: HorizontalScrollControls(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 18,
                               vertical: 14,
                             ),
-                            scrollDirection: Axis.horizontal,
                             child: Row(
                               children: [
                                 for (var index = 0;
@@ -432,7 +429,6 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   }
 }
 
-
 class _ChapterTabButton extends StatelessWidget {
   const _ChapterTabButton({
     required this.label,
@@ -480,7 +476,6 @@ class _ChapterTabButton extends StatelessWidget {
   }
 }
 
-
 class _ChapterSortButton extends StatelessWidget {
   const _ChapterSortButton({
     required this.ascending,
@@ -511,7 +506,6 @@ class _ChapterSortButton extends StatelessWidget {
     );
   }
 }
-
 
 class _ChapterSheetTile extends StatelessWidget {
   const _ChapterSheetTile({
@@ -556,7 +550,8 @@ class _ChapterSheetTile extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(compact ? 10 : 16),
             border: Border.all(
-              color: active ? accent.withValues(alpha: 0.3) : context.faintBorder,
+              color:
+                  active ? accent.withValues(alpha: 0.3) : context.faintBorder,
             ),
           ),
           child: Row(
@@ -668,7 +663,6 @@ class _ChapterSheetTile extends StatelessWidget {
   }
 }
 
-
 class _ChapterSheetDownloadMark extends StatelessWidget {
   const _ChapterSheetDownloadMark({
     required this.compact,
@@ -759,7 +753,6 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
   }
 }
 
-
 class _PlayingBars extends StatefulWidget {
   const _PlayingBars({required this.color});
 
@@ -768,7 +761,6 @@ class _PlayingBars extends StatefulWidget {
   @override
   State<_PlayingBars> createState() => _PlayingBarsState();
 }
-
 
 class _PlayingBarsState extends State<_PlayingBars>
     with SingleTickerProviderStateMixin {
@@ -823,5 +815,3 @@ class _PlayingBarsState extends State<_PlayingBars>
     );
   }
 }
-
-

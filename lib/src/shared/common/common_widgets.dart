@@ -52,6 +52,219 @@ class TingCard extends StatelessWidget {
   }
 }
 
+class HorizontalScrollControls extends StatefulWidget {
+  const HorizontalScrollControls({
+    super.key,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+    this.controlsBreakpoint = 640,
+    this.scrollFraction = 0.72,
+    this.controlInset = 2,
+    this.controlSize = 32,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final double controlsBreakpoint;
+  final double scrollFraction;
+  final double controlInset;
+  final double controlSize;
+
+  @override
+  State<HorizontalScrollControls> createState() =>
+      _HorizontalScrollControlsState();
+}
+
+class _HorizontalScrollControlsState extends State<HorizontalScrollControls> {
+  final _controller = ScrollController();
+  bool _canScrollStart = false;
+  bool _canScrollEnd = false;
+  bool _updateScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_scheduleExtentUpdate);
+  }
+
+  @override
+  void didUpdateWidget(covariant HorizontalScrollControls oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _scheduleExtentUpdate();
+  }
+
+  @override
+  void dispose() {
+    _controller.removeListener(_scheduleExtentUpdate);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _scheduleExtentUpdate() {
+    if (_updateScheduled) return;
+    _updateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateScheduled = false;
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      final canScrollStart = position.pixels > 1;
+      final canScrollEnd = position.pixels < position.maxScrollExtent - 1;
+      if (canScrollStart == _canScrollStart && canScrollEnd == _canScrollEnd) {
+        return;
+      }
+      setState(() {
+        _canScrollStart = canScrollStart;
+        _canScrollEnd = canScrollEnd;
+      });
+    });
+  }
+
+  void _scrollBy(double direction) {
+    if (!_controller.hasClients) return;
+    final position = _controller.position;
+    final delta = position.viewportDimension * widget.scrollFraction;
+    final target = (position.pixels + delta * direction)
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
+    _controller.animateTo(
+      target,
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scheduleExtentUpdate();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showControls = constraints.maxWidth >= widget.controlsBreakpoint;
+        return Stack(
+          clipBehavior: Clip.hardEdge,
+          alignment: Alignment.center,
+          children: [
+            NotificationListener<ScrollNotification>(
+              onNotification: (_) {
+                _scheduleExtentUpdate();
+                return false;
+              },
+              child: SingleChildScrollView(
+                controller: _controller,
+                padding: showControls
+                    ? _withHorizontalControlSpace(widget.padding)
+                    : widget.padding,
+                scrollDirection: Axis.horizontal,
+                child: widget.child,
+              ),
+            ),
+            if (showControls && _canScrollStart)
+              Positioned.fill(
+                right: null,
+                child: IgnorePointer(
+                  child: Container(
+                    width: widget.controlSize + 18,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          context.cardColor,
+                          context.cardColor.withValues(alpha: 0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (showControls && _canScrollEnd)
+              Positioned.fill(
+                left: null,
+                child: IgnorePointer(
+                  child: Container(
+                    width: widget.controlSize + 18,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerRight,
+                        end: Alignment.centerLeft,
+                        colors: [
+                          context.cardColor,
+                          context.cardColor.withValues(alpha: 0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (showControls && _canScrollStart)
+              Positioned(
+                left: widget.controlInset,
+                child: _HorizontalScrollButton(
+                  icon: Icons.chevron_left_rounded,
+                  size: widget.controlSize,
+                  onTap: () => _scrollBy(-1),
+                ),
+              ),
+            if (showControls && _canScrollEnd)
+              Positioned(
+                right: widget.controlInset,
+                child: _HorizontalScrollButton(
+                  icon: Icons.chevron_right_rounded,
+                  size: widget.controlSize,
+                  onTap: () => _scrollBy(1),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  EdgeInsetsGeometry _withHorizontalControlSpace(EdgeInsetsGeometry padding) {
+    final resolved = padding.resolve(TextDirection.ltr);
+    final extra = widget.controlSize + widget.controlInset + 8;
+    return EdgeInsets.fromLTRB(
+      resolved.left,
+      resolved.top,
+      resolved.right + extra,
+      resolved.bottom,
+    );
+  }
+}
+
+class _HorizontalScrollButton extends StatelessWidget {
+  const _HorizontalScrollButton({
+    required this.icon,
+    required this.size,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final double size;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: context.cardColor.withValues(alpha: 0.96),
+      shape: const CircleBorder(),
+      elevation: 6,
+      shadowColor: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: context.faintBorder),
+          ),
+          alignment: Alignment.center,
+          child: Icon(icon, size: size * 0.68, color: context.secondaryText),
+        ),
+      ),
+    );
+  }
+}
+
 class ConnectionStatusCard extends StatelessWidget {
   const ConnectionStatusCard({super.key, required this.child});
 
@@ -408,7 +621,7 @@ class BatchActionButton extends StatelessWidget {
                   style: TextStyle(
                     color: foreground,
                     fontSize: narrow ? 13 : 14,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: filled ? FontWeight.w700 : FontWeight.w600,
                     height: 1.15,
                   ),
                 ),
@@ -455,7 +668,7 @@ class BatchCountBadge extends StatelessWidget {
           style: TextStyle(
             color: context.secondaryText,
             fontSize: narrow ? 13 : 14,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
             height: 1.15,
           ),
         ),

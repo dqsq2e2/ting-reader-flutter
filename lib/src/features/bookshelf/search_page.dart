@@ -411,8 +411,7 @@ class _FilterRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+            child: HorizontalScrollControls(
               child: Row(
                 children: [
                   _FilterChip(

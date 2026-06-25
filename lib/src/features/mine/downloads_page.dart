@@ -968,8 +968,11 @@ class _DownloadedBookChaptersView extends StatefulWidget {
 
 class _DownloadedBookChaptersViewState
     extends State<_DownloadedBookChaptersView> {
+  static const int _chaptersPerGroup = 100;
+
   bool _selecting = false;
   bool _ascending = true;
+  int _groupIndex = 0;
   final Set<String> _selectedIds = {};
 
   @override
@@ -978,18 +981,35 @@ class _DownloadedBookChaptersViewState
     final ids = widget.items.map((item) => item.storageKey).toSet();
     _selectedIds.removeWhere((id) => !ids.contains(id));
     if (_selectedIds.isEmpty && widget.items.isEmpty) _selecting = false;
+    final groupCount = _chapterGroups.length;
+    if (_groupIndex >= groupCount) {
+      _groupIndex = groupCount == 0 ? 0 : groupCount - 1;
+      _selectedIds.clear();
+    }
   }
 
-  List<LocalDownload> get _sortedItems {
+  List<LocalDownload> get _baseItems {
     final items = [...widget.items]
       ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
-    return _ascending ? items : items.reversed.toList(growable: false);
+    return items;
+  }
+
+  List<List<LocalDownload>> get _chapterGroups {
+    final items = _baseItems;
+    return [
+      for (var start = 0; start < items.length; start += _chaptersPerGroup)
+        items.skip(start).take(_chaptersPerGroup).toList(growable: false),
+    ];
+  }
+
+  List<LocalDownload> _orderedGroup(List<LocalDownload> group) {
+    return _ascending ? group : group.reversed.toList(growable: false);
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = _sortedItems;
-    if (items.isEmpty) {
+    final allItems = _baseItems;
+    if (allItems.isEmpty) {
       return PageListView(
         children: [
           AppBackButton(onPressed: widget.onBack),
@@ -1004,11 +1024,15 @@ class _DownloadedBookChaptersViewState
       );
     }
 
-    final first = items.first;
-    final selectedItems =
-        items.where((item) => _selectedIds.contains(item.storageKey)).toList();
+    final groups = _chapterGroups;
+    final groupIndex = _groupIndex.clamp(0, groups.length - 1).toInt();
+    final visibleItems = _orderedGroup(groups[groupIndex]);
+    final first = allItems.first;
+    final selectedItems = visibleItems
+        .where((item) => _selectedIds.contains(item.storageKey))
+        .toList();
     final allSelected =
-        items.isNotEmpty && selectedItems.length == items.length;
+        visibleItems.isNotEmpty && selectedItems.length == visibleItems.length;
     return PageListView(
       children: [
         AppBackButton(onPressed: widget.onBack),
@@ -1016,7 +1040,7 @@ class _DownloadedBookChaptersViewState
         HeaderText(
           icon: Icons.download_done_rounded,
           title: first.bookTitle,
-          subtitle: '已下载 ${items.length} 个音频',
+          subtitle: '已下载 ${allItems.length} 个音频',
         ),
         const SizedBox(height: 18),
         Wrap(
@@ -1038,7 +1062,10 @@ class _DownloadedBookChaptersViewState
               label: Text(_selecting ? '完成' : '批量删除'),
             ),
             OutlinedButton.icon(
-              onPressed: () => setState(() => _ascending = !_ascending),
+              onPressed: () => setState(() {
+                _ascending = !_ascending;
+                _selectedIds.clear();
+              }),
               icon: Icon(
                 _ascending
                     ? Icons.arrow_downward_rounded
@@ -1056,6 +1083,17 @@ class _DownloadedBookChaptersViewState
           ],
         ),
         const SizedBox(height: 14),
+        if (groups.length > 1) ...[
+          _DownloadChapterGroups(
+            groups: groups,
+            groupIndex: groupIndex,
+            onChanged: (index) => setState(() {
+              _groupIndex = index;
+              _selectedIds.clear();
+            }),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (_selecting) ...[
           _DownloadSelectionBar(
             selectedCount: selectedItems.length,
@@ -1067,7 +1105,7 @@ class _DownloadedBookChaptersViewState
                 } else {
                   _selectedIds
                     ..clear()
-                    ..addAll(items.map((item) => item.storageKey));
+                    ..addAll(visibleItems.map((item) => item.storageKey));
                 }
               });
             },
@@ -1093,7 +1131,7 @@ class _DownloadedBookChaptersViewState
             borderRadius: BorderRadius.circular(16),
             child: Column(
               children: [
-                ..._buildChapterRows(context, items),
+                ..._buildChapterRows(context, visibleItems),
               ],
             ),
           ),
@@ -1161,6 +1199,93 @@ class _DownloadedBookChaptersViewState
       }
     }
     return widgets;
+  }
+}
+
+class _DownloadChapterGroups extends StatelessWidget {
+  const _DownloadChapterGroups({
+    required this.groups,
+    required this.groupIndex,
+    required this.onChanged,
+  });
+
+  final List<List<LocalDownload>> groups;
+  final int groupIndex;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return HorizontalScrollControls(
+      child: Row(
+        children: [
+          for (var index = 0; index < groups.length; index++) ...[
+            _DownloadChapterGroupChip(
+              label: _labelFor(groups[index]),
+              selected: groupIndex == index,
+              onTap: () => onChanged(index),
+            ),
+            if (index != groups.length - 1) const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _labelFor(List<LocalDownload> items) {
+    if (items.isEmpty) return '0';
+    final start = items.first.chapterIndex;
+    final end = items.last.chapterIndex;
+    if (start == end) return '第 $start 章';
+    return '第 $start-$end 章';
+  }
+}
+
+class _DownloadChapterGroupChip extends StatelessWidget {
+  const _DownloadChapterGroupChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 640;
+    final foreground = selected ? Colors.white : context.secondaryText;
+    return Material(
+      color: selected
+          ? AppColors.primary600
+          : (context.isDark ? AppColors.slate800 : context.cardColor),
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 11 : 13,
+            vertical: compact ? 8 : 9,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: selected ? AppColors.primary600 : context.faintBorder,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: foreground,
+              fontSize: compact ? 12 : 13,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
