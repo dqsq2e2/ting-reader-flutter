@@ -123,7 +123,7 @@ jobs:
           else
             echo "No committed test scripts to run."
           fi
-      - run: flutter build apk --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
+      - run: flutter build apk --release --target-platform android-arm,android-arm64 --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: flutter build appbundle --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: |
           mkdir -p dist
