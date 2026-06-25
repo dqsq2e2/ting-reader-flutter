@@ -141,7 +141,7 @@ class _HorizontalScrollControlsState extends State<HorizontalScrollControls> {
         final showControls = constraints.maxWidth >= widget.controlsBreakpoint;
         return Stack(
           clipBehavior: Clip.hardEdge,
-          alignment: Alignment.center,
+          alignment: Alignment.centerLeft,
           children: [
             NotificationListener<ScrollNotification>(
               onNotification: (_) {

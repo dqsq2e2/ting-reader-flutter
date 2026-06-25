@@ -395,15 +395,18 @@ class _FilterRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return const SizedBox.shrink();
+    final compact = MediaQuery.sizeOf(context).width < 430;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           SizedBox(
-            width: 68,
+            width: compact ? 76 : 84,
             child: Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: context.mutedText,
                 fontWeight: FontWeight.w700,
