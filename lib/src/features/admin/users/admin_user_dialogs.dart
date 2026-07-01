@@ -72,7 +72,7 @@ class _ConfirmActionDialog extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('取消'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                   const SizedBox(width: 10),
                   ElevatedButton(
@@ -260,11 +260,12 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   Future<void> _save() async {
     final username = _username.text.trim();
     if (username.isEmpty) {
-      setState(() => _error = '请输入用户名');
+      setState(() => _error = context.localeText('请输入用户名', 'Enter a username'));
       return;
     }
     if (!_editing && _password.text.isEmpty) {
-      setState(() => _error = '请输入初始密码');
+      setState(() =>
+          _error = context.localeText('请输入初始密码', 'Enter an initial password'));
       return;
     }
     setState(() {
@@ -307,7 +308,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   String _extractError(Object error) {
     final text = error.toString();
-    return text.isEmpty ? '操作失败' : text;
+    return text.isEmpty ? context.localeText('操作失败', 'Operation failed') : text;
   }
 
   @override
@@ -343,7 +344,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   children: [
                     Expanded(
                       child: Text(
-                        _editing ? '修改用户信息' : '创建新账号',
+                        context.localeText(_editing ? '修改用户信息' : '创建新账号',
+                            _editing ? 'Edit User' : 'Create'),
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -360,24 +362,26 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                const DialogLabel('用户名'),
+                DialogLabel(context.localeText('用户名', 'Username')),
                 const SizedBox(height: 8),
                 _DialogTextField(controller: _username),
                 const SizedBox(height: 18),
-                DialogLabel(_editing ? '新密码（留空则不修改）' : '初始密码'),
+                DialogLabel(context.localeText(
+                    _editing ? '新密码（留空则不修改）' : '初始密码',
+                    _editing ? 'New Password (optional)' : 'Initial Password')),
                 const SizedBox(height: 8),
                 _DialogTextField(
                   controller: _password,
                   obscureText: true,
                 ),
                 const SizedBox(height: 18),
-                const DialogLabel('权限角色'),
+                DialogLabel(context.localeText('权限角色', 'Role')),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
                       child: _UserRoleChoice(
-                        label: '普通用户',
+                        label: context.localeText('普通用户', 'User'),
                         selected: _role == 'user',
                         color: AppColors.primary600,
                         onTap: () => setState(() => _role = 'user'),
@@ -386,7 +390,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _UserRoleChoice(
-                        label: '管理员',
+                        label: context.localeText('管理员', 'Admin'),
                         selected: _role == 'admin',
                         color: const Color(0xff9333ea),
                         onTap: () => setState(() => _role = 'admin'),
@@ -396,7 +400,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                 ),
                 if (_role == 'user') ...[
                   const SizedBox(height: 20),
-                  const DialogLabel('可访问的库'),
+                  DialogLabel(
+                      context.localeText('可访问的库', 'Accessible Libraries')),
                   const SizedBox(height: 8),
                   _LibraryPermissionBox(
                     libraries: widget.libraries,
@@ -412,7 +417,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     },
                   ),
                   const SizedBox(height: 20),
-                  const DialogLabel('特定书籍权限（搜索书名或系列名添加）'),
+                  DialogLabel(context.localeText(
+                      '特定书籍权限（搜索书名或系列名添加）', 'Specific Book Access')),
                   const SizedBox(height: 8),
                   _BookPermissionSearch(
                     controller: _bookSearch,
@@ -430,7 +436,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '提示：用户将拥有所选库下的所有书籍权限，以及此处单独添加的特定书籍权限。',
+                    context.localeText('提示：用户将拥有所选库下的所有书籍权限，以及此处单独添加的特定书籍权限。',
+                        'Users can access all books in selected libraries plus the specific books added here.'),
                     style: TextStyle(
                       color: context.tertiaryText,
                       fontSize: 11,
@@ -473,7 +480,8 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                             ),
                           )
                         : Text(
-                            _editing ? '保存修改' : '立即创建',
+                            context.localeText(_editing ? '保存修改' : '立即创建',
+                                _editing ? 'Save' : 'Create'),
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
                               fontSize: 15,

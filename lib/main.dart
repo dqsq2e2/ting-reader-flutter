@@ -4,11 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
+import 'l10n/app_localizations.dart';
 import 'src/features/login_page.dart';
 import 'src/core/state/app_state.dart';
 import 'src/core/state/download_state.dart';
 import 'src/core/state/player_state.dart';
 import 'src/core/theme/app_theme.dart';
+import 'src/core/utils/locale.dart';
 import 'src/features/app_shell.dart';
 import 'src/shared/app_scope.dart';
 import 'src/shared/common/common_widgets.dart';
@@ -66,7 +68,7 @@ Future<void> _initializeBackgroundAudio() async {
 
   await JustAudioBackground.init(
     androidNotificationChannelId: 'cn.tingreader.audio.playback',
-    androidNotificationChannelName: 'Ting Reader 播放',
+    androidNotificationChannelName: 'Ting Reader Playback',
     androidNotificationOngoing: true,
     androidShowNotificationBadge: true,
     fastForwardInterval: const Duration(seconds: 15),
@@ -90,6 +92,9 @@ class TingReaderApp extends StatelessWidget {
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           themeMode: appState.themeMode,
+          locale: appState.locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) {
             final content = child ?? const SizedBox.shrink();
             final brightness = Theme.of(context).brightness;
@@ -195,6 +200,7 @@ class StartupConnectionPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
+    final l10n = context.l10n;
     final target = appState.activeUrl.isNotEmpty
         ? appState.activeUrl
         : (appState.localServerUrl.isNotEmpty
@@ -216,10 +222,10 @@ class StartupConnectionPage extends StatelessWidget {
                     Image.asset('assets/images/logo.png',
                         width: 72, height: 72),
                     const SizedBox(height: 18),
-                    const Text(
-                      '正在连接服务器',
+                    Text(
+                      l10n.startupConnecting,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 24,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
@@ -228,8 +234,8 @@ class StartupConnectionPage extends StatelessWidget {
                     const SizedBox(height: 8),
                     Text(
                       appState.resolvingRedirect
-                          ? '正在检测局域网和广域网访问地址'
-                          : '正在恢复登录并同步服务器数据',
+                          ? l10n.startupResolving
+                          : l10n.startupRestoring,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: context.mutedText,
@@ -281,7 +287,7 @@ class StartupConnectionPage extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onCancel,
                       icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                      label: const Text('取消并选择服务器'),
+                      label: Text(l10n.startupCancelAndChooseServer),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(

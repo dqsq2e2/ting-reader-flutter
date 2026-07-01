@@ -44,26 +44,33 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
 
     final downloadState = AppScope.downloadOf(context);
     if (downloadState.hasChapter(chapter.id)) {
-      _showPlayerMessage('当前章节已下载');
+      _showPlayerMessage(context.localeText(
+          '当前章节已下载', 'Current chapter is already downloaded'));
       return;
     }
     final task = downloadState.taskForChapter(chapter.id);
     if (task != null) {
       if (task.status == DownloadStatus.paused ||
           task.status == DownloadStatus.failed) {
+        final resumedMessage = context.localeText(
+            '已恢复下载：${chapter.title}', 'Resumed download: ${chapter.title}');
         await downloadState.resumeTask(chapter.id);
-        _showPlayerMessage('已恢复下载：${chapter.title}');
+        _showPlayerMessage(resumedMessage);
       } else {
-        _showPlayerMessage('下载任务已存在：${task.status.label}');
+        final status = task.status.labelForLocale(context.isEnglishLocale);
+        _showPlayerMessage(context.localeText(
+            '下载任务已存在：$status', 'Download task already exists: $status'));
       }
       return;
     }
 
     try {
       downloadState.queueChapter(book, chapter);
-      _showPlayerMessage('已加入下载队列：${chapter.title}');
+      _showPlayerMessage(context.localeText('已加入下载队列：${chapter.title}',
+          'Added to download queue: ${chapter.title}'));
     } catch (err) {
-      _showPlayerMessage('加入下载失败：$err');
+      _showPlayerMessage(
+          context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
     }
   }
 
@@ -77,17 +84,17 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   _ExpandedDownloadAction _downloadActionFor(Chapter chapter) {
     final downloadState = AppScope.downloadOf(context);
     if (downloadState.hasChapter(chapter.id)) {
-      return const _ExpandedDownloadAction(
+      return _ExpandedDownloadAction(
         icon: Icons.download_done_rounded,
-        label: '已下载',
+        label: context.localeText('已下载', 'Downloaded'),
         active: true,
       );
     }
     final task = downloadState.taskForChapter(chapter.id);
     if (task == null) {
-      return const _ExpandedDownloadAction(
+      return _ExpandedDownloadAction(
         icon: Icons.download_rounded,
-        label: '下载',
+        label: context.localeText('下载', 'Download'),
       );
     }
     return _ExpandedDownloadAction(
@@ -100,7 +107,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
       },
       label: task.status == DownloadStatus.downloading
           ? '${(task.progress * 100).clamp(0, 100).round()}%'
-          : task.status.label,
+          : task.status.labelForLocale(context.isEnglishLocale),
       active: task.status != DownloadStatus.failed,
     );
   }
@@ -143,7 +150,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '关闭',
+      barrierLabel: context.l10n.commonClose,
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 160),
       pageBuilder: (dialogContext, _, __) {
@@ -253,7 +260,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   ),
                   const SizedBox(height: 4),
                   IconButton(
-                    tooltip: nextVolume <= 0 ? '取消静音' : '静音',
+                    tooltip: nextVolume <= 0
+                        ? context.localeText('取消静音', 'Unmute')
+                        : context.localeText('静音', 'Mute'),
                     onPressed: () {
                       final value = nextVolume <= 0 ? 1.0 : 0.0;
                       setSheetState(() => nextVolume = value);
@@ -354,7 +363,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       ),
                     ),
                     child: Text(
-                      '睡眠定时',
+                      context.localeText('睡眠定时', 'Sleep Timer'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: context.tertiaryText,
@@ -394,7 +403,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                     fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                child: Text('${row[i]} 分钟'),
+                                child: Text(context.localeText(
+                                    '${row[i]} 分钟', '${row[i]} min')),
                               ),
                             ),
                           ),
@@ -420,14 +430,15 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                             controller: controller,
                             keyboardType: TextInputType.number,
                             style: const TextStyle(fontSize: 12),
-                            decoration: const InputDecoration(
+                            decoration: InputDecoration(
                               isDense: true,
-                              hintText: '自定义分钟',
+                              hintText:
+                                  context.localeText('自定义分钟', 'Custom minutes'),
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               focusedBorder: InputBorder.none,
                               contentPadding:
-                                  EdgeInsets.symmetric(horizontal: 8),
+                                  const EdgeInsets.symmetric(horizontal: 8),
                             ),
                           ),
                         ),
@@ -454,7 +465,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          child: const Text('开启'),
+                          child: Text(context.localeText('开启', 'Start')),
                         ),
                       ],
                     ),
@@ -482,13 +493,15 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      child: const Text('取消定时'),
+                      child: Text(context.localeText('取消定时', 'Cancel Timer')),
                     ),
                   ),
                   if (_sleepRemainingSeconds != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      '剩余 ${_formatSleepTime(_sleepRemainingSeconds!)}',
+                      context.localeText(
+                          '剩余 ${_formatSleepTime(_sleepRemainingSeconds!)}',
+                          'Remaining ${_formatSleepTime(_sleepRemainingSeconds!)}'),
                       style: TextStyle(
                         color: context.mutedText,
                         fontSize: 12,
@@ -514,7 +527,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     await showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '播放设置',
+      barrierLabel: context.localeText('播放设置', 'Playback Settings'),
       barrierColor: Colors.black.withValues(alpha: 0.6),
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (dialogContext, _, __) {
@@ -543,9 +556,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   children: [
                     Row(
                       children: [
-                        const Text(
-                          '播放设置',
-                          style: TextStyle(
+                        Text(
+                          context.localeText('播放设置', 'Playback Settings'),
+                          style: const TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w700,
                           ),
@@ -555,7 +568,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           onPressed: () => Navigator.pop(dialogContext),
                           icon: const Icon(Icons.close_rounded),
                           color: context.mutedText,
-                          tooltip: '关闭',
+                          tooltip: context.l10n.commonClose,
                         ),
                       ],
                     ),
@@ -563,15 +576,15 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                     _PlaybackSettingField(
                       controller: introController,
                       icon: Icons.skip_previous_rounded,
-                      label: '跳过片头 (秒)',
-                      hint: '例如: 30',
+                      label: context.localeText('跳过片头 (秒)', 'Skip Intro (sec)'),
+                      hint: context.localeText('例如: 30', 'For example: 30'),
                     ),
                     const SizedBox(height: 18),
                     _PlaybackSettingField(
                       controller: outroController,
                       icon: Icons.skip_next_rounded,
-                      label: '跳过片尾 (秒)',
-                      hint: '例如: 15',
+                      label: context.localeText('跳过片尾 (秒)', 'Skip Outro (sec)'),
+                      hint: context.localeText('例如: 15', 'For example: 15'),
                     ),
                     const SizedBox(height: 28),
                     Row(
@@ -586,7 +599,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                               foregroundColor: context.mutedText,
                             ),
-                            child: const Text('取消'),
+                            child: Text(context.l10n.commonCancel),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -619,13 +632,18 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                 }
                                 if (!hostContext.mounted) return;
                                 ScaffoldMessenger.of(hostContext).showSnackBar(
-                                  const SnackBar(content: Text('播放设置已保存')),
+                                  SnackBar(
+                                      content: Text(hostContext.localeText(
+                                          '播放设置已保存',
+                                          'Playback settings saved'))),
                                 );
                               } catch (err) {
                                 if (!mounted) return;
                                 if (!hostContext.mounted) return;
                                 ScaffoldMessenger.of(hostContext).showSnackBar(
-                                  SnackBar(content: Text('保存失败：$err')),
+                                  SnackBar(
+                                      content: Text(hostContext.localeText(
+                                          '保存失败：$err', 'Save failed: $err'))),
                                 );
                               }
                             },
@@ -641,7 +659,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                             ),
                             icon: const Icon(Icons.check_rounded, size: 20),
-                            label: const Text('保存'),
+                            label: Text(context.localeText('保存', 'Save')),
                           ),
                         ),
                       ],
@@ -823,6 +841,17 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
           mainButtonSize: mainButtonSize,
           hasError: player.error != null,
         );
+        final readerExtensionContext = <String, Object?>{
+          'book_id': book.id,
+          'book_title': book.title,
+          'book_path': book.path,
+          'chapter_id': chapter.id,
+          'chapter_title': chapter.title,
+          'chapter_path': chapter.path,
+          'position': player.currentTime,
+          'duration': maxDuration,
+          'playback_state': player.isPlaying ? 'playing' : 'paused',
+        };
 
         return Material(
           color: backgroundColor,
@@ -893,7 +922,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   child: Column(
                                     children: [
                                       Text(
-                                        chapter.title,
+                                        localizedChapterTitle(context, chapter),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -903,7 +932,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        book.title,
+                                        localizedBookTitle(context, book),
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -923,6 +952,23 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                     _openPlaybackSettings(player, book),
                               ),
                             ],
+                          ),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                PluginExtensionSlot(
+                                  slot: ClientExtensionSlot.readerToolbarAction,
+                                  extensionContext: readerExtensionContext,
+                                ),
+                                PluginExtensionSlot(
+                                  slot: ClientExtensionSlot.readerSidePanel,
+                                  extensionContext: readerExtensionContext,
+                                  padding: const EdgeInsets.only(left: 6),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 28),
                           ConstrainedBox(
@@ -961,7 +1007,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           SizedBox(
                             height: tightControls ? 32 : 36,
                             child: _ScrollingPlayerTitle(
-                              text: chapter.title,
+                              text: localizedChapterTitle(context, chapter),
                               style: TextStyle(
                                 fontSize: tightControls ? 22 : 24,
                                 height: 1.18,
@@ -971,7 +1017,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           ),
                           const SizedBox(height: 9),
                           Text(
-                            book.narrator ?? book.author ?? book.title,
+                            book.narrator ??
+                                book.author ??
+                                localizedBookTitle(context, book),
                             textAlign: TextAlign.center,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -1022,7 +1070,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                       ? Icons.volume_off_rounded
                                       : Icons.volume_up_rounded,
                                   label: player.volume <= 0
-                                      ? '静音'
+                                      ? context.localeText('静音', 'Muted')
                                       : '${(player.volume * 100).round()}%',
                                   active: player.volume != 1,
                                   onTapWithContext: (buttonContext) =>
@@ -1041,7 +1089,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                 child: _QuickActionButton(
                                   icon: Icons.timer_outlined,
                                   label: _sleepRemainingSeconds == null
-                                      ? '定时'
+                                      ? context.localeText('定时', 'Timer')
                                       : _formatSleepTime(
                                           _sleepRemainingSeconds!),
                                   active: _sleepRemainingSeconds != null,
@@ -1053,7 +1101,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               Expanded(
                                 child: _QuickActionButton(
                                   icon: Icons.list_alt_rounded,
-                                  label: '选集',
+                                  label: context.localeText('选集', 'Chapters'),
                                   onTap: () => _openChapterSheet(
                                       context, player, themeColor),
                                 ),

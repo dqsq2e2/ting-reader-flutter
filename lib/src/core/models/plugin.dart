@@ -9,15 +9,18 @@ class PluginItem {
     required this.state,
     this.author,
     this.description,
+    this.descriptionI18n = const {},
     this.longDescription,
     this.runtime,
     this.license,
     this.repo,
+    this.minCoreVersion,
+    this.minFlutterVersion,
     this.dependencies = const [],
     this.permissions = const [],
+    this.capabilities = const [],
     this.supportedExtensions = const [],
     this.configSchema,
-    this.scraper,
   });
 
   final String id;
@@ -27,85 +30,123 @@ class PluginItem {
   final String state;
   final String? author;
   final String? description;
+  final Map<String, String> descriptionI18n;
   final String? longDescription;
   final String? runtime;
   final String? license;
   final String? repo;
+  final String? minCoreVersion;
+  final String? minFlutterVersion;
   final List<String> dependencies;
   final List<String> permissions;
+  final List<PluginCapability> capabilities;
   final List<String> supportedExtensions;
   final Map<String, dynamic>? configSchema;
-  final PluginScraperInfo? scraper;
 
   factory PluginItem.fromJson(Map<String, dynamic> json) {
-    final rawConfig = json['config_schema'] ?? json['configSchema'];
-    final rawScraper = json['scraper'];
+    final rawConfig = json['config_schema'];
+    final capabilities = _capabilityList(json['capabilities']);
     return PluginItem(
       id: readString(json, 'id') ?? '',
       name: readString(json, 'name') ?? 'Plugin',
       version: readString(json, 'version') ?? '',
-      pluginType: readString(json, 'plugin_type', 'pluginType') ?? '',
+      pluginType: _pluginCategory(capabilities),
       state: readString(json, 'state') ??
-          (readBool(json, 'is_enabled', 'isEnabled') == false
-              ? 'inactive'
-              : 'active'),
+          (readBool(json, 'is_enabled') == false ? 'inactive' : 'active'),
       author: readString(json, 'author'),
       description: readString(json, 'description'),
-      longDescription: readString(json, 'long_description', 'longDescription'),
+      descriptionI18n: _localizedTextMap(json['description_i18n']),
+      longDescription: readString(json, 'long_description'),
       runtime: readString(json, 'runtime'),
       license: readString(json, 'license'),
       repo: readString(json, 'repo'),
+      minCoreVersion: readString(json, 'min_core_version'),
+      minFlutterVersion: readString(json, 'min_flutter_version'),
       dependencies: _pluginStringList(json['dependencies']),
       permissions: readStringList(json['permissions']),
-      supportedExtensions: readStringList(
-          json['supported_extensions'] ?? json['supportedExtensions']),
+      capabilities: capabilities,
+      supportedExtensions: _capabilitySupportedExtensions(capabilities),
       configSchema: rawConfig is Map
           ? rawConfig.map((key, value) => MapEntry(key.toString(), value))
           : null,
-      scraper: rawScraper is Map
-          ? PluginScraperInfo.fromJson(
-              rawScraper.map((key, value) => MapEntry(key.toString(), value)),
-            )
-          : null,
     );
   }
 }
 
-class PluginScraperInfo {
-  const PluginScraperInfo({
-    this.autoScrape = false,
-    this.searchFields = const [],
-    this.resultFields = const [],
+class PluginCapability {
+  const PluginCapability({
+    required this.id,
+    required this.kind,
+    this.invoke,
+    this.extra = const {},
   });
 
-  final bool autoScrape;
-  final List<String> searchFields;
-  final List<String> resultFields;
+  final String id;
+  final String kind;
+  final String? invoke;
+  final Map<String, dynamic> extra;
 
-  factory PluginScraperInfo.fromJson(Map<String, dynamic> json) {
-    return PluginScraperInfo(
-      autoScrape: readBool(json, 'autoScrape', 'auto_scrape') ?? false,
-      searchFields:
-          _scraperFieldNames(json['searchFields'] ?? json['search_fields']),
-      resultFields:
-          readStringList(json['resultFields'] ?? json['result_fields']),
+  Object? operator [](String key) => extra[key];
+
+  factory PluginCapability.fromJson(Map<String, dynamic> json) {
+    final extra = Map<String, dynamic>.from(json)
+      ..remove('id')
+      ..remove('kind')
+      ..remove('invoke');
+    return PluginCapability(
+      id: readString(json, 'id') ?? '',
+      kind: readString(json, 'kind') ?? '',
+      invoke: readString(json, 'invoke'),
+      extra: Map.unmodifiable(extra),
     );
   }
 }
 
-List<String> _scraperFieldNames(dynamic value) {
-  if (value is! List) return const [];
-  return value
-      .map((item) {
-        if (item is Map) {
-          return (item['label'] ?? item['key'] ?? item['name'] ?? item)
-              .toString()
-              .trim();
-        }
-        return item.toString().trim();
-      })
-      .where((text) => text.isNotEmpty)
-      .toList();
+class PluginCapabilityRegistration {
+  const PluginCapabilityRegistration({
+    required this.pluginId,
+    required this.pluginName,
+    required this.capability,
+  });
+
+  final String pluginId;
+  final String pluginName;
+  final PluginCapability capability;
+
+  factory PluginCapabilityRegistration.fromJson(Map<String, dynamic> json) {
+    return PluginCapabilityRegistration(
+      pluginId: readString(json, 'plugin_id') ?? '',
+      pluginName: readString(json, 'plugin_name') ?? '',
+      capability: PluginCapability.fromJson(asMap(json['capability'])),
+    );
+  }
+}
+
+class ToolProviderRegistration extends PluginCapabilityRegistration {
+  const ToolProviderRegistration({
+    required super.pluginId,
+    required super.pluginName,
+    required super.capability,
+    this.tool,
+  });
+
+  final Object? tool;
+
+  factory ToolProviderRegistration.fromJson(Map<String, dynamic> json) {
+    return ToolProviderRegistration(
+      pluginId: readString(json, 'plugin_id') ?? '',
+      pluginName: readString(json, 'plugin_name') ?? '',
+      capability: PluginCapability.fromJson(asMap(json['capability'])),
+      tool: json['tool'],
+    );
+  }
+}
+
+Map<String, String> _localizedTextMap(dynamic value) {
+  if (value is! Map) return const {};
+  return value.map(
+    (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+  )..removeWhere((_, value) => value.trim().isEmpty);
 }
 
 List<String> _pluginStringList(dynamic value) {
@@ -113,15 +154,59 @@ List<String> _pluginStringList(dynamic value) {
   return value
       .map((item) {
         if (item is Map) {
-          return (item['plugin_name'] ??
-                  item['pluginName'] ??
-                  item['id'] ??
-                  item)
-              .toString()
-              .trim();
+          return (item['plugin_name'] ?? item['id'] ?? item).toString().trim();
         }
         return item.toString().trim();
       })
       .where((text) => text.isNotEmpty)
       .toList();
+}
+
+List<PluginCapability> _capabilityList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map(asMap)
+      .where((item) => item.isNotEmpty)
+      .map(PluginCapability.fromJson)
+      .where((item) => item.id.isNotEmpty && item.kind.isNotEmpty)
+      .toList();
+}
+
+String _pluginCategory(List<PluginCapability> capabilities) {
+  final kinds = capabilities.map((capability) => capability.kind).toSet();
+  if (kinds.contains('metadata_provider')) return 'scraper';
+  if (kinds.contains('format_handler') || kinds.contains('content_processor')) {
+    return 'format';
+  }
+  return 'utility';
+}
+
+List<String> _capabilitySupportedExtensions(
+    List<PluginCapability> capabilities) {
+  final extensions = <String>[];
+  void add(String value) {
+    final extension =
+        value.trim().replaceFirst(RegExp(r'^\.'), '').toLowerCase();
+    if (extension.isNotEmpty && !extensions.contains(extension)) {
+      extensions.add(extension);
+    }
+  }
+
+  for (final capability in capabilities) {
+    if (capability.kind == 'format_handler' ||
+        capability.kind == 'content_processor') {
+      for (final extension in _capabilityExtensions(capability)) {
+        add(extension);
+      }
+    }
+  }
+  return extensions;
+}
+
+List<String> _capabilityExtensions(PluginCapability capability) {
+  final matches = capability.extra['matches'];
+  final nested = matches is Map ? matches['extensions'] : null;
+  final value = capability.extra['extensions'] ?? nested;
+  if (value is! List) return const [];
+  return value.map((item) => item.toString()).toList();
 }

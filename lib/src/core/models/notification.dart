@@ -54,10 +54,9 @@ class NotificationWebhook {
       events: readStringList(json['events']),
       secret: readString(json, 'secret'),
       headers: readStringMap(json['headers']),
-      bodyTemplate: readString(json, 'body_template', 'bodyTemplate') ??
-          '{{json:payload}}',
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      updatedAt: readString(json, 'updated_at', 'updatedAt'),
+      bodyTemplate: readString(json, 'body_template') ?? '{{json:payload}}',
+      createdAt: readString(json, 'created_at'),
+      updatedAt: readString(json, 'updated_at'),
     );
   }
 

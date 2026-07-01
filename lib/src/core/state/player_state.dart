@@ -168,7 +168,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> applySettings(Map<String, dynamic> settings) async {
-    final nested = asMap(settings['settings_json'] ?? settings['settingsJson']);
+    final nested = asMap(settings['settings_json']);
     final nextSpeed = _resolvePlaybackSpeedSetting(
       settings,
       nested: nested,
@@ -176,7 +176,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final next = _boolSetting(
       settings,
       'ignore_audio_focus',
-      'ignoreAudioFocus',
       nested: nested,
       fallback: false,
     );
@@ -459,7 +458,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {
         if (!_isActivePlay(playGeneration, targetChapter.id)) return;
         _suppressPositionUpdates = false;
-        error = '音频播放失败';
+        error = appState.textForLocale(
+          '音频播放失败',
+          'Audio playback failed',
+        );
         notifyListeners();
       }
     }
@@ -516,7 +518,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         });
       } catch (_) {
         if (seekGeneration != _seekGeneration) return;
-        error = '跳转失败';
+        error = appState.textForLocale(
+          '跳转失败',
+          'Seek failed',
+        );
         notifyListeners();
       } finally {
         if (seekGeneration == _seekGeneration) {
@@ -1130,18 +1135,30 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       throw StateError('No active chapter to download');
     }
     if (downloadState.hasChapter(chapter.id)) {
-      return '《${chapter.title}》已下载到本机';
+      return appState.textForLocale(
+        '《${chapter.title}》已下载到本机',
+        '"${chapter.title}" is already downloaded',
+      );
     }
     final task = downloadState.queueChapter(book, chapter);
     if (task.status == DownloadStatus.paused) {
       await downloadState.resumeTask(chapter.id);
-      return '《${chapter.title}》已继续下载';
+      return appState.textForLocale(
+        '《${chapter.title}》已继续下载',
+        'Resumed "${chapter.title}"',
+      );
     }
     if (task.status == DownloadStatus.failed) {
       await downloadState.retryTask(chapter.id);
-      return '《${chapter.title}》已重新加入下载队列';
+      return appState.textForLocale(
+        '《${chapter.title}》已重新加入下载队列',
+        'Requeued "${chapter.title}"',
+      );
     }
-    return '《${chapter.title}》已加入下载队列';
+    return appState.textForLocale(
+      '《${chapter.title}》已加入下载队列',
+      'Added "${chapter.title}" to download queue',
+    );
   }
 
   void _startProgressTimer() {
@@ -1208,13 +1225,12 @@ const _personalAudioDeviceTypeNames = <String>{
 
 bool _boolSetting(
   Map<String, dynamic> data,
-  String snake,
-  String camel, {
+  String key, {
   Map<String, dynamic> nested = const {},
   bool fallback = false,
 }) {
   for (final source in [data, nested]) {
-    final value = source[snake] ?? source[camel];
+    final value = source[key];
     if (value == null) continue;
     if (value is bool) return value;
     if (value is num) return value != 0;
@@ -1236,10 +1252,9 @@ double _resolvePlaybackSpeedSetting(
   Map<String, dynamic> settings, {
   Map<String, dynamic>? nested,
 }) {
-  final nestedSettings =
-      nested ?? asMap(settings['settings_json'] ?? settings['settingsJson']);
+  final nestedSettings = nested ?? asMap(settings['settings_json']);
   for (final source in [settings, nestedSettings]) {
-    final value = source['playback_speed'] ?? source['playbackSpeed'];
+    final value = source['playback_speed'];
     final parsed = _doubleValue(value);
     if (parsed != null && parsed.isFinite && parsed > 0) {
       return parsed;

@@ -153,7 +153,7 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      definition?.label ?? field.key,
+                      field.label,
                       style: const TextStyle(
                         color: AppColors.slate950,
                         fontWeight: FontWeight.w700,
@@ -203,7 +203,7 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
                 );
                 final input = _ScrapeReviewTextField(
                   value: editorValue,
-                  label: '封面 URL',
+                  label: context.localeText('封面 URL', 'Cover URL'),
                   onChanged: onChanged,
                 );
                 if (stack) {
@@ -234,7 +234,9 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
           else
             _ScrapeReviewTextField(
               value: editorValue,
-              label: field.key == 'tags' ? '应用值（逗号分隔）' : '应用值',
+              label: field.key == 'tags'
+                  ? context.localeText('应用值（逗号分隔）', 'Value (comma-separated)')
+                  : context.localeText('应用值', 'Value'),
               maxLines: isLongText ? (field.key == 'description' ? 6 : 3) : 1,
               onChanged: onChanged,
             ),
@@ -354,9 +356,9 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          '应用值',
-          style: TextStyle(
+        Text(
+          context.localeText('应用值', 'Value'),
+          style: const TextStyle(
             color: AppColors.primary500,
             fontSize: 12,
             fontWeight: FontWeight.w700,
@@ -376,9 +378,11 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
             child: DropdownButton<String>(
               value: value ? 'true' : 'false',
               isExpanded: true,
-              items: const [
-                DropdownMenuItem(value: 'true', child: Text('是')),
-                DropdownMenuItem(value: 'false', child: Text('否')),
+              items: [
+                DropdownMenuItem(
+                    value: 'true', child: Text(context.localeText('是', 'Yes'))),
+                DropdownMenuItem(
+                    value: 'false', child: Text(context.localeText('否', 'No'))),
               ],
               onChanged: (value) {
                 if (value != null) onChanged(value);

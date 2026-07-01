@@ -10,14 +10,17 @@ import 'bookshelf/bookshelf_page.dart';
 import 'bookshelf/search_page.dart';
 import 'bookshelf/series_detail/series_detail_page.dart';
 import 'home/home_page.dart';
+import 'mine/about_update_dialog.dart';
 import 'mine/downloads_page.dart';
 import 'mine/favorites_page.dart';
 import 'mine/mine_page.dart';
 import 'mine/personalization/personalization_page.dart';
 import 'playlists/playlists_page.dart';
 import '../core/theme/app_theme.dart';
+import '../core/utils/locale.dart';
 import '../shared/app_scope.dart';
 import '../shared/common/common_widgets.dart';
+import '../shared/plugin_extensions/plugin_extension_host.dart';
 import 'player/mini_player.dart';
 
 enum AppDestination {
@@ -32,6 +35,7 @@ enum AppDestination {
   notifications,
   statistics,
   downloads,
+  about,
   libraries,
   plugins,
   logs,
@@ -46,7 +50,8 @@ bool _isMineDestination(AppDestination destination) {
     AppDestination.personalization ||
     AppDestination.notifications ||
     AppDestination.statistics ||
-    AppDestination.downloads =>
+    AppDestination.downloads ||
+    AppDestination.about =>
       true,
     _ => false,
   };
@@ -67,6 +72,7 @@ class _AppShellState extends State<AppShell> {
   String? _playlistId;
   AppDestination _searchOrigin = AppDestination.bookshelf;
   bool _mobileAdminDrawerOpen = false;
+  String? _aboutBackendVersion;
 
   @override
   void initState() {
@@ -102,6 +108,8 @@ class _AppShellState extends State<AppShell> {
         return AppDestination.statistics;
       case 'downloads':
         return AppDestination.downloads;
+      case 'about':
+        return AppDestination.about;
       case 'libraries':
         return AppDestination.libraries;
       case 'plugins':
@@ -123,6 +131,19 @@ class _AppShellState extends State<AppShell> {
       _bookInitialChapterId = null;
       _seriesId = null;
       _playlistId = null;
+      _aboutBackendVersion = null;
+    });
+  }
+
+  void _openAbout(String? backendVersion) {
+    setState(() {
+      _mobileAdminDrawerOpen = false;
+      _destination = AppDestination.about;
+      _bookId = null;
+      _bookInitialChapterId = null;
+      _seriesId = null;
+      _playlistId = null;
+      _aboutBackendVersion = backendVersion;
     });
   }
 
@@ -225,7 +246,8 @@ class _AppShellState extends State<AppShell> {
       AppDestination.history ||
       AppDestination.personalization ||
       AppDestination.notifications ||
-      AppDestination.statistics =>
+      AppDestination.statistics ||
+      AppDestination.about =>
         AppDestination.mine,
     };
   }
@@ -266,6 +288,10 @@ class _AppShellState extends State<AppShell> {
                   final player = AppScope.playerOf(context);
                   final bottomInset = MediaQuery.of(context).padding.bottom;
                   final collapsedMini = player.isMiniCollapsed;
+                  final pluginExtensionBottom =
+                      player.hasChapter && !player.isExpanded
+                          ? (desktop ? 92.0 : 150.0 + bottomInset)
+                          : (desktop ? 24.0 : 84.0 + bottomInset);
                   return Stack(
                     children: [
                       Scaffold(
@@ -300,6 +326,12 @@ class _AppShellState extends State<AppShell> {
                               ? 20
                               : 64 + bottomInset + (collapsedMini ? 20 : 0),
                           child: const MiniPlayer(),
+                        ),
+                      if (!player.isExpanded && !_mobileAdminDrawerOpen)
+                        Positioned.fill(
+                          child: PluginExtensionHost(
+                            bottomOffset: pluginExtensionBottom,
+                          ),
                         ),
                       if (!desktop && _mobileAdminDrawerOpen)
                         Positioned.fill(
@@ -384,6 +416,7 @@ class _AppShellState extends State<AppShell> {
           openPersonalization: () => _go(AppDestination.personalization),
           openNotifications: () => _go(AppDestination.notifications),
           openStatistics: () => _go(AppDestination.statistics),
+          openAbout: _openAbout,
           openBook: _openBook,
         );
       case AppDestination.history:
@@ -408,6 +441,11 @@ class _AppShellState extends State<AppShell> {
         return AdminStatisticsPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.downloads:
         return DownloadsPage(onBack: () => _go(AppDestination.mine));
+      case AppDestination.about:
+        return AboutPage(
+          backendVersion: _aboutBackendVersion,
+          onBack: () => _go(AppDestination.mine),
+        );
       case AppDestination.libraries:
         return const AdminLibrariesPage();
       case AppDestination.plugins:
@@ -433,6 +471,7 @@ class _DesktopSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final user = appState.user;
+    final l10n = context.l10n;
     if (appState.offlineMode) {
       return Container(
         width: 288,
@@ -462,10 +501,10 @@ class _DesktopSidebar extends StatelessWidget {
                     ],
                   ),
                 ),
-                const _GroupLabel('离线模式'),
+                _GroupLabel(l10n.navOfflineMode),
                 _NavTile(
                   icon: Icons.download_done_rounded,
-                  label: '下载',
+                  label: l10n.navDownloads,
                   selected: true,
                   onTap: () => go(AppDestination.downloads),
                 ),
@@ -473,7 +512,7 @@ class _DesktopSidebar extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: appState.logout,
                   icon: const Icon(Icons.logout_rounded),
-                  label: const Text('返回登录'),
+                  label: Text(l10n.navReturnLogin),
                 ),
               ],
             ),
@@ -510,56 +549,56 @@ class _DesktopSidebar extends StatelessWidget {
                   ],
                 ),
               ),
-              const _GroupLabel('主菜单'),
+              _GroupLabel(l10n.navMainMenu),
               _NavTile(
                 icon: Icons.home_rounded,
-                label: '首页',
+                label: l10n.navHome,
                 selected: current == AppDestination.home,
                 onTap: () => go(AppDestination.home),
               ),
               _NavTile(
                 icon: Icons.library_books_rounded,
-                label: '书架',
+                label: l10n.navBookshelf,
                 selected: current == AppDestination.bookshelf ||
                     current == AppDestination.search,
                 onTap: () => go(AppDestination.bookshelf),
               ),
               _NavTile(
                 icon: Icons.playlist_play_rounded,
-                label: '书单',
+                label: l10n.navPlaylists,
                 selected: current == AppDestination.playlists,
                 onTap: () => go(AppDestination.playlists),
               ),
               _NavTile(
                 icon: Icons.person_rounded,
-                label: '我的',
+                label: l10n.navMine,
                 selected: _isMineDestination(current),
                 onTap: () => go(AppDestination.mine),
               ),
               const SizedBox(height: 28),
-              const _GroupLabel('管理后台'),
+              _GroupLabel(l10n.navAdmin),
               if (appState.isAdmin) ...[
                 _NavTile(
                   icon: Icons.storage_rounded,
-                  label: '库管理',
+                  label: l10n.navLibraries,
                   selected: current == AppDestination.libraries,
                   onTap: () => go(AppDestination.libraries),
                 ),
                 _NavTile(
                   icon: Icons.extension_rounded,
-                  label: '插件管理',
+                  label: l10n.navPlugins,
                   selected: current == AppDestination.plugins,
                   onTap: () => go(AppDestination.plugins),
                 ),
                 _NavTile(
                   icon: Icons.terminal_rounded,
-                  label: '系统日志',
+                  label: l10n.navLogs,
                   selected: current == AppDestination.logs,
                   onTap: () => go(AppDestination.logs),
                 ),
                 _NavTile(
                   icon: Icons.group_rounded,
-                  label: '用户管理',
+                  label: l10n.navUsers,
                   selected: current == AppDestination.users,
                   onTap: () => go(AppDestination.users),
                 ),
@@ -607,7 +646,7 @@ class _DesktopSidebar extends StatelessWidget {
                       ),
                     ),
                     IconButton(
-                      tooltip: '退出登录',
+                      tooltip: l10n.navLogout,
                       onPressed: appState.logout,
                       icon: const Icon(Icons.logout_rounded),
                     ),
@@ -724,7 +763,7 @@ class _MobileAdminOverlay extends StatelessWidget {
               color: context.cardColor.withValues(alpha: 0.92),
               shape: const CircleBorder(),
               child: IconButton(
-                tooltip: '关闭',
+                tooltip: context.localeText('关闭', 'Close'),
                 icon: Icon(
                   Icons.close_rounded,
                   color: Theme.of(context).colorScheme.onSurface,
@@ -755,6 +794,7 @@ class _MobileDrawer extends StatelessWidget {
     final appState = AppScope.appOf(context);
     final user = appState.user;
     final width = _drawerWidthFor(context);
+    final l10n = context.l10n;
     if (appState.offlineMode) {
       return Drawer(
         width: width,
@@ -764,10 +804,10 @@ class _MobileDrawer extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _GroupLabel('离线模式'),
+                _GroupLabel(l10n.navOfflineMode),
                 _MobileAdminTile(
                   icon: Icons.download_done_rounded,
-                  label: '下载',
+                  label: l10n.navDownloads,
                   selected: true,
                   onTap: () {
                     onClose();
@@ -803,10 +843,10 @@ class _MobileDrawer extends StatelessWidget {
                   padding: EdgeInsets.zero,
                   children: [
                     if (appState.isAdmin) ...[
-                      const _GroupLabel('管理后台'),
+                      _GroupLabel(l10n.navAdmin),
                       _MobileAdminTile(
                         icon: Icons.storage_rounded,
-                        label: '库管理',
+                        label: l10n.navLibraries,
                         selected: current == AppDestination.libraries,
                         onTap: () {
                           onClose();
@@ -815,7 +855,7 @@ class _MobileDrawer extends StatelessWidget {
                       ),
                       _MobileAdminTile(
                         icon: Icons.extension_rounded,
-                        label: '插件管理',
+                        label: l10n.navPlugins,
                         selected: current == AppDestination.plugins,
                         onTap: () {
                           onClose();
@@ -824,7 +864,7 @@ class _MobileDrawer extends StatelessWidget {
                       ),
                       _MobileAdminTile(
                         icon: Icons.terminal_rounded,
-                        label: '系统日志',
+                        label: l10n.navLogs,
                         selected: current == AppDestination.logs,
                         onTap: () {
                           onClose();
@@ -833,7 +873,7 @@ class _MobileDrawer extends StatelessWidget {
                       ),
                       _MobileAdminTile(
                         icon: Icons.group_rounded,
-                        label: '用户管理',
+                        label: l10n.navUsers,
                         selected: current == AppDestination.users,
                         onTap: () {
                           onClose();
@@ -841,10 +881,10 @@ class _MobileDrawer extends StatelessWidget {
                         },
                       ),
                     ] else
-                      const EmptyState(
+                      EmptyState(
                         icon: Icons.admin_panel_settings_outlined,
-                        title: '没有后台入口',
-                        message: '主菜单已在底部导航中。',
+                        title: l10n.navNoAdminEntry,
+                        message: l10n.navMainMenuInBottom,
                       ),
                   ],
                 ),
@@ -986,7 +1026,7 @@ class _DrawerAccountCard extends StatelessWidget {
               ),
             ),
             IconButton(
-              tooltip: '退出登录',
+              tooltip: context.l10n.navLogout,
               onPressed: onLogout,
               icon: const Icon(Icons.logout_rounded),
             ),
@@ -1009,6 +1049,7 @@ class _BottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final offline = AppScope.appOf(context).offlineMode;
+    final l10n = context.l10n;
     return SafeArea(
       top: false,
       child: Container(
@@ -1028,13 +1069,13 @@ class _BottomNav extends StatelessWidget {
           children: [
             _BottomItem(
               icon: Icons.home_rounded,
-              label: '首页',
+              label: l10n.navHome,
               selected: current == AppDestination.home,
               onTap: offline ? null : () => go(AppDestination.home),
             ),
             _BottomItem(
               icon: Icons.library_books_rounded,
-              label: '书架',
+              label: l10n.navBookshelf,
               selected: current == AppDestination.bookshelf ||
                   current == AppDestination.search,
               onTap: offline ? null : () => go(AppDestination.bookshelf),
@@ -1042,21 +1083,21 @@ class _BottomNav extends StatelessWidget {
             if (offline)
               _BottomItem(
                 icon: Icons.download_done_rounded,
-                label: '下载',
+                label: l10n.navDownloads,
                 selected: true,
                 onTap: () => go(AppDestination.downloads),
               ),
             if (!offline)
               _BottomItem(
                 icon: Icons.playlist_play_rounded,
-                label: '书单',
+                label: l10n.navPlaylists,
                 selected: current == AppDestination.playlists,
                 onTap: () => go(AppDestination.playlists),
               ),
             if (!offline)
               _BottomItem(
                 icon: Icons.person_rounded,
-                label: '我的',
+                label: l10n.navMine,
                 selected: _isMineDestination(current),
                 onTap: () => go(AppDestination.mine),
               ),
@@ -1220,10 +1261,10 @@ class _ConnectionScreen extends StatelessWidget {
                       height: 72,
                     ),
                     const SizedBox(height: 18),
-                    const Text(
-                      '连接失败',
+                    Text(
+                      context.l10n.connectionFailed,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 24,
                         height: 1.2,
                         fontWeight: FontWeight.w700,
@@ -1241,14 +1282,14 @@ class _ConnectionScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 22),
                     PrimaryButton(
-                      label: '重试连接',
+                      label: context.l10n.commonRetryConnection,
                       icon: Icons.refresh_rounded,
                       onPressed: onRetry,
                     ),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: onLogout,
-                      child: const Text('退出登录'),
+                      child: Text(context.l10n.navLogout),
                     ),
                   ],
                 ),

@@ -53,10 +53,11 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
             AppBackButton(onPressed: widget.onBack!),
             const SizedBox(height: 24),
           ],
-          const EmptyState(
+          EmptyState(
             icon: Icons.query_stats_rounded,
-            title: '暂无统计数据',
-            message: '后台还没有返回统计信息。',
+            title: context.localeText('暂无统计数据', 'No Statistics'),
+            message: context.localeText(
+                '后台还没有返回统计信息。', 'The backend has not returned statistics yet.'),
           ),
         ],
       );
@@ -64,29 +65,23 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final compactScreen = screenWidth < 640;
     final overview = stats.overview;
-    final totalLibraries = math.max<num>(
-        1, _numStat(overview, 'total_libraries', 'totalLibraries'));
+    final totalLibraries =
+        math.max<num>(1, _numStat(overview, 'total_libraries'));
     final localPercent =
-        ((_numStat(overview, 'local_libraries', 'localLibraries') /
-                    totalLibraries) *
-                100)
+        ((_numStat(overview, 'local_libraries') / totalLibraries) * 100)
             .round();
     final webdavPercent =
-        ((_numStat(overview, 'webdav_libraries', 'webdavLibraries') /
-                    totalLibraries) *
-                100)
+        ((_numStat(overview, 'webdav_libraries') / totalLibraries) * 100)
             .round();
-    final totalUsers = _numStat(overview, 'total_users', 'totalUsers');
+    final totalUsers = _numStat(overview, 'total_users');
     final activeRate = totalUsers > 0
-        ? ((_numStat(overview, 'active_users', 'activeUsers') / totalUsers) *
-                100)
-            .round()
+        ? ((_numStat(overview, 'active_users') / totalUsers) * 100).round()
         : 0;
     num maxUserListen = 1;
     for (final item in stats.userActivity) {
       maxUserListen = math.max(
         maxUserListen,
-        _numStat(item, 'listen_seconds', 'listenSeconds'),
+        _numStat(item, 'listen_seconds'),
       );
     }
     num maxBookHeat = 1;
@@ -105,8 +100,10 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
           builder: (context, constraints) {
             final header = HeaderText(
               icon: Icons.bar_chart_rounded,
-              title: '数据统计',
-              subtitle: '生成时间：${_formatDateTime(stats.generatedAt)}',
+              title: context.localeText('数据统计', 'Statistics'),
+              subtitle: context.localeText(
+                  '生成时间：${_formatDateTime(stats.generatedAt, context)}',
+                  'Generated: ${_formatDateTime(stats.generatedAt, context)}'),
             );
             final refreshButton = FilledButton.icon(
               onPressed: _refreshing ? null : () => _load(silent: true),
@@ -127,7 +124,9 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                 color: Colors.white,
               ),
               label: Text(
-                _refreshing ? '刷新中' : '刷新报表',
+                _refreshing
+                    ? context.localeText('刷新中', 'Refreshing')
+                    : context.localeText('刷新报表', 'Refresh'),
                 style: TextStyle(
                   fontSize: compactScreen ? 13 : 14,
                 ),
@@ -168,42 +167,45 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                   width: width,
                   icon: Icons.library_books_rounded,
                   color: AppColors.primary600,
-                  label: '馆藏作品',
-                  value: _statText(overview, 'total_books', 'totalBooks'),
-                  detail:
-                      '${_statText(overview, 'total_chapters', 'totalChapters')} 章 · ${formatDurationHuman(_numStat(overview, 'total_duration', 'totalDuration'))}',
+                  label: context.localeText('馆藏作品', 'Books'),
+                  value: _statText(overview, 'total_books'),
+                  detail: context.localeText(
+                      '${_statText(overview, 'total_chapters')} 章 · ${formatDurationHumanForLocale(context, _numStat(overview, 'total_duration'))}',
+                      '${_statText(overview, 'total_chapters')} chapters · ${formatDurationHumanForLocale(context, _numStat(overview, 'total_duration'))}'),
                 ),
                 _StatisticsMetricTile(
                   width: width,
                   icon: Icons.headphones_rounded,
                   color: Colors.green,
-                  label: '累计收听',
-                  value: formatDurationHuman(
-                    _numStat(
-                        overview, 'total_listen_seconds', 'totalListenSeconds'),
+                  label: context.localeText('累计收听', 'Listening'),
+                  value: formatDurationHumanForLocale(
+                    context,
+                    _numStat(overview, 'total_listen_seconds'),
                   ),
-                  detail:
-                      '${_statText(overview, 'total_progress_records', 'totalProgressRecords')} 条进度记录',
+                  detail: context.localeText(
+                      '${_statText(overview, 'total_progress_records')} 条进度记录',
+                      '${_statText(overview, 'total_progress_records')} progress records'),
                 ),
                 _StatisticsMetricTile(
                   width: width,
                   icon: Icons.people_rounded,
                   color: Colors.purple,
-                  label: '活跃用户',
+                  label: context.localeText('活跃用户', 'Active Users'),
                   value:
-                      '${_statText(overview, 'active_users', 'activeUsers')} / ${_statText(overview, 'total_users', 'totalUsers')}',
-                  detail:
-                      '活跃率 $activeRate% · 管理员 ${_statText(overview, 'admin_users', 'adminUsers')}',
+                      '${_statText(overview, 'active_users')} / ${_statText(overview, 'total_users')}',
+                  detail: context.localeText(
+                      '活跃率 $activeRate% · 管理员 ${_statText(overview, 'admin_users')}',
+                      'Active $activeRate% · Admins ${_statText(overview, 'admin_users')}'),
                 ),
                 _StatisticsMetricTile(
                   width: width,
                   icon: Icons.storage_rounded,
                   color: Colors.orange,
-                  label: '媒体库',
-                  value:
-                      _statText(overview, 'total_libraries', 'totalLibraries'),
-                  detail:
-                      '本地 ${_statText(overview, 'local_libraries', 'localLibraries')} · WebDAV ${_statText(overview, 'webdav_libraries', 'webdavLibraries')}',
+                  label: context.localeText('媒体库', 'Libraries'),
+                  value: _statText(overview, 'total_libraries'),
+                  detail: context.localeText(
+                      '本地 ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')}',
+                      'Local ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')}'),
                 ),
               ],
             );
@@ -211,38 +213,41 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
         ),
         const SizedBox(height: 26),
         _StatisticsPanel(
-          title: '活跃趋势',
+          title: context.localeText('活跃趋势', 'Activity Trend'),
           icon: Icons.trending_up_rounded,
           child: stats.recentActivity.isEmpty
-              ? const _StatisticsEmpty(text: '暂无近期活跃记录')
+              ? _StatisticsEmpty(
+                  text: context.localeText('暂无近期活跃记录', 'No recent activity'))
               : _TrendChart(items: stats.recentActivity),
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
-          title: '媒体库结构',
+          title: context.localeText('媒体库结构', 'Library Mix'),
           icon: Icons.storage_rounded,
           child: _LibraryMix(
-            total: _numStat(overview, 'total_libraries', 'totalLibraries'),
-            local: _numStat(overview, 'local_libraries', 'localLibraries'),
-            webdav: _numStat(overview, 'webdav_libraries', 'webdavLibraries'),
+            total: _numStat(overview, 'total_libraries'),
+            local: _numStat(overview, 'local_libraries'),
+            webdav: _numStat(overview, 'webdav_libraries'),
             localPercent: localPercent,
             webdavPercent: webdavPercent,
           ),
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
-          title: '馆藏数据',
+          title: context.localeText('馆藏数据', 'Library Data'),
           icon: Icons.library_books_rounded,
           child: stats.libraryBreakdown.isEmpty
-              ? const _StatisticsEmpty(text: '暂无媒体库数据')
+              ? _StatisticsEmpty(
+                  text: context.localeText('暂无媒体库数据', 'No library data'))
               : _LibraryBreakdownGrid(items: stats.libraryBreakdown),
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
-          title: '用户使用情况',
+          title: context.localeText('用户使用情况', 'User Activity'),
           icon: Icons.insights_rounded,
           child: stats.userActivity.isEmpty
-              ? const _StatisticsEmpty(text: '暂无用户活跃数据')
+              ? _StatisticsEmpty(
+                  text: context.localeText('暂无用户活跃数据', 'No user activity'))
               : _UserActivityList(
                   items: stats.userActivity,
                   maxListen: maxUserListen,
@@ -250,10 +255,12 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
-          title: '热门收听作品',
+          title: context.localeText('热门收听作品', 'Top Books'),
           icon: Icons.menu_book_rounded,
           child: stats.topBooks.isEmpty
-              ? const _StatisticsEmpty(text: '暂无作品收听数据')
+              ? _StatisticsEmpty(
+                  text:
+                      context.localeText('暂无作品收听数据', 'No book listening data'))
               : _TopBooksLeaderboard(
                   items: stats.topBooks,
                   maxHeat: maxBookHeat,
@@ -432,17 +439,15 @@ class _TrendChart extends StatelessWidget {
     final compact = MediaQuery.sizeOf(context).width < 640;
     final totalUpdates = items.fold<num>(
       0,
-      (sum, item) =>
-          sum + _numStat(item, 'progress_updates', 'progressUpdates'),
+      (sum, item) => sum + _numStat(item, 'progress_updates'),
     );
     final totalListen = items.fold<num>(
       0,
-      (sum, item) => sum + _numStat(item, 'listen_seconds', 'listenSeconds'),
+      (sum, item) => sum + _numStat(item, 'listen_seconds'),
     );
     final activeUsers = items.fold<num>(
       0,
-      (max, item) =>
-          math.max(max, _numStat(item, 'active_users', 'activeUsers')),
+      (max, item) => math.max(max, _numStat(item, 'active_users')),
     );
     return Column(
       children: [
@@ -457,13 +462,19 @@ class _TrendChart extends StatelessWidget {
               runSpacing: gap,
               children: [
                 _TrendStat(
-                    width: width, label: '更新次数', value: '$totalUpdates 次'),
+                    width: width,
+                    label: context.localeText('更新次数', 'Updates'),
+                    value:
+                        context.localeText('$totalUpdates 次', '$totalUpdates')),
                 _TrendStat(
-                    width: width, label: '活跃峰值', value: '$activeUsers 人'),
+                    width: width,
+                    label: context.localeText('活跃峰值', 'Peak Active'),
+                    value:
+                        context.localeText('$activeUsers 人', '$activeUsers')),
                 _TrendStat(
                   width: width,
-                  label: '累计收听',
-                  value: formatDurationHuman(totalListen),
+                  label: context.localeText('累计收听', 'Listening'),
+                  value: formatDurationHumanForLocale(context, totalListen),
                 ),
               ],
             );
@@ -587,7 +598,7 @@ class _TrendPainter extends CustomPainter {
     for (final item in items) {
       maxUpdates = math.max(
         maxUpdates,
-        _numStat(item, 'progress_updates', 'progressUpdates'),
+        _numStat(item, 'progress_updates'),
       );
     }
     final points = <Offset>[];
@@ -595,7 +606,7 @@ class _TrendPainter extends CustomPainter {
       final x = items.length == 1
           ? chart.center.dx
           : chart.left + chart.width * (i / (items.length - 1));
-      final updates = _numStat(items[i], 'progress_updates', 'progressUpdates');
+      final updates = _numStat(items[i], 'progress_updates');
       final y = chart.bottom - chart.height * (updates / maxUpdates);
       points.add(Offset(x, y));
     }
@@ -670,9 +681,19 @@ class _LibraryMix extends StatelessWidget {
       children: [
         Row(
           children: [
-            Expanded(child: _SmallStat(label: '总数', value: '$total')),
+            Expanded(
+              child: _SmallStat(
+                label: context.localeText('总数', 'Total'),
+                value: '$total',
+              ),
+            ),
             const SizedBox(width: 10),
-            Expanded(child: _SmallStat(label: '本地', value: '$local')),
+            Expanded(
+              child: _SmallStat(
+                label: context.localeText('本地', 'Local'),
+                value: '$local',
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(child: _SmallStat(label: 'WebDAV', value: '$webdav')),
           ],
@@ -695,7 +716,9 @@ class _LibraryMix extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         _MixRow(
-            label: '本地库', value: '$localPercent%', color: AppColors.primary500),
+            label: context.localeText('本地库', 'Local'),
+            value: '$localPercent%',
+            color: AppColors.primary500),
         const SizedBox(height: 12),
         _MixRow(
             label: 'WebDAV', value: '$webdavPercent%', color: Colors.purple),
@@ -822,7 +845,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final type = (item['library_type'] ?? item['libraryType'] ?? '').toString();
+    final type = (item['library_type'] ?? '').toString();
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Container(
       padding: EdgeInsets.all(compact ? 16 : 22),
@@ -843,7 +866,9 @@ class _LibraryBreakdownCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      (item['name'] ?? '未命名媒体库').toString(),
+                      (item['name'] ??
+                              context.localeText('未命名媒体库', 'Unnamed Library'))
+                          .toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -853,8 +878,9 @@ class _LibraryBreakdownCard extends StatelessWidget {
                     ),
                     SizedBox(height: compact ? 5 : 8),
                     Text(
-                      formatDurationHuman(
-                        _numStat(item, 'total_duration', 'totalDuration'),
+                      formatDurationHumanForLocale(
+                        context,
+                        _numStat(item, 'total_duration'),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -874,23 +900,23 @@ class _LibraryBreakdownCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _CompactStat(
-                  label: '作品',
-                  value: _statText(item, 'total_books', 'totalBooks'),
+                  label: context.localeText('作品', 'Books'),
+                  value: _statText(item, 'total_books'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: '章节',
-                  value: _statText(item, 'total_chapters', 'totalChapters'),
+                  label: context.localeText('章节', 'Chapters'),
+                  value: _statText(item, 'total_chapters'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: '时长',
+                  label: context.localeText('时长', 'Duration'),
                   value: _formatShortDurationLabel(
-                    _numStat(item, 'total_duration', 'totalDuration'),
+                    _numStat(item, 'total_duration'),
                   ),
                 ),
               ),
@@ -902,7 +928,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
           Row(
             children: [
               Text(
-                '最近扫描',
+                context.localeText('最近扫描', 'Last Scan'),
                 style: TextStyle(
                   color: context.tertiaryText,
                   fontSize: 12,
@@ -911,9 +937,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _formatDateTime(
-                      (item['last_scanned_at'] ?? item['lastScannedAt'])
-                          ?.toString()),
+                  _formatDateTime(item['last_scanned_at']?.toString()),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.right,
@@ -964,8 +988,8 @@ class _UserActivityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final username = (item['username'] ?? 'User').toString();
     final role = (item['role'] ?? '').toString();
-    final listen = _numStat(item, 'listen_seconds', 'listenSeconds');
-    final records = _statText(item, 'progress_records', 'progressRecords');
+    final listen = _numStat(item, 'listen_seconds');
+    final records = _statText(item, 'progress_records');
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Column(
       children: [
@@ -996,7 +1020,7 @@ class _UserActivityRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    '${role == 'admin' ? '管理员' : '普通用户'} · ${_statText(item, 'listened_books', 'listenedBooks')} 本',
+                    '${role == 'admin' ? context.localeText('管理员', 'Admin') : context.localeText('普通用户', 'User')} · ${_statText(item, 'listened_books')} ${context.localeText('本', 'books')}',
                     style: TextStyle(
                       color: context.tertiaryText,
                       fontSize: compact ? 11.5 : 12,
@@ -1010,7 +1034,7 @@ class _UserActivityRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  formatDurationHuman(listen),
+                  formatDurationHumanForLocale(context, listen),
                   style: TextStyle(
                     fontSize: compact ? 12 : 13,
                     fontWeight: FontWeight.w700,
@@ -1018,9 +1042,7 @@ class _UserActivityRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  _formatDateTime(
-                      (item['last_active_at'] ?? item['lastActiveAt'])
-                          ?.toString()),
+                  _formatDateTime(item['last_active_at']?.toString(), context),
                   style: TextStyle(
                     color: context.tertiaryText,
                     fontSize: compact ? 10.5 : 11,
@@ -1042,7 +1064,7 @@ class _UserActivityRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Text(
-              '$records 条',
+              context.localeText('$records 条', '$records records'),
               style: TextStyle(
                 color: context.tertiaryText,
                 fontSize: compact ? 10.5 : 11,
@@ -1141,7 +1163,9 @@ class _TopBookCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      (item['title'] ?? '未知作品').toString(),
+                      (item['title'] ??
+                              context.localeText('未知作品', 'Unknown Book'))
+                          .toString(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1151,7 +1175,7 @@ class _TopBookCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${item['author'] ?? '未知作者'} · ${item['library_name'] ?? item['libraryName'] ?? '未知媒体库'}',
+                      '${item['author'] ?? context.localeText('未知作者', 'Unknown Author')} · ${item['library_name'] ?? context.localeText('未知媒体库', 'Unknown Library')}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1169,23 +1193,24 @@ class _TopBookCard extends StatelessWidget {
             children: [
               Expanded(
                 child: _CompactStat(
-                  label: '听众',
-                  value: _statText(item, 'listeners', 'listeners'),
+                  label: context.localeText('听众', 'Listeners'),
+                  value: _statText(item, 'listeners'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: '记录',
-                  value: _statText(item, 'progress_updates', 'progressUpdates'),
+                  label: context.localeText('记录', 'Records'),
+                  value: _statText(item, 'progress_updates'),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: '收听',
-                  value: formatDurationHuman(
-                    _numStat(item, 'listen_seconds', 'listenSeconds'),
+                  label: context.localeText('收听', 'Listened'),
+                  value: formatDurationHumanForLocale(
+                    context,
+                    _numStat(item, 'listen_seconds'),
                   ),
                 ),
               ),
@@ -1195,7 +1220,7 @@ class _TopBookCard extends StatelessWidget {
           Row(
             children: [
               Text(
-                '综合热度',
+                context.localeText('综合热度', 'Heat'),
                 style: TextStyle(
                   color: context.tertiaryText,
                   fontSize: compact ? 11.5 : 12,
@@ -1377,14 +1402,16 @@ _RankAccent _rankAccent(int rank) {
 }
 
 num _bookHeatScore(Map<String, dynamic> item) {
-  final listeners = _numStat(item, 'listeners', 'listeners');
-  final updates = _numStat(item, 'progress_updates', 'progressUpdates');
-  final listen = _numStat(item, 'listen_seconds', 'listenSeconds');
+  final listeners = _numStat(item, 'listeners');
+  final updates = _numStat(item, 'progress_updates');
+  final listen = _numStat(item, 'listen_seconds');
   return listeners * 20 + updates * 6 + (listen / 60).ceil();
 }
 
-String _formatDateTime(String? value) {
-  if (value == null || value.isEmpty) return '暂无记录';
+String _formatDateTime(String? value, [BuildContext? context]) {
+  if (value == null || value.isEmpty) {
+    return context?.localeText('暂无记录', 'No record') ?? 'No record';
+  }
   final date = DateTime.tryParse(value)?.toLocal();
   if (date == null) return value;
   return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
@@ -1404,12 +1431,12 @@ String _formatShortDurationLabel(num seconds) {
   return '${math.max(0, minutes)}m';
 }
 
-String _statText(Map<String, dynamic> map, String snake, String camel) {
-  return (map[snake] ?? map[camel] ?? 0).toString();
+String _statText(Map<String, dynamic> map, String key) {
+  return (map[key] ?? 0).toString();
 }
 
-num _numStat(Map<String, dynamic> map, String snake, String camel) {
-  final value = map[snake] ?? map[camel] ?? 0;
+num _numStat(Map<String, dynamic> map, String key) {
+  final value = map[key] ?? 0;
   if (value is num) return value;
   return num.tryParse(value.toString()) ?? 0;
 }

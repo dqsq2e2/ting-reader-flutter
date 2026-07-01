@@ -52,29 +52,27 @@ class Book {
   factory Book.fromJson(Map<String, dynamic> json) {
     return Book(
       id: readString(json, 'id') ?? '',
-      libraryId: readString(json, 'library_id', 'libraryId') ?? '',
-      title: (readString(json, 'title')?.trim().isNotEmpty ?? false)
-          ? readString(json, 'title')!
-          : '未命名书籍',
+      libraryId: readString(json, 'library_id') ?? '',
+      title: readString(json, 'title') ?? '',
       author: readString(json, 'author'),
       narrator: readString(json, 'narrator'),
       description: readString(json, 'description'),
-      coverUrl: readString(json, 'cover_url', 'coverUrl'),
-      themeColor: readString(json, 'theme_color', 'themeColor'),
+      coverUrl: readString(json, 'cover_url'),
+      themeColor: readString(json, 'theme_color'),
       duration: readInt(json, 'duration'),
       size: readInt(json, 'size'),
       path: readString(json, 'path'),
       hash: readString(json, 'hash'),
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      updatedAt: readString(json, 'updated_at', 'updatedAt'),
-      isFavorite: readBool(json, 'is_favorite', 'isFavorite') ?? false,
-      libraryType: readString(json, 'library_type', 'libraryType'),
-      skipIntro: readInt(json, 'skip_intro', 'skipIntro') ?? 0,
-      skipOutro: readInt(json, 'skip_outro', 'skipOutro') ?? 0,
+      createdAt: readString(json, 'created_at'),
+      updatedAt: readString(json, 'updated_at'),
+      isFavorite: readBool(json, 'is_favorite') ?? false,
+      libraryType: readString(json, 'library_type'),
+      skipIntro: readInt(json, 'skip_intro') ?? 0,
+      skipOutro: readInt(json, 'skip_outro') ?? 0,
       tags: readString(json, 'tags'),
       genre: readString(json, 'genre'),
       year: readInt(json, 'year'),
-      chapterRegex: readString(json, 'chapter_regex', 'chapterRegex'),
+      chapterRegex: readString(json, 'chapter_regex'),
     );
   }
 

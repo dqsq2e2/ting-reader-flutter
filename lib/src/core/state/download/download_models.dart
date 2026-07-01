@@ -30,6 +30,19 @@ extension DownloadStatusText on DownloadStatus {
     };
   }
 
+  String labelForLocale(bool english) {
+    if (english) {
+      return switch (this) {
+        DownloadStatus.queued => 'Queued',
+        DownloadStatus.downloading => 'Downloading',
+        DownloadStatus.paused => 'Paused',
+        DownloadStatus.completed => 'Downloaded',
+        DownloadStatus.failed => 'Failed',
+      };
+    }
+    return label;
+  }
+
   static DownloadStatus fromKey(String? value) {
     return switch (value) {
       'downloading' => DownloadStatus.downloading,
@@ -86,8 +99,8 @@ class LocalDownload {
     return LocalDownload(
       chapterId: json['chapter_id']?.toString() ?? '',
       bookId: json['book_id']?.toString() ?? '',
-      bookTitle: json['book_title']?.toString() ?? '未知书籍',
-      chapterTitle: json['chapter_title']?.toString() ?? '未知章节',
+      bookTitle: json['book_title']?.toString() ?? '',
+      chapterTitle: json['chapter_title']?.toString() ?? '',
       chapterIndex: _int(json['chapter_index']) ?? 0,
       filePath: json['file_path']?.toString() ?? '',
       fileSize: _int(json['file_size']) ?? 0,
@@ -245,8 +258,8 @@ class DownloadTask {
     return DownloadTask(
       chapterId: json['chapter_id']?.toString() ?? '',
       bookId: json['book_id']?.toString() ?? '',
-      bookTitle: json['book_title']?.toString() ?? '未知书籍',
-      chapterTitle: json['chapter_title']?.toString() ?? '未知章节',
+      bookTitle: json['book_title']?.toString() ?? '',
+      chapterTitle: json['chapter_title']?.toString() ?? '',
       chapterIndex: _int(json['chapter_index']) ?? 0,
       chapterPath: json['chapter_path']?.toString() ?? '',
       coverUrl: _string(json['cover_url']),

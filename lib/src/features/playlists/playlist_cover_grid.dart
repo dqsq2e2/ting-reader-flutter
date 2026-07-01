@@ -224,7 +224,9 @@ Future<Map<String, dynamic>?> _showPlaylistInfoDialog(
                   children: [
                     Expanded(
                       child: Text(
-                        playlist == null ? '新建书单' : '编辑书单',
+                        playlist == null
+                            ? context.localeText('新建书单', 'New Playlist')
+                            : context.localeText('编辑书单', 'Edit Playlist'),
                         style: TextStyle(
                           color: context.primaryText,
                           fontSize: compact ? 24 : 22,
@@ -234,7 +236,7 @@ Future<Map<String, dynamic>?> _showPlaylistInfoDialog(
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: context.localeText('关闭', 'Close'),
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close_rounded),
                     ),
@@ -242,24 +244,30 @@ Future<Map<String, dynamic>?> _showPlaylistInfoDialog(
                 ),
                 const SizedBox(height: 20),
                 _PlaylistDialogField(
-                  label: '名称',
+                  label: context.localeText('名称', 'Name'),
                   child: TextField(
                     controller: title,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      hintText: '例如：通勤路上',
+                    decoration: InputDecoration(
+                      hintText: context.localeText(
+                        '例如：通勤路上',
+                        'e.g. Commute',
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
                 _PlaylistDialogField(
-                  label: '描述',
+                  label: context.localeText('描述', 'Description'),
                   child: TextField(
                     controller: description,
                     minLines: 3,
                     maxLines: 4,
-                    decoration: const InputDecoration(
-                      hintText: '一句话描述这个书单',
+                    decoration: InputDecoration(
+                      hintText: context.localeText(
+                        '一句话描述这个书单',
+                        'Describe this playlist in one sentence',
+                      ),
                     ),
                   ),
                 ),
@@ -269,11 +277,13 @@ Future<Map<String, dynamic>?> _showPlaylistInfoDialog(
                   children: [
                     TextButton(
                       onPressed: () => Navigator.pop(context),
-                      child: const Text('取消'),
+                      child: Text(context.localeText('取消', 'Cancel')),
                     ),
                     const SizedBox(width: 12),
                     PrimaryButton(
-                      label: playlist == null ? '创建' : '保存',
+                      label: playlist == null
+                          ? context.localeText('创建', 'Create')
+                          : context.localeText('保存', 'Save'),
                       icon: Icons.save_rounded,
                       onPressed: () {
                         final trimmed = title.text.trim();

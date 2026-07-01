@@ -1,9 +1,10 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
@@ -89,8 +90,7 @@ class _SearchPageState extends State<SearchPage> {
         }
         if (book.year != null) years.add(book.year.toString());
       }
-      final settings = asMap(asMap(results[4].data)['settings_json'] ??
-          asMap(results[4].data)['settingsJson']);
+      final settings = asMap(results[4].data);
       setState(() {
         _tags = (results[0].data as List? ?? const [])
             .map((e) => e.toString())
@@ -102,14 +102,8 @@ class _SearchPageState extends State<SearchPage> {
         _genres = genres.toList()..sort();
         _years = years.toList()
           ..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
-        _iconSize = iconSizeFromString(
-          (settings['bookshelf_icon_size'] ?? settings['bookshelfIconSize'])
-              ?.toString(),
-        );
-        _coverShape = coverShapeFromString(
-          (settings['bookshelf_cover_shape'] ?? settings['bookshelfCoverShape'])
-              ?.toString(),
-        );
+        _iconSize = iconSizeFromAppSettings(settings);
+        _coverShape = coverShapeFromAppSettings(settings);
       });
     } finally {
       if (mounted) setState(() => _loadingMetadata = false);
@@ -197,7 +191,7 @@ class _SearchPageState extends State<SearchPage> {
         const SizedBox(height: 24),
         Center(
           child: Text(
-            '发现精彩内容',
+            context.localeText('发现精彩内容', 'Discover'),
             style: TextStyle(
               fontSize: MediaQuery.sizeOf(context).width < 768 ? 30 : 36,
               fontWeight: FontWeight.w700,
@@ -207,7 +201,8 @@ class _SearchPageState extends State<SearchPage> {
         const SizedBox(height: 10),
         Center(
           child: Text(
-            '搜索书名、作者、演播者或简介',
+            context.localeText('搜索书名、作者、演播者或简介',
+                'Search titles, authors, narrators, or descriptions'),
             style: TextStyle(color: context.mutedText),
           ),
         ),
@@ -221,7 +216,7 @@ class _SearchPageState extends State<SearchPage> {
               onChanged: _onQuery,
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search_rounded),
-                hintText: '输入关键词搜索...',
+                hintText: context.localeText('输入关键词搜索...', 'Enter keywords...'),
                 suffixIcon: _searching
                     ? const Padding(
                         padding: EdgeInsets.all(14),
@@ -250,7 +245,8 @@ class _SearchPageState extends State<SearchPage> {
           child: TextButton.icon(
             onPressed: () => setState(() => _showFilters = !_showFilters),
             icon: const Icon(Icons.tune_rounded),
-            label: Text(_showFilters ? '收起筛选' : '展开筛选'),
+            label: Text(context.localeText(_showFilters ? '收起筛选' : '展开筛选',
+                _showFilters ? 'Hide Filters' : 'Show Filters')),
           ),
         ),
         if (_showFilters) ...[
@@ -259,7 +255,7 @@ class _SearchPageState extends State<SearchPage> {
             child: Column(
               children: [
                 _FilterRow(
-                  label: '媒体库',
+                  label: context.localeText('媒体库', 'Library'),
                   items: _libraries
                       .map((item) => _FilterOption(item.id, item.name))
                       .toList(),
@@ -268,7 +264,7 @@ class _SearchPageState extends State<SearchPage> {
                       _setFilter(() => _selectedLibraryId = value),
                 ),
                 _FilterRow(
-                  label: '系列',
+                  label: context.localeText('系列', 'Series'),
                   items: _series
                       .map((item) => _FilterOption(item.id, item.title))
                       .toList(),
@@ -277,14 +273,14 @@ class _SearchPageState extends State<SearchPage> {
                       _setFilter(() => _selectedSeries = value),
                 ),
                 _FilterRow(
-                  label: '标签',
+                  label: context.localeText('标签', 'Tags'),
                   items:
                       _tags.map((item) => _FilterOption(item, item)).toList(),
                   selected: _selectedTag,
                   onSelected: (value) => _setFilter(() => _selectedTag = value),
                 ),
                 _FilterRow(
-                  label: '流派',
+                  label: context.localeText('流派', 'Genre'),
                   items:
                       _genres.map((item) => _FilterOption(item, item)).toList(),
                   selected: _selectedGenre,
@@ -292,7 +288,7 @@ class _SearchPageState extends State<SearchPage> {
                       _setFilter(() => _selectedGenre = value),
                 ),
                 _FilterRow(
-                  label: '年份',
+                  label: context.localeText('年份', 'Year'),
                   items:
                       _years.map((item) => _FilterOption(item, item)).toList(),
                   selected: _selectedYear,
@@ -300,7 +296,7 @@ class _SearchPageState extends State<SearchPage> {
                       _setFilter(() => _selectedYear = value),
                 ),
                 _FilterRow(
-                  label: '作者',
+                  label: context.localeText('作者', 'Author'),
                   items: _authors
                       .map((item) => _FilterOption(item, item))
                       .toList(),
@@ -309,7 +305,7 @@ class _SearchPageState extends State<SearchPage> {
                       _setFilter(() => _selectedAuthor = value),
                 ),
                 _FilterRow(
-                  label: '演播者',
+                  label: context.localeText('演播者', 'Narrator'),
                   items: _narrators
                       .map((item) => _FilterOption(item, item))
                       .toList(),
@@ -351,17 +347,19 @@ class _SearchPageState extends State<SearchPage> {
             },
           )
         else if ((_query.trim().isNotEmpty || _hasActiveFilters) && !_searching)
-          const EmptyState(
+          EmptyState(
             icon: Icons.search_off_rounded,
-            title: '未找到相关结果',
-            message: '尝试调整筛选条件或搜索关键词',
+            title: context.localeText('未找到相关结果', 'No Results'),
+            message: context.localeText(
+                '尝试调整筛选条件或搜索关键词', 'Try changing filters or keywords'),
           )
         else
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 52),
             child: Center(
               child: Text(
-                '输入关键词或使用上方筛选器开始探索',
+                context.localeText('输入关键词或使用上方筛选器开始探索',
+                    'Enter keywords or use filters to start'),
                 style: TextStyle(color: context.mutedText),
               ),
             ),
@@ -418,7 +416,7 @@ class _FilterRow extends StatelessWidget {
               child: Row(
                 children: [
                   _FilterChip(
-                    label: '全部',
+                    label: context.localeText('全部', 'All'),
                     selected: selected.isEmpty,
                     onTap: () => onSelected(''),
                   ),

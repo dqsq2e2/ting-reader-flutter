@@ -1,4 +1,7 @@
 import 'package:lpinyin/lpinyin.dart';
+import 'package:flutter/widgets.dart';
+
+import 'locale.dart';
 
 String formatDurationShort(num seconds) {
   if (seconds <= 0) return '0:00';
@@ -18,6 +21,19 @@ String formatDurationHuman(num seconds) {
   final minutes = ((seconds % 3600) / 60).round();
   if (hours > 0) return '$hours 小时 $minutes 分钟';
   return '$minutes 分钟';
+}
+
+String formatDurationHumanForLocale(BuildContext context, num seconds) {
+  if (!context.isEnglishLocale) return formatDurationHuman(seconds);
+  if (seconds <= 0) return '0 min';
+  final hours = seconds ~/ 3600;
+  final minutes = ((seconds % 3600) / 60).round();
+  if (hours > 0) {
+    final hourText = hours == 1 ? '1 hr' : '$hours hrs';
+    if (minutes <= 0) return hourText;
+    return '$hourText $minutes min';
+  }
+  return '$minutes min';
 }
 
 String formatDateCn(String? raw) {
@@ -50,6 +66,20 @@ String greeting() {
   if (hour >= 12 && hour < 14) return '中午好';
   if (hour >= 14 && hour < 18) return '下午好';
   return '晚上好';
+}
+
+String greetingForLocale(BuildContext context) {
+  final hour = DateTime.now().hour;
+  if (hour >= 5 && hour < 12) {
+    return context.localeText('早上好', 'Good morning');
+  }
+  if (hour >= 12 && hour < 14) {
+    return context.localeText('中午好', 'Good noon');
+  }
+  if (hour >= 14 && hour < 18) {
+    return context.localeText('下午好', 'Good afternoon');
+  }
+  return context.localeText('晚上好', 'Good evening');
 }
 
 String pinyinInitial(String value) {

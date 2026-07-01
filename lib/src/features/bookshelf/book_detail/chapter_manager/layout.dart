@@ -6,24 +6,24 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('跳转到章节'),
+        title: Text(context.localeText('跳转到章节', 'Jump to Chapter')),
         content: TextField(
           controller: controller,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.tag_rounded),
-            hintText: '输入章节序号',
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.tag_rounded),
+            hintText: context.localeText('输入章节序号', 'Enter chapter number'),
           ),
           onSubmitted: (value) => Navigator.pop(context, value),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           PrimaryButton(
-            label: '跳转',
+            label: context.localeText('跳转', 'Jump'),
             icon: Icons.subdirectory_arrow_right_rounded,
             onPressed: () => Navigator.pop(context, controller.text),
           ),
@@ -55,7 +55,8 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
       backgroundColor: Colors.transparent,
       builder: (context) => _ChapterEditSheet(
         chapter: current,
-        libraryName: _pathLibrary?.name ?? '未知存储库',
+        libraryName: _pathLibrary?.name ??
+            context.localeText('未知存储库', 'Unknown Library'),
         relativePath: _relativeChapterPath(current.path),
       ),
     );
@@ -119,7 +120,10 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
             )
           : Icon(Icons.save_rounded, size: compact ? 16 : 17),
       label: Text(
-        _saving ? '保存中...' : '保存更改 (${_changedIds.length})',
+        _saving
+            ? context.localeText('保存中...', 'Saving...')
+            : context.localeText(
+                '保存更改 (${_changedIds.length})', 'Save (${_changedIds.length})'),
         style: TextStyle(
           fontSize: compact ? 13 : 14,
           fontWeight: FontWeight.w600,
@@ -169,7 +173,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                       Row(
                         children: [
                           Text(
-                            '章节管理',
+                            context.localeText('章节管理', 'Chapter Manager'),
                             style: TextStyle(
                               fontSize: compact ? 22 : 24,
                               fontWeight: FontWeight.w700,
@@ -189,7 +193,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                           ],
                           const Spacer(),
                           IconButton(
-                            tooltip: '关闭',
+                            tooltip: context.localeText('关闭', 'Close'),
                             onPressed: _requestClose,
                             color: AppColors.slate500,
                             iconSize: compact ? 26 : 28,
@@ -200,7 +204,8 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                       SizedBox(height: compact ? 10 : 12),
                       _ChapterManagerSearchField(
                         controller: _searchController,
-                        hintText: '搜索章节、序号',
+                        hintText: context.localeText(
+                            '搜索章节、序号', 'Search chapters or index'),
                         onChanged: (_) => _updateState(() => _groupIndex = 0),
                       ),
                       if (showChapterGroups) ...[
@@ -237,7 +242,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             BatchActionButton(
-                              label: '完成',
+                              label: context.localeText('完成', 'Done'),
                               icon: Icons.check_rounded,
                               filled: true,
                               compact: compact,
@@ -250,16 +255,19 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                             ),
                             BatchSelectButton(
                               checked: allFilteredSelected,
-                              label: '全选 ${filtered.length}',
+                              label: context.localeText('全选 ${filtered.length}',
+                                  'All ${filtered.length}'),
                               compact: compact,
                               onPressed: filtered.isEmpty ? null : _toggleAll,
                             ),
                             BatchCountBadge(
-                              label: '已选 ${_selectedIds.length}',
+                              label: context.localeText(
+                                  '已选 ${_selectedIds.length}',
+                                  'Selected ${_selectedIds.length}'),
                               compact: compact,
                             ),
                             BatchActionButton(
-                              label: '移动',
+                              label: context.localeText('移动', 'Move'),
                               icon: Icons.arrow_forward_rounded,
                               compact: compact,
                               onPressed: _selectedIds.isEmpty || _moving
@@ -274,7 +282,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             BatchActionButton(
-                              label: '选择',
+                              label: context.localeText('选择', 'Select'),
                               icon: Icons.checklist_rounded,
                               compact: compact,
                               onPressed: filtered.isEmpty
@@ -284,13 +292,13 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                                       ),
                             ),
                             BatchActionButton(
-                              label: '重排',
+                              label: context.localeText('重排', 'Renumber'),
                               icon: Icons.format_list_numbered_rounded,
                               compact: compact,
                               onPressed: _renumber,
                             ),
                             BatchActionButton(
-                              label: '跳转',
+                              label: context.localeText('跳转', 'Jump'),
                               icon: Icons.subdirectory_arrow_right_rounded,
                               compact: compact,
                               onPressed: _jumpToChapter,
@@ -304,10 +312,12 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                         ? AppColors.slate900.withValues(alpha: 0.18)
                         : AppColors.slate50.withValues(alpha: 0.38),
                     child: visible.isEmpty
-                        ? const EmptyState(
+                        ? EmptyState(
                             icon: Icons.search_off_rounded,
-                            title: '没有匹配章节',
-                            message: '换一个关键词或切换正文/番外试试。',
+                            title: context.localeText(
+                                '没有匹配章节', 'No Matching Chapters'),
+                            message: context.localeText('换一个关键词或切换正文/番外试试。',
+                                'Try another keyword or switch chapter type.'),
                           )
                         : ListView.separated(
                             padding: EdgeInsets.fromLTRB(
@@ -359,7 +369,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                         if (compact) ...[
                           TextButton(
                             onPressed: _requestClose,
-                            child: const Text('取消'),
+                            child: Text(context.l10n.commonCancel),
                           ),
                           const SizedBox(width: 10),
                           Expanded(child: saveButton)
@@ -367,7 +377,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
                           const Spacer(),
                           TextButton(
                             onPressed: _requestClose,
-                            child: const Text('取消'),
+                            child: Text(context.l10n.commonCancel),
                           ),
                           const SizedBox(width: 12),
                           SizedBox(width: 210, child: saveButton),

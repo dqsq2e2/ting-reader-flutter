@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
@@ -33,7 +34,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   List<Library> _libraries = [];
   String _selectedLibraryId = '';
   final String _searchQuery = '';
-  String _sortBy = 'createdAt';
+  String _sortBy = 'created_at';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
   CoverShape _coverShape = CoverShape.rect;
   bool _showFilterMenu = false;
@@ -59,26 +60,15 @@ class _BookshelfPageState extends State<BookshelfPage> {
     final appState = AppScope.appOf(context);
     try {
       final settingsRes = await appState.api.get('/api/settings');
-      final settingsJson = asMap(asMap(settingsRes.data)['settings_json'] ??
-          asMap(settingsRes.data)['settingsJson']);
-      _selectedLibraryId = (settingsJson['bookshelfLibraryId'] ??
-              settingsJson['bookshelf_library_id'] ??
-              '')
-          .toString();
-      _sortBy = (settingsJson['bookshelfSortBy'] ??
-              settingsJson['bookshelf_sort_by'] ??
-              'createdAt')
-          .toString();
-      _iconSize = iconSizeFromString(
-        (settingsJson['bookshelfIconSize'] ??
-                settingsJson['bookshelf_icon_size'])
-            ?.toString(),
-      );
-      _coverShape = coverShapeFromString(
-        (settingsJson['bookshelfCoverShape'] ??
-                settingsJson['bookshelf_cover_shape'])
-            ?.toString(),
-      );
+      final settingsPayload = asMap(settingsRes.data);
+      final settingsJson = asMap(settingsPayload['settings_json']);
+      dynamic settingValue(String key) =>
+          settingsPayload[key] ?? settingsJson[key];
+      _selectedLibraryId =
+          (settingValue('bookshelf_library_id') ?? '').toString();
+      _sortBy = (settingValue('bookshelf_sort_by') ?? 'created_at').toString();
+      _iconSize = iconSizeFromAppSettings(settingsPayload);
+      _coverShape = coverShapeFromAppSettings(settingsPayload);
 
       final libsRes = await appState.api.get('/api/libraries');
       final libraries = asMapList(libsRes.data).map(Library.fromJson).toList();
@@ -177,7 +167,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
               _showFilterMenu = false;
             });
             _closeFilterMenu();
-            await _persist('bookshelfLibraryId', _selectedLibraryId);
+            await _persist('bookshelf_library_id', _selectedLibraryId);
             await _load();
           },
           onToggleFilterMenu: _toggleFilterMenu,
@@ -199,19 +189,20 @@ class _BookshelfPageState extends State<BookshelfPage> {
         if (!hasContent)
           EmptyState(
             icon: Icons.storage_rounded,
-            title: '书架空空如也',
-            message: '您还没有添加任何存储库，或者存储库中还没有扫描到音频文件。',
+            title: context.localeText('书架空空如也', 'Your bookshelf is empty'),
+            message: context.localeText('您还没有添加任何存储库，或者存储库中还没有扫描到音频文件。',
+                'Add a library or scan audio files to start building your shelf.'),
             action: PrimaryButton(
-              label: '配置存储库',
+              label: context.localeText('配置存储库', 'Configure Library'),
               icon: Icons.add_rounded,
               onPressed: widget.openLibraries,
             ),
           )
         else if (_filteredBooks.isEmpty && _filteredSeries.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.search_off_rounded,
-            title: '未找到相关内容',
-            message: '换个关键词试试吧',
+            title: context.localeText('未找到相关内容', 'No Matches'),
+            message: context.localeText('换个关键词试试吧', 'Try another keyword.'),
           )
         else
           _ContentGrid(
@@ -274,22 +265,22 @@ class _BookshelfPageState extends State<BookshelfPage> {
                 offset: const Offset(-176, 54),
                 child: DisplayFilterMenu(
                   sortBy: _sortBy,
-                  sortOptions: const [
+                  sortOptions: [
                     DisplayFilterSortOption(
-                      value: 'createdAt',
-                      label: '最近添加',
+                      value: 'created_at',
+                      label: context.localeText('最近添加', 'Recently Added'),
                     ),
                     DisplayFilterSortOption(
                       value: 'title',
-                      label: '书名排序',
+                      label: context.localeText('书名排序', 'Title'),
                     ),
                     DisplayFilterSortOption(
                       value: 'author',
-                      label: '作者排序',
+                      label: context.localeText('作者排序', 'Author'),
                     ),
                     DisplayFilterSortOption(
                       value: 'year',
-                      label: '年份排序',
+                      label: context.localeText('年份排序', 'Year'),
                     ),
                   ],
                   iconSize: _iconSize,
@@ -318,20 +309,20 @@ class _BookshelfPageState extends State<BookshelfPage> {
   Future<void> _changeSort(String value) async {
     _closeFilterMenu();
     setState(() => _sortBy = value);
-    await _persist('bookshelfSortBy', value);
+    await _persist('bookshelf_sort_by', value);
   }
 
   Future<void> _changeIconSize(IconSizeSetting value) async {
     _closeFilterMenu();
     setState(() => _iconSize = value);
-    await _persist('bookshelfIconSize', value.name);
+    await _persist('bookshelf_icon_size', value.name);
   }
 
   Future<void> _changeCoverShape(CoverShape value) async {
     _closeFilterMenu();
     setState(() => _coverShape = value);
     await _persist(
-      'bookshelfCoverShape',
+      'bookshelf_cover_shape',
       value == CoverShape.square ? 'square' : 'rect',
     );
   }
@@ -353,7 +344,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('创建系列'),
+              title: Text(context.localeText('创建系列', 'Create Series')),
               content: SizedBox(
                 width: 440,
                 child: Column(
@@ -361,25 +352,29 @@ class _BookshelfPageState extends State<BookshelfPage> {
                   children: [
                     TextField(
                       controller: titleController,
-                      decoration: const InputDecoration(labelText: '系列名称'),
+                      decoration: InputDecoration(
+                          labelText: context.localeText('系列名称', 'Series Name')),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: authorController,
-                      decoration: const InputDecoration(labelText: '作者'),
+                      decoration: InputDecoration(
+                          labelText: context.localeText('作者', 'Author')),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: descriptionController,
                       minLines: 2,
                       maxLines: 4,
-                      decoration: const InputDecoration(labelText: '简介'),
+                      decoration: InputDecoration(
+                          labelText: context.localeText('简介', 'Description')),
                     ),
                     const SizedBox(height: 12),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '已选 ${selectedBooks.length} 本书',
+                        context.localeText('已选 ${selectedBooks.length} 本书',
+                            '${selectedBooks.length} selected'),
                         style: TextStyle(color: context.mutedText),
                       ),
                     ),
@@ -390,10 +385,10 @@ class _BookshelfPageState extends State<BookshelfPage> {
                 TextButton(
                   onPressed:
                       saving ? null : () => Navigator.pop(context, false),
-                  child: const Text('取消'),
+                  child: Text(context.l10n.commonCancel),
                 ),
                 PrimaryButton(
-                  label: '创建',
+                  label: context.localeText('创建', 'Create'),
                   loading: saving,
                   onPressed: () async {
                     if (titleController.text.trim().isEmpty) return;
@@ -488,16 +483,19 @@ class _Header extends StatelessWidget {
               child: _SearchEntry(onTap: onSearchOpen),
             ),
             if (selectionMode) ...[
-              BatchCountBadge(label: '已选 $selectedCount', compact: mobile),
+              BatchCountBadge(
+                  label: context.localeText(
+                      '已选 $selectedCount', '$selectedCount selected'),
+                  compact: mobile),
               BatchActionButton(
                 icon: Icons.select_all_rounded,
-                label: '全选',
+                label: context.localeText('全选', 'Select All'),
                 compact: mobile,
                 onPressed: onSelectAll,
               ),
               BatchActionButton(
                 icon: Icons.layers_rounded,
-                label: '创建系列',
+                label: context.localeText('创建系列', 'Create Series'),
                 filled: true,
                 compact: mobile,
                 onPressed: onCreateSeries,
@@ -509,7 +507,7 @@ class _Header extends StatelessWidget {
             ] else if (isAdmin)
               BatchActionButton(
                 icon: Icons.layers_rounded,
-                label: '选择模式',
+                label: context.localeText('选择模式', 'Select Mode'),
                 compact: mobile,
                 onPressed: onSelectionMode,
               ),
@@ -549,16 +547,19 @@ class _Header extends StatelessWidget {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                BatchCountBadge(label: '已选 $selectedCount', compact: mobile),
+                BatchCountBadge(
+                    label: context.localeText(
+                        '已选 $selectedCount', '$selectedCount selected'),
+                    compact: mobile),
                 BatchActionButton(
                   icon: Icons.select_all_rounded,
-                  label: '全选',
+                  label: context.localeText('全选', 'Select All'),
                   compact: mobile,
                   onPressed: onSelectAll,
                 ),
                 BatchActionButton(
                   icon: Icons.layers_rounded,
-                  label: '创建系列',
+                  label: context.localeText('创建系列', 'Create Series'),
                   filled: true,
                   compact: mobile,
                   onPressed: onCreateSeries,
@@ -574,7 +575,9 @@ class _Header extends StatelessWidget {
           final modeButton = isAdmin
               ? BatchActionButton(
                   icon: Icons.layers_rounded,
-                  label: mobile ? '选择' : '选择模式',
+                  label: mobile
+                      ? context.localeText('选择', 'Select')
+                      : context.localeText('选择模式', 'Select Mode'),
                   onPressed: onSelectionMode,
                   compact: mobile,
                 )
@@ -623,10 +626,11 @@ class _Header extends StatelessWidget {
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const HeaderText(
+                      HeaderText(
                         icon: Icons.library_books_rounded,
-                        title: '我的书架',
-                        subtitle: '发现您收藏的所有有声读物。',
+                        title: context.localeText('我的书架', 'My Bookshelf'),
+                        subtitle: context.localeText('发现您收藏的所有有声读物。',
+                            'Browse every audiobook in your collection.'),
                       ),
                       const SizedBox(height: 16),
                       compactToolbar(),
@@ -635,11 +639,12 @@ class _Header extends StatelessWidget {
                 : Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: HeaderText(
                           icon: Icons.library_books_rounded,
-                          title: '我的书架',
-                          subtitle: '发现您收藏的所有有声读物。',
+                          title: context.localeText('我的书架', 'My Bookshelf'),
+                          subtitle: context.localeText('发现您收藏的所有有声读物。',
+                              'Browse every audiobook in your collection.'),
                         ),
                       ),
                       desktopToolbar,
@@ -679,7 +684,8 @@ class _SearchEntry extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '搜索书名、作者、演播者',
+                  context.localeText(
+                      '搜索书名、作者、演播者', 'Search title, author, narrator'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -707,18 +713,19 @@ class _LibraryDropdown extends StatelessWidget {
   final String selectedLibraryId;
   final ValueChanged<String?> onChanged;
 
-  String _libraryLabel(String id) {
-    if (id.isEmpty) return '所有媒体库';
+  String _libraryLabel(BuildContext context, String id) {
+    if (id.isEmpty) return context.localeText('所有媒体库', 'All Libraries');
     for (final library in libraries) {
       if (library.id == id) return library.name;
     }
-    return '媒体库';
+    return context.localeText('媒体库', 'Library');
   }
 
   @override
   Widget build(BuildContext context) {
     final items = [
-      const DropdownMenuItem(value: '', child: Text('所有媒体库')),
+      DropdownMenuItem(
+          value: '', child: Text(context.localeText('所有媒体库', 'All Libraries'))),
       ...libraries.map(
         (lib) => DropdownMenuItem(
           value: lib.id,
@@ -748,7 +755,7 @@ class _LibraryDropdown extends StatelessWidget {
             (item) => Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                _libraryLabel(item.value ?? ''),
+                _libraryLabel(context, item.value ?? ''),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 14),
@@ -831,7 +838,7 @@ class _ContentGrid extends StatelessWidget {
         final spacing = gridSpacing(iconSize);
         final ratio = coverShape == CoverShape.square ? 0.78 : 0.62;
 
-        if (sortBy != 'createdAt' && sortBy != 'created_at') {
+        if (sortBy != 'created_at') {
           final groups = <String, List<Object>>{};
           for (final book in books) {
             final source = sortBy == 'author' ? book.author ?? '' : book.title;

@@ -1,7 +1,8 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../app_scope.dart';
 import '../common/common_widgets.dart';
@@ -15,16 +16,10 @@ CoverShape coverShapeFromString(String? value) {
 }
 
 CoverShape coverShapeFromAppSettings(Map<String, dynamic> settings) {
-  final settingsJson = asMap(
-    settings['settings_json'] ?? settings['settingsJson'],
-  );
-  final directValue =
-      settings['bookshelfCoverShape'] ?? settings['bookshelf_cover_shape'];
+  final settingsJson = asMap(settings['settings_json']);
+  final directValue = settings['bookshelf_cover_shape'];
   return coverShapeFromString(
-    (directValue ??
-            settingsJson['bookshelfCoverShape'] ??
-            settingsJson['bookshelf_cover_shape'])
-        ?.toString(),
+    (directValue ?? settingsJson['bookshelf_cover_shape'])?.toString(),
   );
 }
 
@@ -39,16 +34,10 @@ IconSizeSetting iconSizeFromString(String? value) {
 }
 
 IconSizeSetting iconSizeFromAppSettings(Map<String, dynamic> settings) {
-  final settingsJson = asMap(
-    settings['settings_json'] ?? settings['settingsJson'],
-  );
-  final directValue =
-      settings['bookshelfIconSize'] ?? settings['bookshelf_icon_size'];
+  final settingsJson = asMap(settings['settings_json']);
+  final directValue = settings['bookshelf_icon_size'];
   return iconSizeFromString(
-    (directValue ??
-            settingsJson['bookshelfIconSize'] ??
-            settingsJson['bookshelf_icon_size'])
-        ?.toString(),
+    (directValue ?? settingsJson['bookshelf_icon_size'])?.toString(),
   );
 }
 
@@ -80,6 +69,41 @@ double gridSpacing(IconSizeSetting size) {
     case IconSizeSetting.large:
       return 24;
   }
+}
+
+String localizedBookTitle(BuildContext context, Book book) {
+  final title = book.title.trim();
+  return title.isNotEmpty
+      ? title
+      : context.localeText('未命名书籍', 'Untitled Book');
+}
+
+String localizedChapterTitle(BuildContext context, Chapter chapter) {
+  final title = chapter.title.trim();
+  return title.isNotEmpty
+      ? title
+      : context.localeText('未命名章节', 'Untitled Chapter');
+}
+
+String localizedLibraryName(BuildContext context, Library library) {
+  final name = library.name.trim();
+  return name.isNotEmpty
+      ? name
+      : context.localeText('未命名媒体库', 'Untitled Library');
+}
+
+String localizedPlaylistTitle(BuildContext context, Playlist playlist) {
+  final title = playlist.title.trim();
+  return title.isNotEmpty
+      ? title
+      : context.localeText('未命名书单', 'Untitled Playlist');
+}
+
+String localizedSeriesTitle(BuildContext context, Series series) {
+  final title = series.title.trim();
+  return title.isNotEmpty
+      ? title
+      : context.localeText('未命名系列', 'Untitled Series');
 }
 
 class BookCard extends StatelessWidget {
@@ -159,7 +183,7 @@ class BookCard extends StatelessWidget {
             ),
             const SizedBox(height: 9),
             Text(
-              book.title,
+              localizedBookTitle(context, book),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -170,7 +194,9 @@ class BookCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              book.author?.isNotEmpty == true ? book.author! : '未知作者',
+              book.author?.isNotEmpty == true
+                  ? book.author!
+                  : context.localeText('未知作者', 'Unknown Author'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -281,14 +307,15 @@ class SeriesCard extends StatelessWidget {
                     color: Colors.black.withValues(alpha: 0.62),
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.layers_rounded, color: Colors.white, size: 11),
-                      SizedBox(width: 4),
+                      const Icon(Icons.layers_rounded,
+                          color: Colors.white, size: 11),
+                      const SizedBox(width: 4),
                       Text(
-                        '系列',
-                        style: TextStyle(
+                        context.localeText('系列', 'Series'),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -316,7 +343,10 @@ class SeriesCard extends StatelessWidget {
                     ],
                   ),
                   child: Text(
-                    '${series.books.length} 本书',
+                    context.localeText(
+                      '${series.books.length} 本书',
+                      '${series.books.length} books',
+                    ),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 11,
@@ -329,14 +359,16 @@ class SeriesCard extends StatelessWidget {
           ),
           const SizedBox(height: 9),
           Text(
-            series.title,
+            localizedSeriesTitle(context, series),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 4),
           Text(
-            series.author?.isNotEmpty == true ? series.author! : '系列',
+            series.author?.isNotEmpty == true
+                ? series.author!
+                : context.localeText('系列', 'Series'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: context.mutedText, fontSize: 12),

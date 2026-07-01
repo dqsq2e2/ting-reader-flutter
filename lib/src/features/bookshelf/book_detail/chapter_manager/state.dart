@@ -121,19 +121,20 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
     final action = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('有未保存更改'),
-        content: Text('关闭前保存 ${_changedIds.length} 项修改？'),
+        title: Text(context.localeText('有未保存更改', 'Unsaved Changes')),
+        content: Text(context.localeText('关闭前保存 ${_changedIds.length} 项修改？',
+            'Save ${_changedIds.length} changes before closing?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, 'discard'),
-            child: const Text('放弃修改'),
+            child: Text(context.localeText('放弃修改', 'Discard')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, 'continue'),
-            child: const Text('继续编辑'),
+            child: Text(context.localeText('继续编辑', 'Keep Editing')),
           ),
           PrimaryButton(
-            label: '保存并退出',
+            label: context.localeText('保存并退出', 'Save and Exit'),
             icon: Icons.save_rounded,
             onPressed: () => Navigator.pop(context, 'save'),
           ),
@@ -170,15 +171,16 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('重排序号'),
-        content: const Text('确定按当前列表顺序重新生成章节序号（从 1 开始）吗？'),
+        title: Text(context.localeText('重排序号', 'Renumber Chapters')),
+        content: Text(context.localeText('确定按当前列表顺序重新生成章节序号（从 1 开始）吗？',
+            'Regenerate chapter numbers from the current order, starting at 1?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           PrimaryButton(
-            label: '重排',
+            label: context.localeText('重排', 'Renumber'),
             icon: Icons.format_list_numbered_rounded,
             onPressed: () => Navigator.pop(context, true),
           ),
@@ -217,7 +219,9 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
     } catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存章节失败：$err')),
+        SnackBar(
+            content: Text(context.localeText(
+                '保存章节失败：$err', 'Failed to save chapters: $err'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -242,7 +246,9 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
     } catch (err) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('移动章节失败：$err')),
+        SnackBar(
+            content: Text(context.localeText(
+                '移动章节失败：$err', 'Failed to move chapters: $err'))),
       );
     } finally {
       if (mounted) setState(() => _moving = false);
@@ -272,7 +278,7 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                         .contains(search.trim().toLowerCase()))
                     .toList();
             return AlertDialog(
-              title: const Text('移动到作品'),
+              title: Text(context.localeText('移动到作品', 'Move to Book')),
               content: SizedBox(
                 width: 520,
                 height: 520,
@@ -280,9 +286,9 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                   children: [
                     TextField(
                       autofocus: true,
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search_rounded),
-                        hintText: '搜索作品',
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        hintText: context.localeText('搜索作品', 'Search books'),
                       ),
                       onChanged: (value) =>
                           setDialogState(() => search = value),
@@ -290,10 +296,12 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                     const SizedBox(height: 12),
                     Expanded(
                       child: filtered.isEmpty
-                          ? const EmptyState(
+                          ? EmptyState(
                               icon: Icons.menu_book_rounded,
-                              title: '没有可移动的目标作品',
-                              message: '请先创建或扫描其他作品。',
+                              title: context.localeText(
+                                  '没有可移动的目标作品', 'No Target Books'),
+                              message: context.localeText('请先创建或扫描其他作品。',
+                                  'Create or scan another book first.'),
                             )
                           : ListView.separated(
                               itemCount: filtered.length,
@@ -315,7 +323,9 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  subtitle: Text(book.author ?? '未知作者'),
+                                  subtitle: Text(book.author ??
+                                      context.localeText(
+                                          '未知作者', 'Unknown Author')),
                                   onTap: () => Navigator.pop(context, book),
                                 );
                               },
@@ -327,7 +337,7 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(context),
-                  child: const Text('取消'),
+                  child: Text(context.l10n.commonCancel),
                 ),
               ],
             );

@@ -8,6 +8,7 @@ class _ScrapeSource {
     required this.autoScrape,
     required this.searchFields,
     required this.resultFields,
+    required this.resultFieldLabels,
   });
 
   final String id;
@@ -16,12 +17,13 @@ class _ScrapeSource {
   final bool autoScrape;
   final List<_ScrapeSearchField> searchFields;
   final List<String> resultFields;
+  final Map<String, _LocalizedPluginText> resultFieldLabels;
 
   factory _ScrapeSource.fromJson(Map<String, dynamic> json) {
-    final fields = asMapList(json['searchFields'] ?? json['search_fields'])
+    final fields = asMapList(json['search_fields'])
         .map(_ScrapeSearchField.fromJson)
         .toList();
-    final rawResultFields = json['resultFields'] ?? json['result_fields'];
+    final rawResultFields = json['result_fields'];
     final resultFields = _scrapeStringList(rawResultFields)
         .map(_normalizeScrapeFieldKey)
         .where(_scrapeFieldDefinitions.containsKey)
@@ -29,12 +31,62 @@ class _ScrapeSource {
         .toList();
     return _ScrapeSource(
       id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? '插件',
+      name: json['name']?.toString() ?? 'Plugin',
       enabled: json['enabled'] == true,
-      autoScrape: json['autoScrape'] == true || json['auto_scrape'] == true,
+      autoScrape: json['auto_scrape'] == true,
       searchFields: fields.isEmpty ? _defaultScrapeSearchFields : fields,
       resultFields: resultFields.isEmpty ? _scrapeFieldOrder : resultFields,
+      resultFieldLabels: _localizedPluginTextMap(json['result_field_labels']),
     );
+  }
+}
+
+class _LocalizedPluginText {
+  const _LocalizedPluginText({this.zh, this.en});
+
+  final String? zh;
+  final String? en;
+
+  factory _LocalizedPluginText.fromJson(Map<String, dynamic> json) {
+    return _LocalizedPluginText(
+      zh: _firstLocalizedString(
+        json,
+        const ['zh', 'zhCN', 'zh-CN', 'zhHans', 'zh-Hans'],
+      ),
+      en: _firstLocalizedString(
+        json,
+        const ['en', 'enUS', 'en-US'],
+      ),
+    );
+  }
+
+  static _LocalizedPluginText? fromAny(Object? value) {
+    if (value is Map) {
+      final map = value.map((key, value) => MapEntry(key.toString(), value));
+      final text = _LocalizedPluginText.fromJson(map);
+      if ((text.zh ?? '').trim().isNotEmpty ||
+          (text.en ?? '').trim().isNotEmpty) {
+        return text;
+      }
+    }
+    return null;
+  }
+
+  String resolve(BuildContext context) {
+    final preferred = context.isEnglishLocale ? en : zh;
+    final fallback = context.isEnglishLocale ? zh : en;
+    return (preferred?.trim().isNotEmpty == true
+            ? preferred
+            : fallback?.trim().isNotEmpty == true
+                ? fallback
+                : null) ??
+        '';
+  }
+
+  String get fallback {
+    if (zh?.trim().isNotEmpty == true) return zh!.trim();
+    if (en?.trim().isNotEmpty == true) return en!.trim();
+    return '';
   }
 }
 
@@ -44,24 +96,38 @@ class _ScrapeSearchField {
     required this.label,
     required this.required,
     required this.defaultFrom,
+    this.labelI18n,
     this.placeholder,
+    this.placeholderI18n,
   });
 
   final String key;
   final String label;
   final bool required;
   final String defaultFrom;
+  final _LocalizedPluginText? labelI18n;
   final String? placeholder;
+  final _LocalizedPluginText? placeholderI18n;
 
   factory _ScrapeSearchField.fromJson(Map<String, dynamic> json) {
+    final rawLabel = json['label'];
+    final labelI18n = _LocalizedPluginText.fromAny(
+      json['label_i18n'] ?? (rawLabel is Map ? rawLabel : null),
+    );
+    final rawPlaceholder = json['placeholder'];
     return _ScrapeSearchField(
       key: json['key']?.toString() ?? 'title',
-      label: json['label']?.toString() ?? _scrapeFieldLabel(json['key']),
+      label: rawLabel is String
+          ? rawLabel
+          : labelI18n?.fallback ?? _scrapeFieldLabel(json['key']),
+      labelI18n: labelI18n,
       required: json['required'] == true,
-      defaultFrom:
-          (json['defaultFrom'] ?? json['default_from'] ?? json['key'] ?? '')
-              .toString(),
-      placeholder: json['placeholder']?.toString(),
+      defaultFrom: (json['default_from'] ?? json['key'] ?? '').toString(),
+      placeholder: rawPlaceholder is String ? rawPlaceholder : null,
+      placeholderI18n: _LocalizedPluginText.fromAny(
+        json['placeholder_i18n'] ??
+            (rawPlaceholder is Map ? rawPlaceholder : null),
+      ),
     );
   }
 }
@@ -112,42 +178,45 @@ class _SelectedScrapeField {
 const _defaultScrapeSearchFields = [
   _ScrapeSearchField(
     key: 'title',
-    label: '书名',
+    label: 'Title',
+    labelI18n: _LocalizedPluginText(zh: '书名', en: 'Title'),
     required: true,
     defaultFrom: 'book.title',
   ),
   _ScrapeSearchField(
     key: 'author',
-    label: '作者',
+    label: 'Author',
+    labelI18n: _LocalizedPluginText(zh: '作者', en: 'Author'),
     required: false,
     defaultFrom: 'book.author',
   ),
   _ScrapeSearchField(
     key: 'narrator',
-    label: '演播',
+    label: 'Narrator',
+    labelI18n: _LocalizedPluginText(zh: '演播', en: 'Narrator'),
     required: false,
     defaultFrom: 'book.narrator',
   ),
 ];
 
 const _scrapeFieldDefinitions = <String, ({String label, IconData icon})>{
-  'title': (label: '书名', icon: Icons.menu_book_rounded),
-  'author': (label: '作者', icon: Icons.person_rounded),
-  'narrator': (label: '演播', icon: Icons.mic_rounded),
-  'cover_url': (label: '封面', icon: Icons.image_rounded),
-  'description': (label: '简介', icon: Icons.notes_rounded),
-  'tags': (label: '标签', icon: Icons.local_offer_rounded),
-  'genre': (label: '类型', icon: Icons.category_rounded),
-  'year': (label: '年份', icon: Icons.calendar_month_rounded),
-  'subtitle': (label: '副标题', icon: Icons.subtitles_rounded),
-  'published_date': (label: '发布日期', icon: Icons.event_rounded),
-  'publisher': (label: '出版社', icon: Icons.apartment_rounded),
+  'title': (label: 'Title', icon: Icons.menu_book_rounded),
+  'author': (label: 'Author', icon: Icons.person_rounded),
+  'narrator': (label: 'Narrator', icon: Icons.mic_rounded),
+  'cover_url': (label: 'Cover', icon: Icons.image_rounded),
+  'description': (label: 'Description', icon: Icons.notes_rounded),
+  'tags': (label: 'Tags', icon: Icons.local_offer_rounded),
+  'genre': (label: 'Genre', icon: Icons.category_rounded),
+  'year': (label: 'Year', icon: Icons.calendar_month_rounded),
+  'subtitle': (label: 'Subtitle', icon: Icons.subtitles_rounded),
+  'published_date': (label: 'Published', icon: Icons.event_rounded),
+  'publisher': (label: 'Publisher', icon: Icons.apartment_rounded),
   'isbn': (label: 'ISBN', icon: Icons.tag_rounded),
   'asin': (label: 'ASIN', icon: Icons.tag_rounded),
-  'language': (label: '语言', icon: Icons.language_rounded),
-  'explicit': (label: '成人内容', icon: Icons.verified_rounded),
-  'abridged': (label: '删节版', icon: Icons.verified_rounded),
-  'duration': (label: '总时长', icon: Icons.timer_rounded),
+  'language': (label: 'Language', icon: Icons.language_rounded),
+  'explicit': (label: 'Explicit', icon: Icons.verified_rounded),
+  'abridged': (label: 'Abridged', icon: Icons.verified_rounded),
+  'duration': (label: 'Duration', icon: Icons.timer_rounded),
 };
 
 const _scrapeFieldOrder = [
@@ -194,22 +263,185 @@ String _scrapeFieldLabel(Object? key) {
   return _scrapeFieldDefinitions[normalized]?.label ?? (key?.toString() ?? '');
 }
 
+String _localizedScrapeFieldLabel(BuildContext context, String key) {
+  switch (_normalizeScrapeFieldKey(key)) {
+    case 'title':
+      return context.localeText('书名', 'Title');
+    case 'author':
+      return context.localeText('作者', 'Author');
+    case 'narrator':
+      return context.localeText('演播', 'Narrator');
+    case 'cover_url':
+      return context.localeText('封面', 'Cover');
+    case 'description':
+      return context.localeText('简介', 'Description');
+    case 'tags':
+      return context.localeText('标签', 'Tags');
+    case 'genre':
+      return context.localeText('类型', 'Genre');
+    case 'year':
+      return context.localeText('年份', 'Year');
+    case 'subtitle':
+      return context.localeText('副标题', 'Subtitle');
+    case 'published_date':
+      return context.localeText('发布日期', 'Published');
+    case 'publisher':
+      return context.localeText('出版社', 'Publisher');
+    case 'isbn':
+      return 'ISBN';
+    case 'asin':
+      return 'ASIN';
+    case 'language':
+      return context.localeText('语言', 'Language');
+    case 'explicit':
+      return context.localeText('成人内容', 'Explicit');
+    case 'abridged':
+      return context.localeText('删节版', 'Abridged');
+    case 'duration':
+      return context.localeText('总时长', 'Duration');
+    default:
+      return key;
+  }
+}
+
+String _localizedScrapeResultFieldLabel(
+  BuildContext context,
+  _ScrapeSource source,
+  String key,
+) {
+  final normalized = _normalizeScrapeFieldKey(key);
+  final declared = source.resultFieldLabels[key]?.resolve(context) ??
+      source.resultFieldLabels[normalized]?.resolve(context);
+  if (declared != null && declared.trim().isNotEmpty) {
+    return declared.trim();
+  }
+  return _localizedScrapeFieldLabel(context, normalized);
+}
+
+String _localizedScrapeSearchFieldLabel(
+  BuildContext context,
+  _ScrapeSearchField field,
+) {
+  final declared = field.labelI18n?.resolve(context);
+  if (declared != null && declared.trim().isNotEmpty) {
+    return declared.trim();
+  }
+  final normalized = _normalizeScrapeFieldKey(field.key);
+  if (_scrapeFieldDefinitions.containsKey(normalized)) {
+    return _localizedScrapeFieldLabel(context, normalized);
+  }
+  return field.label;
+}
+
+String _formatScrapeValueForLocale(
+  BuildContext context,
+  Object? value, [
+  String? emptyZh,
+  String? emptyEn,
+]) {
+  if (!_hasScrapeValue(value)) {
+    return context.localeText(emptyZh ?? '未返回', emptyEn ?? 'Not returned');
+  }
+  if (value is Iterable) {
+    return value.map((item) => item.toString()).join(' / ');
+  }
+  if (value is bool) {
+    return context.localeText(value ? '是' : '否', value ? 'Yes' : 'No');
+  }
+  return value.toString();
+}
+
+String _scrapeResultTitleForLocale(BuildContext context, _ScrapeResult result) {
+  return _formatScrapeValueForLocale(
+    context,
+    _scrapeItemValue(result.item, 'title'),
+  );
+}
+
+String _scrapeResultSubtitleForLocale(
+  BuildContext context,
+  _ScrapeResult result,
+) {
+  final author = _formatScrapeValueForLocale(
+    context,
+    _scrapeItemValue(result.item, 'author'),
+    '',
+    '',
+  );
+  final narrator = _formatScrapeValueForLocale(
+    context,
+    _scrapeItemValue(result.item, 'narrator'),
+    '',
+    '',
+  );
+  return [author, narrator].where((value) => value.isNotEmpty).join(' / ');
+}
+
+String _scrapeCountText(
+  BuildContext context,
+  int count,
+  String zhUnit,
+  String enSingular,
+  String enPlural,
+) {
+  if (!context.isEnglishLocale) return '$count $zhUnit';
+  return '$count ${count == 1 ? enSingular : enPlural}';
+}
+
+String _scrapeSummaryText(
+  BuildContext context, {
+  required int pluginCount,
+  required int resultCount,
+  required int selectedCount,
+}) {
+  if (!context.isEnglishLocale) {
+    return '$pluginCount 个插件 · $resultCount 条结果 · 已选择 $selectedCount 个字段';
+  }
+  final plugins = pluginCount == 1 ? 'plugin' : 'plugins';
+  final results = resultCount == 1 ? 'result' : 'results';
+  final fields = selectedCount == 1 ? 'field' : 'fields';
+  return '$pluginCount $plugins · $resultCount $results · $selectedCount $fields selected';
+}
+
 List<String> _scrapeStringList(Object? value) {
   if (value is Iterable) return value.map((item) => item.toString()).toList();
   if (value is String && value.trim().isNotEmpty) return [value.trim()];
   return const [];
 }
 
+String? _firstLocalizedString(Map<String, dynamic> json, List<String> keys) {
+  for (final key in keys) {
+    final value = json[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+Map<String, _LocalizedPluginText> _localizedPluginTextMap(Object? value) {
+  if (value is! Map) return const {};
+  final labels = <String, _LocalizedPluginText>{};
+  for (final entry in value.entries) {
+    final key = entry.key.toString().trim();
+    final label = _LocalizedPluginText.fromAny(entry.value);
+    if (key.isEmpty || label == null) continue;
+    labels[key] = label;
+    labels.putIfAbsent(_normalizeScrapeFieldKey(key), () => label);
+  }
+  return labels;
+}
+
 Object? _scrapeItemValue(Map<String, dynamic> item, String fieldKey) {
   switch (fieldKey) {
     case 'cover_url':
-      return item['coverUrl'] ?? item['cover_url'];
+      return item['cover_url'];
     case 'description':
       return item['description'] ?? item['intro'];
     case 'year':
-      return item['publishedYear'] ?? item['published_year'] ?? item['year'];
+      return item['published_year'] ?? item['year'];
     case 'published_date':
-      return item['publishedDate'] ?? item['published_date'];
+      return item['published_date'];
     default:
       return item[fieldKey];
   }
@@ -222,12 +454,12 @@ bool _hasScrapeValue(Object? value) {
   return true;
 }
 
-String _formatScrapeValue(Object? value, [String emptyLabel = '未返回']) {
+String _formatScrapeValue(Object? value, [String emptyLabel = 'Not returned']) {
   if (!_hasScrapeValue(value)) return emptyLabel;
   if (value is Iterable) {
     return value.map((item) => item.toString()).join(' / ');
   }
-  if (value is bool) return value ? '是' : '否';
+  if (value is bool) return value ? 'Yes' : 'No';
   return value.toString();
 }
 
@@ -416,17 +648,11 @@ String? _sharedScrapeSearchKind(_ScrapeSearchField field) {
 Set<String> _configuredScrapeSourceIds(Map<String, dynamic>? config) {
   if (config == null) return <String>{};
   const keys = [
-    'defaultSources',
     'default_sources',
-    'coverSources',
     'cover_sources',
-    'introSources',
     'intro_sources',
-    'authorSources',
     'author_sources',
-    'narratorSources',
     'narrator_sources',
-    'tagsSources',
     'tags_sources',
   ];
   return {
@@ -538,7 +764,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = '加载刮削插件失败：$error');
+      setState(() => _error = context.localeText(
+          '加载刮削插件失败：$error', 'Failed to load scraper plugins: $error'));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -557,7 +784,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
 
   Future<void> _search() async {
     if (_enabledSourceIds.isEmpty) {
-      setState(() => _error = '请至少启用一个插件');
+      setState(() => _error =
+          context.localeText('请至少启用一个插件', 'Enable at least one plugin'));
       return;
     }
     for (final source
@@ -569,7 +797,9 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
           setState(() {
             _activeSourceId = source.id;
             _step = 'search';
-            _error = '${source.name} 的 ${field.label}不能为空';
+            final label = _localizedScrapeSearchFieldLabel(context, field);
+            _error = context.localeText('${source.name} 的 $label 不能为空',
+                '${source.name}: $label is required');
           });
           return;
         }
@@ -712,16 +942,16 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       if (_selectedFields[key]?.resultKey == result.key) {
         return;
       } else {
-        final definition = _scrapeFieldDefinitions[key];
         _selectedFields[key] = _SelectedScrapeField(
           key: key,
-          label: definition?.label ?? key,
+          label: _localizedScrapeResultFieldLabel(context, result.source, key),
           value: value!,
           sourceId: result.source.id,
           sourceName: result.source.name,
           resultId: result.externalId,
           resultKey: result.key,
-          resultTitle: result.title,
+          resultTitle: _formatScrapeValueForLocale(
+              context, _scrapeItemValue(result.item, 'title')),
         );
       }
     });
@@ -732,16 +962,16 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       for (final key in result.source.resultFields) {
         final value = _scrapeItemValue(result.item, key);
         if (!_hasScrapeValue(value)) continue;
-        final definition = _scrapeFieldDefinitions[key];
         _selectedFields[key] = _SelectedScrapeField(
           key: key,
-          label: definition?.label ?? key,
+          label: _localizedScrapeResultFieldLabel(context, result.source, key),
           value: value!,
           sourceId: result.source.id,
           sourceName: result.source.name,
           resultId: result.externalId,
           resultKey: result.key,
-          resultTitle: result.title,
+          resultTitle: _formatScrapeValueForLocale(
+              context, _scrapeItemValue(result.item, 'title')),
         );
       }
     });
@@ -807,7 +1037,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = '应用失败：$error');
+      setState(() =>
+          _error = context.localeText('应用失败：$error', 'Apply failed: $error'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -816,22 +1047,25 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Dialog(
+      return Dialog(
         child: SizedBox(
           width: 320,
           height: 180,
-          child: LoadingView(label: '正在加载...'),
+          child:
+              LoadingView(label: context.localeText('正在加载...', 'Loading...')),
         ),
       );
     }
     if (_book == null || _sources.isEmpty) {
       return AlertDialog(
-        title: const Text('没有可用插件'),
-        content: Text(_error ?? '请先在插件管理中启用刮削插件。'),
+        title: Text(context.localeText('没有可用插件', 'No Plugins Available')),
+        content: Text(_error ??
+            context.localeText('请先在插件管理中启用刮削插件。',
+                'Enable a scraper plugin in plugin management first.')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('关闭'),
+            child: Text(context.l10n.commonClose),
           ),
         ],
       );
@@ -904,9 +1138,12 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                   children: [
                     Row(
                       children: [
-                        const Expanded(child: _ScrapeSectionLabel('本次启用插件')),
+                        Expanded(
+                            child: _ScrapeSectionLabel(context.localeText(
+                                '本次启用插件', 'Enabled plugins'))),
                         Text(
-                          '${_enabledSourceIds.length} 个',
+                          _scrapeCountText(context, _enabledSourceIds.length,
+                              '个', 'plugin', 'plugins'),
                           style: const TextStyle(
                             color: AppColors.primary600,
                             fontSize: 12,
@@ -935,10 +1172,12 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                   ],
                 );
                 final form = active == null
-                    ? const EmptyState(
+                    ? EmptyState(
                         icon: Icons.extension_off_rounded,
-                        title: '未选择插件',
-                        message: '请选择一个刮削插件。',
+                        title:
+                            context.localeText('未选择插件', 'No Plugin Selected'),
+                        message: context.localeText(
+                            '请选择一个刮削插件。', 'Choose a scraper plugin.'),
                       )
                     : _ScrapeSearchForm(
                         source: active,
@@ -1022,10 +1261,12 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ScrapeSummaryCard(
-            title: '搜索结果',
-            subtitle:
-                '${_enabledSourceIds.length} 个插件 · ${_results.length} 条结果 · 已选择 $_selectedCount 个字段',
-            actionLabel: '修改搜索',
+            title: context.localeText('搜索结果', 'Search Results'),
+            subtitle: _scrapeSummaryText(context,
+                pluginCount: _enabledSourceIds.length,
+                resultCount: _results.length,
+                selectedCount: _selectedCount),
+            actionLabel: context.localeText('修改搜索', 'Edit Search'),
             actionIcon: Icons.arrow_back_rounded,
             onAction: () => setState(() => _step = 'search'),
           ),
@@ -1035,12 +1276,16 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
           ],
           const SizedBox(height: 14),
           if (_searching)
-            const SizedBox(height: 260, child: LoadingView(label: '搜索中...'))
+            SizedBox(
+                height: 260,
+                child: LoadingView(
+                    label: context.localeText('搜索中...', 'Searching...')))
           else if (_results.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.search_off_rounded,
-              title: '暂无搜索结果',
-              message: '换一个插件或关键词试试。',
+              title: context.localeText('暂无搜索结果', 'No Results'),
+              message: context.localeText(
+                  '换一个插件或关键词试试。', 'Try another plugin or keyword.'),
             )
           else
             LayoutBuilder(
@@ -1091,7 +1336,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
             child: TextButton.icon(
               onPressed: () => setState(() => _resultView = 'list'),
               icon: const Icon(Icons.arrow_back_rounded, size: 18),
-              label: const Text('返回搜索结果'),
+              label: Text(context.localeText('返回搜索结果', 'Back to Results')),
               style: TextButton.styleFrom(
                 backgroundColor:
                     context.isDark ? AppColors.slate900 : Colors.white,
@@ -1150,7 +1395,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      result.title,
+                      _scrapeResultTitleForLocale(context, result),
                       textAlign: stack ? TextAlign.center : TextAlign.left,
                       style: const TextStyle(
                         color: AppColors.slate900,
@@ -1188,7 +1433,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                     textStyle: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                   icon: const Icon(Icons.check_rounded, size: 17),
-                  label: const Text('采用全部'),
+                  label: Text(context.localeText('采用全部', 'Use All')),
                 );
                 if (stack) {
                   return Column(
@@ -1217,10 +1462,11 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
           ),
           const SizedBox(height: 14),
           if (fields.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.fact_check_outlined,
-              title: '没有可应用字段',
-              message: '这个结果没有返回可写入书籍的字段。',
+              title: context.localeText('没有可应用字段', 'No Applicable Fields'),
+              message: context.localeText('这个结果没有返回可写入书籍的字段。',
+                  'This result has no fields that can be written to the book.'),
             )
           else
             LayoutBuilder(
@@ -1324,9 +1570,10 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ScrapeSummaryCard(
-            title: '待应用字段',
-            subtitle: '${selected.length} 个字段',
-            actionLabel: '清空',
+            title: context.localeText('待应用字段', 'Fields to Apply'),
+            subtitle: _scrapeCountText(
+                context, selected.length, '个字段', 'field', 'fields'),
+            actionLabel: context.localeText('清空', 'Clear'),
             actionIcon: Icons.delete_outline_rounded,
             onAction: selected.isEmpty
                 ? null
@@ -1334,10 +1581,11 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
           ),
           const SizedBox(height: 14),
           if (selected.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.fact_check_outlined,
-              title: '未选择字段',
-              message: '回到搜索结果，选择要应用到书籍的字段。',
+              title: context.localeText('未选择字段', 'No Fields Selected'),
+              message: context.localeText('回到搜索结果，选择要应用到书籍的字段。',
+                  'Return to results and choose fields to apply.'),
             )
           else
             Column(
@@ -1370,7 +1618,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       child: Row(
         children: [
           Text(
-            '已选择 $_selectedCount 个字段',
+            _scrapeCountText(context, _selectedCount, '个字段', 'field selected',
+                'fields selected'),
             style: TextStyle(
               color: context.mutedText,
               fontSize: 14,
@@ -1382,11 +1631,13 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
             TextButton(
               onPressed:
                   _searching ? null : () => Navigator.pop(context, false),
-              child: const Text('取消'),
+              child: Text(context.l10n.commonCancel),
             ),
             const SizedBox(width: 10),
             PrimaryButton(
-              label: '搜索 ${_enabledSourceIds.length} 个插件',
+              label: context.isEnglishLocale
+                  ? 'Search ${_enabledSourceIds.length} ${_enabledSourceIds.length == 1 ? 'plugin' : 'plugins'}'
+                  : '搜索 ${_enabledSourceIds.length} 个插件',
               icon: Icons.search_rounded,
               loading: _searching,
               onPressed: _enabledSourceIds.isEmpty ? null : _search,
@@ -1401,11 +1652,13 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                 }
               }),
               icon: const Icon(Icons.arrow_back_rounded),
-              label: Text(_resultView == 'detail' ? '搜索结果' : '搜索条件'),
+              label: Text(_resultView == 'detail'
+                  ? context.localeText('搜索结果', 'Search Results')
+                  : context.localeText('搜索条件', 'Search Conditions')),
             ),
             const SizedBox(width: 10),
             PrimaryButton(
-              label: '确认应用',
+              label: context.localeText('确认应用', 'Review & Apply'),
               icon: Icons.arrow_forward_rounded,
               onPressed: _selectedFields.isEmpty
                   ? null
@@ -1415,11 +1668,11 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
             TextButton.icon(
               onPressed: () => setState(() => _step = 'results'),
               icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('返回'),
+              label: Text(context.localeText('返回', 'Back')),
             ),
             const SizedBox(width: 10),
             PrimaryButton(
-              label: '应用',
+              label: context.localeText('应用', 'Apply'),
               icon: Icons.save_rounded,
               loading: _saving,
               onPressed: _filledSelectedCount == 0 ? null : _apply,

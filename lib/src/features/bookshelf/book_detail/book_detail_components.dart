@@ -116,6 +116,8 @@ class _CollapsibleBookTags extends StatelessWidget {
                 _layoutTolerance,
         ];
         final overflowing = _wrapsToMultipleRows(tagWidths, maxWidth);
+        final collapseLabel = context.localeText('收起', 'Less');
+        final moreLabel = context.localeText('更多', 'More');
 
         if (!overflowing) {
           return _TagWrap(tags: tags, alignment: alignment);
@@ -126,7 +128,7 @@ class _CollapsibleBookTags extends StatelessWidget {
             tags: tags,
             alignment: alignment,
             trailing: _BookTagToggle(
-              label: '收起',
+              label: collapseLabel,
               icon: Icons.keyboard_arrow_up_rounded,
               onTap: () => onExpandedChanged(false),
             ),
@@ -134,7 +136,7 @@ class _CollapsibleBookTags extends StatelessWidget {
         }
 
         final rowHeight = _tagRowHeight(textStyle, direction);
-        final moreWidth = _toggleWidth('更多', textStyle, direction);
+        final moreWidth = _toggleWidth(moreLabel, textStyle, direction);
         final availableForTags = math.max(0.0, maxWidth - moreWidth - _spacing);
         final visibleTags =
             tags.take(_visibleTagCount(tagWidths, availableForTags)).toList();
@@ -148,7 +150,7 @@ class _CollapsibleBookTags extends StatelessWidget {
                 tags: visibleTags,
                 alignment: alignment,
                 trailing: _BookTagToggle(
-                  label: '更多',
+                  label: moreLabel,
                   icon: Icons.keyboard_arrow_down_rounded,
                   onTap: () => onExpandedChanged(true),
                 ),
@@ -175,7 +177,7 @@ class _CollapsibleBookTags extends StatelessWidget {
 
   static double _tagRowHeight(TextStyle style, TextDirection direction) {
     final painter = TextPainter(
-      text: TextSpan(text: '标签', style: style),
+      text: TextSpan(text: 'Tags', style: style),
       textDirection: direction,
       maxLines: 1,
     )..layout();
@@ -309,6 +311,7 @@ class _BookActionPanel extends StatelessWidget {
     required this.admin,
     required this.resumeLabel,
     required this.themeColor,
+    required this.extensionContext,
     required this.onPlay,
     required this.onFavorite,
     required this.onScrape,
@@ -319,6 +322,7 @@ class _BookActionPanel extends StatelessWidget {
   final bool admin;
   final String resumeLabel;
   final Color? themeColor;
+  final Map<String, Object?> extensionContext;
   final VoidCallback onPlay;
   final VoidCallback onFavorite;
   final VoidCallback onScrape;
@@ -382,7 +386,8 @@ class _BookActionPanel extends StatelessWidget {
               final buttons = [
                 _DetailActionButton(
                   width: compactActions ? null : (admin ? 132 : 180),
-                  label: favorite ? '已收藏' : '收藏',
+                  label: context.localeText(
+                      favorite ? '已收藏' : '收藏', favorite ? 'Saved' : 'Save'),
                   icon: favorite
                       ? Icons.favorite_rounded
                       : Icons.favorite_outline_rounded,
@@ -393,14 +398,14 @@ class _BookActionPanel extends StatelessWidget {
                 if (admin)
                   _DetailActionButton(
                     width: compactActions ? null : 132,
-                    label: '刮削',
+                    label: context.localeText('刮削', 'Scrape'),
                     icon: Icons.refresh_rounded,
                     onPressed: onScrape,
                   ),
                 if (admin)
                   _DetailActionButton(
                     width: compactActions ? null : 132,
-                    label: '编辑',
+                    label: context.l10n.commonEdit,
                     icon: Icons.edit_rounded,
                     onPressed: onEdit,
                   ),
@@ -423,6 +428,16 @@ class _BookActionPanel extends StatelessWidget {
                 children: buttons,
               );
             },
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: PluginExtensionSlot(
+              slot: ClientExtensionSlot.bookDetailAction,
+              extensionContext: extensionContext,
+              padding: const EdgeInsets.only(top: 10),
+              buttonSize: 36,
+              iconSize: 17,
+            ),
           ),
         ],
       ),
@@ -643,7 +658,7 @@ class _DescriptionPanelState extends State<_DescriptionPanel> {
               ),
               const SizedBox(width: 8),
               Text(
-                '简介内容',
+                context.localeText('简介内容', 'Description'),
                 style: TextStyle(
                   color:
                       context.isDark ? AppColors.slate300 : AppColors.slate700,
@@ -681,7 +696,8 @@ class _DescriptionPanelState extends State<_DescriptionPanel> {
                 size: 18,
               ),
               label: Text(
-                _expanded ? '收起详情' : '展开全部',
+                context.localeText(
+                    _expanded ? '收起详情' : '展开全部', _expanded ? 'Less' : 'More'),
               ),
             ),
           ],

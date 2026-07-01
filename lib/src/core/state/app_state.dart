@@ -5,26 +5,31 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../api/plugin_capabilities_api.dart';
+import '../document_reader/document_reader.dart';
 import '../models/models.dart';
 import '../utils/client_device_headers.dart';
+import '../utils/locale.dart';
 import '../utils/local_network.dart';
 
 part 'app/app_state_models.dart';
 
 class AppState extends ChangeNotifier {
   final ApiClient api = ApiClient();
+  late final PluginCapabilitiesApi pluginCapabilities =
+      PluginCapabilitiesApi(api);
+  late final DocumentReaderClient documentReader =
+      DocumentReaderClient(pluginCapabilities);
 
   static const _cachedSettingsPrefsKey = 'cached_app_settings';
   static const _localSettingsPrefsKey = 'local_app_settings';
+  static const _languagePrefsKey = 'language';
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
-    'ignoreAudioFocus',
     'resume_after_interruption',
-    'resumeAfterInterruption',
   };
   static const _obsoleteLocalSettingKeys = <String>{
     'resume_after_interruption',
-    'resumeAfterInterruption',
   };
 
   SharedPreferences? _prefs;
@@ -36,6 +41,7 @@ class AppState extends ChangeNotifier {
   String localServerUrl = '';
   String activeUrl = 'http://localhost:3000';
   Map<String, dynamic> settings = {};
+  Locale? locale;
   String? connectionError;
   bool offlineMode = false;
   List<SavedServerProfile> savedServers = [];
@@ -52,6 +58,12 @@ class AppState extends ChangeNotifier {
     return ThemeMode.system;
   }
 
+  String get languageCode => locale?.languageCode ?? 'zh';
+
+  bool get isEnglish => languageCode.toLowerCase().startsWith('en');
+
+  String textForLocale(String zh, String en) => isEnglish ? en : zh;
+
   Future<void> initialize({bool Function()? isCancelled}) async {
     void checkCancelled() {
       if (isCancelled?.call() ?? false) throw const _StartupCancelled();
@@ -67,6 +79,7 @@ class AppState extends ChangeNotifier {
         (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
     token = _prefs!.getString('auth_token');
     savedServers = _loadSavedServers();
+    _loadLocalLanguage();
     api.setClientHeaders(await buildClientDeviceHeaders());
     checkCancelled();
     final hasPersistedServerConfig = _prefs!.containsKey('server_url') ||
@@ -152,7 +165,10 @@ class AppState extends ChangeNotifier {
     } on _StartupCancelled {
       rethrow;
     } catch (_) {
-      connectionError = '连接服务器失败或登录已过期';
+      connectionError = textForLocale(
+        '连接服务器失败或登录已过期',
+        'Failed to connect or session expired',
+      );
     }
     notifyListeners();
   }
@@ -245,7 +261,7 @@ class AppState extends ChangeNotifier {
     token = null;
     user = const User(
       id: 'offline',
-      username: '离线用户',
+      username: 'Offline User',
       role: 'user',
     );
     connectionError = null;
@@ -275,7 +291,10 @@ class AppState extends ChangeNotifier {
     try {
       final resolved = await _probeRedirectTarget(normalizedSource);
       if (resolved == null) {
-        throw StateError('无法连接服务器');
+        throw StateError(textForLocale(
+          '无法连接服务器',
+          'Unable to connect to server',
+        ));
       }
       _redirectCache[normalizedSource] = resolved;
       await _saveRedirectCache();
@@ -303,7 +322,10 @@ class AppState extends ChangeNotifier {
       localServer: localServer,
     );
     if (candidates.isEmpty) {
-      throw StateError('请填写广域网地址或局域网地址');
+      throw StateError(textForLocale(
+        '请填写广域网地址或局域网地址',
+        'Enter a WAN or LAN server address',
+      ));
     }
 
     resolvingRedirect = true;
@@ -320,7 +342,10 @@ class AppState extends ChangeNotifier {
           return resolution;
         }
       }
-      throw StateError('无法连接服务器');
+      throw StateError(textForLocale(
+        '无法连接服务器',
+        'Unable to connect to server',
+      ));
     } finally {
       resolvingRedirect = false;
       notifyListeners();
@@ -405,6 +430,7 @@ class AppState extends ChangeNotifier {
       if (isCancelled?.call() ?? false) throw const _StartupCancelled();
       settings = asMap(res.data);
       _applyLocalSettings();
+      await _applyLanguageFromSettings();
       await _cacheSettings(settings);
     } on _StartupCancelled {
       rethrow;
@@ -418,6 +444,7 @@ class AppState extends ChangeNotifier {
     final res = await api.post('/api/settings', data: patch);
     settings = asMap(res.data);
     _applyLocalSettings();
+    await _applyLanguageFromSettings();
     await _cacheSettings(settings);
     notifyListeners();
   }
@@ -447,10 +474,56 @@ class AppState extends ChangeNotifier {
       settings = {};
     }
     _applyLocalSettings();
+    _applyLanguageFromSettingsSync();
   }
 
   Future<void> _cacheSettings(Map<String, dynamic> value) async {
     await _prefs?.setString(_cachedSettingsPrefsKey, jsonEncode(value));
+  }
+
+  void _loadLocalLanguage() {
+    final stored = _prefs?.getString(_languagePrefsKey);
+    locale = Locale(normalizeLanguage(stored));
+    api.setLanguage(languageCode);
+  }
+
+  Future<void> setLanguage(String value, {bool syncRemote = true}) async {
+    final normalized = normalizeLanguage(value);
+    locale = Locale(normalized);
+    api.setLanguage(normalized);
+    await _prefs?.setString(_languagePrefsKey, normalized);
+    _applySettingsPatch({'language': normalized});
+    await _cacheSettings(settings);
+    notifyListeners();
+    if (syncRemote && token != null && !offlineMode) {
+      try {
+        await updateSettings({'language': normalized});
+      } catch (_) {
+        // Keep the local language choice even if account sync is unavailable.
+      }
+    }
+  }
+
+  Future<void> _applyLanguageFromSettings() async {
+    final next = _languageFromSettings();
+    if (next == null) return;
+    locale = Locale(next);
+    api.setLanguage(next);
+    await _prefs?.setString(_languagePrefsKey, next);
+  }
+
+  void _applyLanguageFromSettingsSync() {
+    final next = _languageFromSettings();
+    if (next == null) return;
+    locale = Locale(next);
+    api.setLanguage(next);
+  }
+
+  String? _languageFromSettings() {
+    final nested = asMap(settings['settings_json']);
+    final value = settings['language'] ?? nested['language'];
+    if (value == null) return null;
+    return normalizeLanguage(value.toString());
   }
 
   Map<String, dynamic> _readLocalSettings() {
@@ -461,13 +534,12 @@ class AppState extends ChangeNotifier {
       for (final key in _obsoleteLocalSettingKeys) {
         local.remove(key);
       }
-      for (final nestedKey in const ['settings_json', 'settingsJson']) {
-        final nested = asMap(local[nestedKey]);
-        if (nested.isEmpty) continue;
+      final nested = asMap(local['settings_json']);
+      if (nested.isNotEmpty) {
         for (final key in _obsoleteLocalSettingKeys) {
           nested.remove(key);
         }
-        local[nestedKey] = nested;
+        local['settings_json'] = nested;
       }
       return local;
     } catch (_) {
@@ -487,13 +559,12 @@ class AppState extends ChangeNotifier {
     for (final key in _localOnlySettingKeys) {
       next.remove(key);
     }
-    for (final nestedKey in const ['settings_json', 'settingsJson']) {
-      if (!next.containsKey(nestedKey)) continue;
-      final nested = {...asMap(next[nestedKey])};
+    if (next.containsKey('settings_json')) {
+      final nested = {...asMap(next['settings_json'])};
       for (final key in _localOnlySettingKeys) {
         nested.remove(key);
       }
-      next[nestedKey] = nested;
+      next['settings_json'] = nested;
     }
     return next;
   }
@@ -503,11 +574,7 @@ class AppState extends ChangeNotifier {
       ...settings,
       ...patch,
     };
-    final nestedKey = settings.containsKey('settings_json')
-        ? 'settings_json'
-        : settings.containsKey('settingsJson')
-            ? 'settingsJson'
-            : 'settings_json';
+    const nestedKey = 'settings_json';
     final nested = {
       ...asMap(settings[nestedKey]),
       ...patch,
@@ -519,12 +586,6 @@ class AppState extends ChangeNotifier {
     Map<String, dynamic> patch,
   ) {
     final normalized = {...patch};
-    if (patch.containsKey('ignoreAudioFocus')) {
-      normalized['ignore_audio_focus'] = patch['ignoreAudioFocus'];
-    }
-    if (patch.containsKey('ignore_audio_focus')) {
-      normalized['ignoreAudioFocus'] = patch['ignore_audio_focus'];
-    }
     return normalized;
   }
 

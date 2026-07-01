@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/locale.dart';
 import '../../../core/utils/urls.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/cards/book_card.dart';
@@ -60,28 +61,21 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         appState.api.get('/api/settings'),
       ]);
       final settingsPayload = asMap(results[1].data);
-      final settingsJson = asMap(
-        settingsPayload['settings_json'] ?? settingsPayload['settingsJson'],
-      );
-      dynamic settingValue(String camel, String snake) {
-        return settingsPayload[camel] ??
-            settingsPayload[snake] ??
-            settingsJson[camel] ??
-            settingsJson[snake];
+      final settingsJson = asMap(settingsPayload['settings_json']);
+      dynamic settingValue(String key) {
+        return settingsPayload[key] ?? settingsJson[key];
       }
 
       setState(() {
         _series = Series.fromJson(asMap(results[0].data));
         _sortBy = _normalizeSeriesSortBy(
-          (settingValue('seriesSortBy', 'series_sort_by') ?? _sortBy)
-              .toString(),
+          (settingValue('series_sort_by') ?? _sortBy).toString(),
         );
         _iconSize = iconSizeFromString(
-          settingValue('seriesIconSize', 'series_icon_size')?.toString(),
+          settingValue('series_icon_size')?.toString(),
         );
         _coverShape = coverShapeFromString(
-          settingValue('bookshelfCoverShape', 'bookshelf_cover_shape')
-              ?.toString(),
+          settingValue('bookshelf_cover_shape')?.toString(),
         );
       });
     } finally {
@@ -134,10 +128,19 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                 offset: const Offset(-176, 54),
                 child: DisplayFilterMenu(
                   sortBy: _sortBy,
-                  sortOptions: const [
-                    DisplayFilterSortOption(value: 'default', label: '默认排序'),
-                    DisplayFilterSortOption(value: 'title', label: '书名排序'),
-                    DisplayFilterSortOption(value: 'author', label: '作者排序'),
+                  sortOptions: [
+                    DisplayFilterSortOption(
+                      value: 'default',
+                      label: context.localeText('默认排序', 'Default'),
+                    ),
+                    DisplayFilterSortOption(
+                      value: 'title',
+                      label: context.localeText('书名排序', 'Title'),
+                    ),
+                    DisplayFilterSortOption(
+                      value: 'author',
+                      label: context.localeText('作者排序', 'Author'),
+                    ),
                   ],
                   iconSize: _iconSize,
                   onSortChanged: _setSortBy,
@@ -163,7 +166,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   Future<void> _setSortBy(String value) async {
     _closeFilterMenu();
     setState(() => _sortBy = value);
-    await AppScope.appOf(context).updateSettings({'seriesSortBy': value});
+    await AppScope.appOf(context).updateSettings({'series_sort_by': value});
   }
 
   Future<void> _setIconSize(IconSizeSetting value) async {
@@ -174,7 +177,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     };
     _closeFilterMenu();
     setState(() => _iconSize = value);
-    await AppScope.appOf(context).updateSettings({'seriesIconSize': raw});
+    await AppScope.appOf(context).updateSettings({'series_icon_size': raw});
   }
 
   Future<void> _showSeriesSettingsDialog() async {
@@ -190,7 +193,9 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('加载书籍失败：$error')),
+        SnackBar(
+            content: Text(context.localeText(
+                '加载书籍失败：$error', 'Failed to load books: $error'))),
       );
       return;
     }
@@ -221,10 +226,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         children: [
           AppBackButton(onPressed: widget.onBack),
           const SizedBox(height: 24),
-          const EmptyState(
+          EmptyState(
             icon: Icons.layers_clear_rounded,
-            title: '未找到系列',
-            message: '该系列可能已被删除或您没有访问权限。',
+            title: context.localeText('未找到系列', 'Series Not Found'),
+            message: context.localeText('该系列可能已被删除或您没有访问权限。',
+                'This series may have been deleted or you may not have access.'),
           ),
         ],
       );
@@ -236,7 +242,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       onRefresh: _load,
       children: [
         _SeriesHeader(
-          title: series.title,
+          title: localizedSeriesTitle(context, series),
           filterMenuLink: _filterMenuLink,
           showFilterMenu: _showFilterMenu,
           onBack: widget.onBack,
@@ -247,7 +253,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         Row(
           children: [
             Text(
-              '包含书籍 (${series.books.length})',
+              context.localeText('包含书籍 (${series.books.length})',
+                  'Books (${series.books.length})'),
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
@@ -257,10 +264,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         ),
         const SizedBox(height: 18),
         if (books.isEmpty)
-          const EmptyState(
+          EmptyState(
             icon: Icons.menu_book_rounded,
-            title: '系列中暂无书籍',
-            message: '添加书籍后会在这里显示。',
+            title: context.localeText('系列中暂无书籍', 'No Books in Series'),
+            message: context.localeText(
+                '添加书籍后会在这里显示。', 'Books you add will appear here.'),
           )
         else
           LayoutBuilder(

@@ -245,7 +245,10 @@ class DownloadState extends ChangeNotifier {
     bool transcode = false,
   }) {
     if (kIsWeb || _rootDir == null) {
-      throw StateError('当前预览环境不支持本机下载，请在移动端或桌面端使用。');
+      throw StateError(appState.textForLocale(
+        '当前预览环境不支持本机下载，请在移动端或桌面端使用。',
+        'Local downloads are unavailable in preview. Use the mobile or desktop app.',
+      ));
     }
     final key = _currentRecordKey(chapter.id);
     final existingTask = _tasks[key];
@@ -348,7 +351,13 @@ class DownloadState extends ChangeNotifier {
         if (await temp.exists()) await temp.delete();
       }
     }
-    _completeWaitersWithError(key, StateError('下载任务已删除'));
+    _completeWaitersWithError(
+      key,
+      StateError(appState.textForLocale(
+        '下载任务已删除',
+        'Download task was deleted',
+      )),
+    );
     await _saveIndex();
     notifyListeners();
     _pumpQueue();
@@ -627,7 +636,12 @@ class DownloadState extends ChangeNotifier {
       }
 
       final responseBody = response.data;
-      if (responseBody == null) throw StateError('响应体为空');
+      if (responseBody == null) {
+        throw StateError(appState.textForLocale(
+          '响应体为空',
+          'Empty response body',
+        ));
+      }
       final contentRange = response.headers.value('content-range');
       final rangeTotal = _parseContentRangeTotal(contentRange);
       final contentLength =
@@ -960,7 +974,10 @@ class DownloadState extends ChangeNotifier {
     if (await dir.exists()) {
       final type = await FileSystemEntity.type(dir.path);
       if (type != FileSystemEntityType.directory) {
-        throw StateError('缓存位置不是文件夹：${dir.path}');
+        throw StateError(appState.textForLocale(
+          '缓存位置不是文件夹：${dir.path}',
+          'Cache location is not a folder: ${dir.path}',
+        ));
       }
     } else {
       await dir.create(recursive: true);

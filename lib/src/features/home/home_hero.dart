@@ -9,13 +9,15 @@ class _HomeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
     final date = DateTime.now().toLocal();
-    final dateText = '${date.month}月${date.day}日${_weekdayCn(date.weekday)}';
+    final dateText = context.isEnglishLocale
+        ? '${date.month}/${date.day} ${_weekdayEn(date.weekday)}'
+        : '${date.month}月${date.day}日${_weekdayCn(date.weekday)}';
 
     final title = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          greeting(),
+          greetingForLocale(context),
           style: const TextStyle(
             color: AppColors.primary600,
             fontSize: 14,
@@ -24,7 +26,7 @@ class _HomeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          '今天听点什么',
+          context.localeText('今天听点什么', 'What shall we hear today?'),
           style: TextStyle(
             color: context.primaryText,
             fontSize: 36,
@@ -34,7 +36,10 @@ class _HomeHeader extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         Text(
-          '推荐、最近、书单和你的听书节奏都在这里。',
+          context.localeText(
+            '推荐、最近、书单和你的听书节奏都在这里。',
+            'Recommendations, recents, playlists, and your listening rhythm.',
+          ),
           style: TextStyle(color: context.mutedText, fontSize: 16),
         ),
       ],
@@ -87,9 +92,9 @@ class _HomeHeader extends StatelessWidget {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           icon: const Icon(Icons.search_rounded, size: 20),
-          label: const Text(
-            '搜索内容',
-            style: TextStyle(fontWeight: FontWeight.w700),
+          label: Text(
+            context.localeText('搜索内容', 'Search'),
+            style: const TextStyle(fontWeight: FontWeight.w700),
           ),
         ),
       ],
@@ -388,7 +393,9 @@ class _HeroText extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       Text(
-                        isProgress ? '继续收听' : '今日推荐',
+                        isProgress
+                            ? context.localeText('继续收听', 'Continue')
+                            : context.localeText('今日推荐', 'Today Pick'),
                         style: TextStyle(
                           color: context.secondaryText,
                           fontSize: 12,
@@ -399,7 +406,8 @@ class _HeroText extends StatelessWidget {
                 ),
                 SizedBox(height: headlineGap),
                 Text(
-                  item?.title ?? '打开一本新的声音',
+                  item?.title ??
+                      context.localeText('打开一本新的声音', 'Open a new voice'),
                   maxLines: compact ? 2 : 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -410,7 +418,11 @@ class _HeroText extends StatelessWidget {
                 ),
                 SizedBox(height: subtitleGap),
                 Text(
-                  item?.subtitle ?? '从书架里挑一本作品开始播放',
+                  item?.subtitle ??
+                      context.localeText(
+                        '从书架里挑一本作品开始播放',
+                        'Pick a book from your shelf to start.',
+                      ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -420,7 +432,11 @@ class _HeroText extends StatelessWidget {
                 ),
                 SizedBox(height: descriptionGap),
                 Text(
-                  item?.description ?? '从书架里挑一本最近添加的作品，或者去搜索页面发现新的内容。',
+                  item?.description ??
+                      context.localeText(
+                        '从书架里挑一本最近添加的作品，或者去搜索页面发现新的内容。',
+                        'Choose a recent addition or search for something new.',
+                      ),
                   maxLines: compact ? 3 : 4,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -479,7 +495,11 @@ class _HeroActions extends StatelessWidget {
         size: 20,
       ),
       label: Text(
-        hasItem ? (isProgress ? '继续播放' : '查看详情') : '去书架',
+        hasItem
+            ? (isProgress
+                ? context.localeText('继续播放', 'Continue')
+                : context.localeText('查看详情', 'Details'))
+            : context.localeText('去书架', 'Bookshelf'),
       ),
     );
     final secondary = OutlinedButton.icon(
@@ -499,8 +519,8 @@ class _HeroActions extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
       icon: const Icon(Icons.queue_music_rounded, size: 20),
-      label: const Text(
-        '管理书单',
+      label: Text(
+        context.localeText('管理书单', 'Playlists'),
       ),
     );
 
@@ -591,7 +611,8 @@ class _HeroCoverStack extends StatelessWidget {
                       fit: StackFit.expand,
                       children: [
                         CoverImage(url: nextCover, radius: radius),
-                        Container(color: AppColors.slate950.withValues(alpha: 0.32)),
+                        Container(
+                            color: AppColors.slate950.withValues(alpha: 0.32)),
                       ],
                     ),
                   ),
@@ -633,9 +654,12 @@ class _HeroCoverStack extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       if (!compact) ...[
-                                        const Text(
-                                          '点击封面切换',
-                                          style: TextStyle(
+                                        Text(
+                                          context.localeText(
+                                            '点击封面切换',
+                                            'Tap cover to switch',
+                                          ),
+                                          style: const TextStyle(
                                             color: Colors.white54,
                                             fontSize: 11,
                                           ),
@@ -643,7 +667,10 @@ class _HeroCoverStack extends StatelessWidget {
                                         const SizedBox(height: 2),
                                       ],
                                       Text(
-                                        '下一本：${nextTitle ?? '继续切换'}',
+                                        context.localeText(
+                                          '下一本：${nextTitle ?? '继续切换'}',
+                                          'Next: ${nextTitle ?? 'Keep switching'}',
+                                        ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(

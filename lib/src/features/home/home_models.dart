@@ -27,6 +27,11 @@ String _weekdayCn(int weekday) {
   return values[(weekday - 1).clamp(0, values.length - 1)];
 }
 
+String _weekdayEn(int weekday) {
+  const values = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return values[(weekday - 1).clamp(0, values.length - 1)];
+}
+
 String _inlineDescription(String? value, String fallback) {
   final text = value?.trim();
   if (text == null || text.isEmpty) return fallback;

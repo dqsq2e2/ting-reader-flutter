@@ -53,7 +53,9 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
     final index = int.tryParse(_indexController.text.trim());
     if (title.isEmpty || index == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写标题和有效序号')),
+        SnackBar(
+            content: Text(context.localeText(
+                '请填写标题和有效序号', 'Enter a title and valid index'))),
       );
       return;
     }
@@ -87,17 +89,17 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
               children: [
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
-                        '编辑章节',
-                        style: TextStyle(
+                        context.localeText('编辑章节', 'Edit Chapter'),
+                        style: const TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: context.localeText('关闭', 'Close'),
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.close_rounded),
                     ),
@@ -106,18 +108,18 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
                 const SizedBox(height: 12),
                 TextField(
                   controller: _titleController,
-                  decoration: const InputDecoration(
-                    labelText: '标题',
-                    prefixIcon: Icon(Icons.title_rounded),
+                  decoration: InputDecoration(
+                    labelText: context.localeText('标题', 'Title'),
+                    prefixIcon: const Icon(Icons.title_rounded),
                   ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _indexController,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
-                    labelText: '序号',
-                    prefixIcon: Icon(Icons.tag_rounded),
+                  decoration: InputDecoration(
+                    labelText: context.localeText('序号', 'Index'),
+                    prefixIcon: const Icon(Icons.tag_rounded),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -138,7 +140,7 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '文件来源',
+                        context.localeText('文件来源', 'File Source'),
                         style: TextStyle(
                           color: context.primaryText,
                           fontWeight: FontWeight.w600,
@@ -147,15 +149,15 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
                       const SizedBox(height: 10),
                       _ChapterEditMetaRow(
                         icon: Icons.storage_rounded,
-                        label: '存储库',
+                        label: context.localeText('存储库', 'Library'),
                         value: widget.libraryName,
                       ),
                       const SizedBox(height: 8),
                       _ChapterEditMetaRow(
                         icon: Icons.folder_rounded,
-                        label: '相对位置',
+                        label: context.localeText('相对位置', 'Relative Path'),
                         value: widget.relativePath.isEmpty
-                            ? '未识别'
+                            ? context.localeText('未识别', 'Unknown')
                             : widget.relativePath,
                       ),
                     ],
@@ -167,13 +169,13 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
                     Expanded(
                       child: TextButton(
                         onPressed: () => Navigator.pop(context),
-                        child: const Text('取消'),
+                        child: Text(context.l10n.commonCancel),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: PrimaryButton(
-                        label: '保存此章节',
+                        label: context.localeText('保存此章节', 'Save Chapter'),
                         icon: Icons.save_rounded,
                         onPressed: _submit,
                       ),
@@ -211,14 +213,14 @@ class _ChapterEditTypeSwitch extends StatelessWidget {
         children: [
           Expanded(
             child: _ChapterEditTypeItem(
-              label: '正文',
+              label: context.localeText('正文', 'Main'),
               selected: !isExtra,
               onTap: () => onChanged(false),
             ),
           ),
           Expanded(
             child: _ChapterEditTypeItem(
-              label: '番外',
+              label: context.localeText('番外', 'Extra'),
               selected: isExtra,
               onTap: () => onChanged(true),
             ),

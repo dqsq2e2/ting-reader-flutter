@@ -6,6 +6,7 @@ import '../../core/models/models.dart';
 import '../../core/state/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
@@ -35,7 +36,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   bool _loading = true;
   List<Playlist> _playlists = [];
   String _query = '';
-  String _sortBy = 'updatedAt';
+  String _sortBy = 'updated_at';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
   int _playlistCoverSeed = DateTime.now().microsecondsSinceEpoch;
   final LayerLink _filterMenuLink = LayerLink();
@@ -58,24 +59,19 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     setState(() => _loading = true);
     try {
       final appState = AppScope.appOf(context);
-      final settings = asMap(appState.settings['settings_json'] ??
-          appState.settings['settingsJson']);
+      final settings = asMap(appState.settings['settings_json']);
       final res = await appState.api.get('/api/playlists');
       setState(() {
         _playlists = asMapList(res.data).map(Playlist.fromJson).toList();
         _playlistCoverSeed = DateTime.now().microsecondsSinceEpoch;
         _sortBy = _normalizePlaylistSortBy(
-          (settings['playlistSortBy'] ??
-                  settings['playlist_sort_by'] ??
-                  appState.settings['playlistSortBy'] ??
+          (settings['playlist_sort_by'] ??
                   appState.settings['playlist_sort_by'] ??
                   _sortBy)
               .toString(),
         );
         _iconSize = iconSizeFromString(
-          (settings['playlistIconSize'] ??
-                  settings['playlist_icon_size'] ??
-                  appState.settings['playlistIconSize'] ??
+          (settings['playlist_icon_size'] ??
                   appState.settings['playlist_icon_size'])
               ?.toString(),
         );
@@ -122,10 +118,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       children: [
         PageHeaderRow(
           icon: Icons.playlist_play_rounded,
-          title: '我的书单',
-          subtitle: '按通勤、睡前、专题整理你的听书队列。',
+          title: context.localeText('我的书单', 'Playlists'),
+          subtitle: context.localeText(
+            '按通勤、睡前、专题整理你的听书队列。',
+            'Organize your listening queue for commutes, bedtime, and topics.',
+          ),
           action: PrimaryButton(
-            label: '新建书单',
+            label: context.localeText('新建书单', 'New Playlist'),
             icon: Icons.add_rounded,
             onPressed: _create,
           ),
@@ -134,10 +133,13 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         if (_playlists.isEmpty)
           EmptyState(
             icon: Icons.playlist_add_rounded,
-            title: '还没有书单',
-            message: '创建一个书单，把想听的书籍和系列放在一起。',
+            title: context.localeText('还没有书单', 'No Playlists Yet'),
+            message: context.localeText(
+              '创建一个书单，把想听的书籍和系列放在一起。',
+              'Create a playlist to collect books and series you want to hear.',
+            ),
             action: PrimaryButton(
-              label: '新建书单',
+              label: context.localeText('新建书单', 'New Playlist'),
               icon: Icons.add_rounded,
               onPressed: _create,
             ),
@@ -147,7 +149,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 640;
               final searchBox = _PlaylistSearchBox(
-                hint: '搜索书单名称或描述',
+                hint: context.localeText(
+                  '搜索书单名称或描述',
+                  'Search playlist name or description',
+                ),
                 onChanged: (value) => setState(() => _query = value),
               );
               final filterButton = CompositedTransformTarget(
@@ -182,10 +187,10 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           ),
           const SizedBox(height: 28),
           if (visiblePlaylists.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.search_off_rounded,
-              title: '没有匹配的书单',
-              message: '换个关键词试试。',
+              title: context.localeText('没有匹配的书单', 'No Matching Playlists'),
+              message: context.localeText('换个关键词试试。', 'Try another keyword.'),
             )
           else
             LayoutBuilder(
@@ -244,9 +249,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           (a, b) => _playlistBookCount(b).compareTo(_playlistBookCount(a)),
         );
         break;
-      case 'updatedAt':
       case 'updated_at':
-      case 'createdAt':
       case 'created_at':
         playlists.sort((a, b) {
           final at = DateTime.tryParse(a.updatedAt ?? a.createdAt ?? '') ??
@@ -282,10 +285,19 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                 offset: const Offset(-176, 54),
                 child: DisplayFilterMenu(
                   sortBy: _sortBy,
-                  sortOptions: const [
-                    DisplayFilterSortOption(value: 'updatedAt', label: '最近更新'),
-                    DisplayFilterSortOption(value: 'title', label: '书单名称'),
-                    DisplayFilterSortOption(value: 'count', label: '作品数量'),
+                  sortOptions: [
+                    DisplayFilterSortOption(
+                      value: 'updated_at',
+                      label: context.localeText('最近更新', 'Recently Updated'),
+                    ),
+                    DisplayFilterSortOption(
+                      value: 'title',
+                      label: context.localeText('书单名称', 'Playlist Name'),
+                    ),
+                    DisplayFilterSortOption(
+                      value: 'count',
+                      label: context.localeText('作品数量', 'Item Count'),
+                    ),
                   ],
                   iconSize: _iconSize,
                   onSortChanged: _setSortBy,
@@ -313,7 +325,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     _closeFilterMenu();
     setState(() => _sortBy = normalized);
     await AppScope.appOf(context)
-        .updateSettings({'playlistSortBy': normalized});
+        .updateSettings({'playlist_sort_by': normalized});
   }
 
   Future<void> _setIconSize(IconSizeSetting value) async {
@@ -324,14 +336,14 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
     };
     _closeFilterMenu();
     setState(() => _iconSize = value);
-    await AppScope.appOf(context).updateSettings({'playlistIconSize': raw});
+    await AppScope.appOf(context).updateSettings({'playlist_icon_size': raw});
   }
 
   String _normalizePlaylistSortBy(String value) {
     return switch (value) {
-      'title' || 'count' || 'updatedAt' || 'updated_at' => value,
-      'createdAt' || 'created_at' => 'updatedAt',
-      _ => 'updatedAt',
+      'title' || 'count' || 'updated_at' => value,
+      'created_at' => 'updated_at',
+      _ => 'updated_at',
     };
   }
 

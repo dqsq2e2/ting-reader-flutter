@@ -63,11 +63,13 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
               padding: const EdgeInsets.fromLTRB(22, 20, 14, 12),
               child: Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      '选择本地目录',
-                      style:
-                          TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                      context.localeText('选择本地目录', 'Choose Local Folder'),
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -104,7 +106,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                 children: [
                   Expanded(
                     child: PrimaryButton(
-                      label: '选择此目录',
+                      label: context.localeText('选择此目录', 'Choose This Folder'),
                       icon: Icons.check_rounded,
                       onPressed: () => Navigator.pop(context, _currentPath),
                     ),
@@ -112,7 +114,7 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                   if (_currentPath.isNotEmpty) ...[
                     const SizedBox(width: 10),
                     IconButton(
-                      tooltip: '返回上一级',
+                      tooltip: context.localeText('返回上一级', 'Go up'),
                       onPressed: () => _go(_parentPath()),
                       icon: const Icon(Icons.arrow_upward_rounded),
                     ),
@@ -135,7 +137,10 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
                       ? Padding(
                           padding: const EdgeInsets.all(36),
                           child: Text(
-                            '当前目录下没有子文件夹',
+                            context.localeText(
+                              '当前目录下没有子文件夹',
+                              'No subfolders here',
+                            ),
                             style: TextStyle(color: context.mutedText),
                           ),
                         )
@@ -180,7 +185,7 @@ class _FolderEntry {
 
   factory _FolderEntry.fromJson(Map<String, dynamic> json) {
     return _FolderEntry(
-      name: json['name']?.toString() ?? '未命名目录',
+      name: json['name']?.toString() ?? 'Unnamed folder',
       path: json['path']?.toString() ?? '',
     );
   }

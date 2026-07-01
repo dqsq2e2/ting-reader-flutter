@@ -78,7 +78,9 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('系列名称不能为空')),
+        SnackBar(
+            content: Text(
+                context.localeText('系列名称不能为空', 'Series name is required'))),
       );
       return;
     }
@@ -100,7 +102,9 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存系列失败：$error')),
+        SnackBar(
+            content: Text(context.localeText(
+                '保存系列失败：$error', 'Failed to save series: $error'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -114,12 +118,13 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除系列'),
-        content: const Text('确定要删除这个系列吗？系列中的书籍不会被删除。'),
+        title: Text(context.localeText('删除系列', 'Delete Series')),
+        content: Text(context.localeText('确定要删除这个系列吗？系列中的书籍不会被删除。',
+            'Delete this series? Books in the series will not be deleted.')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(
@@ -127,7 +132,7 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
+            child: Text(context.localeText('删除', 'Delete')),
           ),
         ],
       ),
@@ -145,7 +150,9 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('删除系列失败：$error')),
+        SnackBar(
+            content: Text(context.localeText(
+                '删除系列失败：$error', 'Failed to delete series: $error'))),
       );
       setState(() => _deleting = false);
     }
@@ -193,7 +200,7 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
                       children: [
                         Expanded(
                           child: Text(
-                            '系列设置',
+                            context.localeText('系列设置', 'Series Settings'),
                             style: TextStyle(
                               fontSize: context.adaptiveFont(25, 21),
                               fontWeight: FontWeight.w700,
@@ -205,7 +212,7 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
                           onPressed:
                               disabled ? null : () => Navigator.pop(context),
                           icon: const Icon(Icons.close_rounded),
-                          tooltip: '关闭',
+                          tooltip: context.localeText('关闭', 'Close'),
                         ),
                       ],
                     ),
@@ -392,10 +399,18 @@ class _SeriesFormFields extends StatelessWidget {
       builder: (context, constraints) {
         final twoColumns = constraints.maxWidth >= 560;
         final fields = [
-          _SeriesTextField(controller: titleController, label: '系列名称'),
-          _SeriesTextField(controller: authorController, label: '作者'),
-          _SeriesTextField(controller: narratorController, label: '演播者'),
-          _SeriesTextField(controller: coverController, label: '封面 URL'),
+          _SeriesTextField(
+              controller: titleController,
+              label: context.localeText('系列名称', 'Series Name')),
+          _SeriesTextField(
+              controller: authorController,
+              label: context.localeText('作者', 'Author')),
+          _SeriesTextField(
+              controller: narratorController,
+              label: context.localeText('演播者', 'Narrator')),
+          _SeriesTextField(
+              controller: coverController,
+              label: context.localeText('封面 URL', 'Cover URL')),
         ];
 
         return Column(
@@ -423,7 +438,7 @@ class _SeriesFormFields extends StatelessWidget {
             const SizedBox(height: 12),
             _SeriesTextField(
               controller: descriptionController,
-              label: '简介',
+              label: context.localeText('简介', 'Description'),
               minLines: 4,
               maxLines: 6,
             ),
@@ -511,7 +526,8 @@ class _SeriesBooksEditor extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '系列条目 (${books.length})',
+                  context.localeText('系列条目 (${books.length})',
+                      'Series Items (${books.length})'),
                   style: TextStyle(
                     fontSize: context.adaptiveFont(18, 16),
                     fontWeight: FontWeight.w700,
@@ -528,16 +544,18 @@ class _SeriesBooksEditor extends StatelessWidget {
                   ),
                 ),
                 icon: const Icon(Icons.add_rounded, size: 18),
-                label: Text(compact ? '添加' : '添加书籍'),
+                label: Text(context.localeText(
+                    compact ? '添加' : '添加书籍', compact ? 'Add' : 'Add Book')),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (books.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.menu_book_rounded,
-              title: '暂无条目',
-              message: '点击添加书籍把作品加入这个系列。',
+              title: context.localeText('暂无条目', 'No Items'),
+              message: context.localeText('点击添加书籍把作品加入这个系列。',
+                  'Add books to include them in this series.'),
             )
           else
             ...books.asMap().entries.map(
@@ -628,7 +646,9 @@ class _SeriesBookEditorRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  book.author?.isNotEmpty == true ? book.author! : '未知作者',
+                  book.author?.isNotEmpty == true
+                      ? book.author!
+                      : context.localeText('未知作者', 'Unknown Author'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -746,7 +766,8 @@ class _SeriesSettingsActions extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.delete_outline_rounded, size: 18),
-      label: Text(compact ? '删除' : '删除系列'),
+      label: Text(context.localeText(
+          compact ? '删除' : '删除系列', compact ? 'Delete' : 'Delete Series')),
     );
     final cancelButton = TextButton(
       onPressed: disabled ? null : onCancel,
@@ -757,7 +778,7 @@ class _SeriesSettingsActions extends StatelessWidget {
           vertical: compact ? 9 : 12,
         ),
       ),
-      child: const Text('取消'),
+      child: Text(context.l10n.commonCancel),
     );
     final saveButton = ElevatedButton.icon(
       onPressed: disabled ? null : onSave,
@@ -780,7 +801,8 @@ class _SeriesSettingsActions extends StatelessWidget {
               ),
             )
           : const Icon(Icons.save_outlined, size: 18),
-      label: Text(saving ? '保存中' : (compact ? '保存' : '保存更改')),
+      label: Text(context.localeText(saving ? '保存中' : (compact ? '保存' : '保存更改'),
+          saving ? 'Saving' : (compact ? 'Save' : 'Save Changes'))),
     );
 
     if (compact) {

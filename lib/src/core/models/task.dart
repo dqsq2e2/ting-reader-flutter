@@ -20,11 +20,11 @@ class TaskItem {
   factory TaskItem.fromJson(Map<String, dynamic> json) {
     return TaskItem(
       id: readString(json, 'id') ?? '',
-      taskType: readString(json, 'task_type', 'taskType') ?? 'task',
+      taskType: readString(json, 'task_type') ?? 'task',
       status: readString(json, 'status') ?? '',
       progress: readDouble(json, 'progress'),
       message: readString(json, 'message'),
-      createdAt: readString(json, 'created_at', 'createdAt'),
+      createdAt: readString(json, 'created_at'),
     );
   }
 }

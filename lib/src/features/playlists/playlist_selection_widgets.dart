@@ -165,7 +165,7 @@ class _PlaylistSeriesSelectCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  series.title,
+                  localizedSeriesTitle(context, series),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -173,7 +173,10 @@ class _PlaylistSeriesSelectCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '${series.author ?? '未知作者'} · ${series.books.length} 本',
+                  context.localeText(
+                    '${series.author ?? '未知作者'} · ${series.books.length} 本',
+                    '${series.author ?? 'Unknown Author'} · ${series.books.length} books',
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: context.secondaryText, fontSize: 13),
@@ -229,14 +232,17 @@ class _PlaylistSelectedOrderPanel extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '已选顺序',
-                        style: TextStyle(
+                      Text(
+                        context.localeText('已选顺序', 'Selected Order'),
+                        style: const TextStyle(
                             fontSize: 18, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '这里的顺序就是保存后的书单播放顺序。',
+                        context.localeText(
+                          '这里的顺序就是保存后的书单播放顺序。',
+                          'This order is the saved playback order.',
+                        ),
                         style: TextStyle(
                           color: context.secondaryText,
                           fontSize: 12,
@@ -246,7 +252,10 @@ class _PlaylistSelectedOrderPanel extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${items.length} 项',
+                  context.localeText(
+                    '${items.length} 项',
+                    '${items.length} items',
+                  ),
                   style: TextStyle(color: context.secondaryText, fontSize: 13),
                 ),
               ],
@@ -257,7 +266,10 @@ class _PlaylistSelectedOrderPanel extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 28),
               child: Text(
-                '还没有选择内容。',
+                context.localeText(
+                  '还没有选择内容。',
+                  'No content selected yet.',
+                ),
                 style: TextStyle(color: context.secondaryText),
               ),
             )
@@ -292,11 +304,20 @@ class _PlaylistContentCard extends StatelessWidget {
     final coverShape = _playlistCoverShape(context);
     final isSeries = item.itemType == 'series';
     final title = isSeries
-        ? (item.series?.title ?? '未知系列')
-        : (item.book?.title ?? '未知书籍');
+        ? (item.series == null
+            ? context.localeText('未知系列', 'Unknown Series')
+            : localizedSeriesTitle(context, item.series!))
+        : (item.book == null
+            ? context.localeText('未知书籍', 'Unknown Book')
+            : localizedBookTitle(context, item.book!));
     final subtitle = isSeries
-        ? '${item.series?.author ?? '未知作者'} · ${item.series?.books.length ?? 0} 本'
-        : (item.book?.author ?? item.book?.narrator ?? '未知作者');
+        ? context.localeText(
+            '${item.series?.author ?? '未知作者'} · ${item.series?.books.length ?? 0} 本',
+            '${item.series?.author ?? 'Unknown Author'} · ${item.series?.books.length ?? 0} books',
+          )
+        : (item.book?.author ??
+            item.book?.narrator ??
+            context.localeText('未知作者', 'Unknown Author'));
     final cover = isSeries
         ? (item.series == null ? '' : _seriesFirstCover(context, item.series!))
         : (item.book == null
@@ -330,9 +351,9 @@ class _PlaylistContentCard extends StatelessWidget {
                       color: AppColors.primary600,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Text(
-                      '系列',
-                      style: TextStyle(color: Colors.white, fontSize: 11),
+                    child: Text(
+                      context.localeText('系列', 'Series'),
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
                     ),
                   ),
                 ),
@@ -382,11 +403,18 @@ class _PlaylistItemTile extends StatelessWidget {
     final book = item.book;
     final series = item.series;
     final title = item.itemType == 'series'
-        ? (series?.title ?? '未知系列')
-        : (book?.title ?? '未知书籍');
+        ? (series == null
+            ? context.localeText('未知系列', 'Unknown Series')
+            : localizedSeriesTitle(context, series))
+        : (book == null
+            ? context.localeText('未知书籍', 'Unknown Book')
+            : localizedBookTitle(context, book));
     final subtitle = item.itemType == 'series'
-        ? '系列 · ${series?.books.length ?? 0} 本'
-        : (book?.author ?? book?.narrator ?? '书籍');
+        ? context.localeText(
+            '系列 · ${series?.books.length ?? 0} 本',
+            'Series · ${series?.books.length ?? 0} books',
+          )
+        : (book?.author ?? book?.narrator ?? context.localeText('书籍', 'Book'));
     final coverUrlValue = item.itemType == 'series'
         ? (series == null
             ? ''
@@ -458,17 +486,17 @@ class _PlaylistItemTile extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: '上移',
+            tooltip: context.localeText('上移', 'Move Up'),
             onPressed: onMoveUp,
             icon: const Icon(Icons.keyboard_arrow_up_rounded),
           ),
           IconButton(
-            tooltip: '下移',
+            tooltip: context.localeText('下移', 'Move Down'),
             onPressed: onMoveDown,
             icon: const Icon(Icons.keyboard_arrow_down_rounded),
           ),
           IconButton(
-            tooltip: '移除',
+            tooltip: context.localeText('移除', 'Remove'),
             onPressed: onRemove,
             icon: const Icon(Icons.close_rounded),
           ),

@@ -1,13 +1,18 @@
 part of 'book_detail_page.dart';
 
 class _EditBookDialogResult {
-  const _EditBookDialogResult.saved(this.book) : deleted = false;
+  const _EditBookDialogResult.saved(
+    this.book, {
+    this.reloadGroup = false,
+  }) : deleted = false;
   const _EditBookDialogResult.deleted()
       : book = null,
-        deleted = true;
+        deleted = true,
+        reloadGroup = false;
 
   final Book? book;
   final bool deleted;
+  final bool reloadGroup;
 }
 
 class _EditFieldLabel extends StatelessWidget {
@@ -132,6 +137,61 @@ class _RegexMatchPreview extends StatelessWidget {
           style: TextStyle(
             color: matched ? const Color(0xff16a34a) : const Color(0xffef4444),
             fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChapterGroupOrderSelector extends StatelessWidget {
+  const _ChapterGroupOrderSelector({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget option(String optionValue, String label) {
+      final selected = value == optionValue;
+      return Expanded(
+        child: TextButton(
+          onPressed: onChanged == null ? null : () => onChanged!(optionValue),
+          style: TextButton.styleFrom(
+            foregroundColor:
+                selected ? AppColors.primary600 : context.secondaryText,
+            backgroundColor: selected ? context.cardColor : Colors.transparent,
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            textStyle: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          child: Text(label),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _EditFieldLabel(context.localeText('分组展示顺序', 'Chapter Group Order')),
+        const SizedBox(height: 7),
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: context.isDark ? AppColors.slate800 : AppColors.slate100,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            children: [
+              option('asc', context.localeText('从前往后', 'Ascending')),
+              const SizedBox(width: 4),
+              option('desc', context.localeText('从后往前', 'Descending')),
+            ],
           ),
         ),
       ],

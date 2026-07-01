@@ -26,11 +26,9 @@ class User {
       id: readString(json, 'id') ?? '',
       username: readString(json, 'username') ?? '',
       role: readString(json, 'role') ?? 'user',
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      librariesAccessible: readStringList(
-          json['libraries_accessible'] ?? json['librariesAccessible']),
-      booksAccessible:
-          readStringList(json['books_accessible'] ?? json['booksAccessible']),
+      createdAt: readString(json, 'created_at'),
+      librariesAccessible: readStringList(json['libraries_accessible']),
+      booksAccessible: readStringList(json['books_accessible']),
     );
   }
 

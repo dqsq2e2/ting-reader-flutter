@@ -18,22 +18,17 @@ class HomeLayoutSettings {
   final bool showCollections;
 
   factory HomeLayoutSettings.fromSettings(Map<String, dynamic> settings) {
-    final settingsJson = asMap(
-      settings['settings_json'] ?? settings['settingsJson'],
-    );
+    final settingsJson = asMap(settings['settings_json']);
     final source = asMap(
-      settings['homeLayout'] ??
-          settings['home_layout'] ??
-          settingsJson['homeLayout'] ??
-          settingsJson['home_layout'],
+      settings['home_layout'] ?? settingsJson['home_layout'],
     );
     return HomeLayoutSettings(
-      showHero: _bool(source, 'showHero', fallback: true),
-      showStats: _bool(source, 'showStats', fallback: true),
-      showRecommended: _bool(source, 'showRecommended', fallback: true),
-      showRecent: _bool(source, 'showRecent', fallback: true),
-      showRecentlyAdded: _bool(source, 'showRecentlyAdded', fallback: true),
-      showCollections: _bool(source, 'showCollections', fallback: true),
+      showHero: _bool(source, 'show_hero', fallback: true),
+      showStats: _bool(source, 'show_stats', fallback: true),
+      showRecommended: _bool(source, 'show_recommended', fallback: true),
+      showRecent: _bool(source, 'show_recent', fallback: true),
+      showRecentlyAdded: _bool(source, 'show_recently_added', fallback: true),
+      showCollections: _bool(source, 'show_collections', fallback: true),
     );
   }
 
@@ -57,12 +52,12 @@ class HomeLayoutSettings {
 
   Map<String, dynamic> toJson() {
     return {
-      'showHero': showHero,
-      'showStats': showStats,
-      'showRecommended': showRecommended,
-      'showRecent': showRecent,
-      'showRecentlyAdded': showRecentlyAdded,
-      'showCollections': showCollections,
+      'show_hero': showHero,
+      'show_stats': showStats,
+      'show_recommended': showRecommended,
+      'show_recent': showRecent,
+      'show_recently_added': showRecentlyAdded,
+      'show_collections': showCollections,
     };
   }
 

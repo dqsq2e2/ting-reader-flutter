@@ -30,12 +30,12 @@ class Playlist {
         asMapList(json['items']).map(PlaylistItem.fromJson).toList();
     return Playlist(
       id: readString(json, 'id') ?? '',
-      userId: readString(json, 'user_id', 'userId') ?? '',
-      title: readString(json, 'title') ?? '未命名书单',
+      userId: readString(json, 'user_id') ?? '',
+      title: readString(json, 'title') ?? '',
       description: readString(json, 'description'),
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      updatedAt: readString(json, 'updated_at', 'updatedAt'),
-      bookIds: readStringList(json['book_ids'] ?? json['bookIds']),
+      createdAt: readString(json, 'created_at'),
+      updatedAt: readString(json, 'updated_at'),
+      bookIds: readStringList(json['book_ids']),
       books: asMapList(json['books']).map(Book.fromJson).toList(),
       items: rawItems,
     );
@@ -74,8 +74,8 @@ class PlaylistItem {
     final bookMap = asMap(json['book']);
     final seriesMap = asMap(json['series']);
     return PlaylistItem(
-      itemType: readString(json, 'item_type', 'itemType') ?? 'book',
-      itemId: readString(json, 'item_id', 'itemId') ?? '',
+      itemType: readString(json, 'item_type') ?? 'book',
+      itemId: readString(json, 'item_id') ?? '',
       order: readInt(json, 'order') ?? 0,
       book: bookMap.isEmpty ? null : Book.fromJson(bookMap),
       series: seriesMap.isEmpty ? null : Series.fromJson(seriesMap),

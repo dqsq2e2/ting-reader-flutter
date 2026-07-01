@@ -15,6 +15,7 @@ class ApiClient {
   String _baseUrl = 'http://localhost:3000';
   String? _token;
   Map<String, String> _clientHeaders = const {};
+  String _languageCode = 'zh';
   Future<String?> Function(String failedBaseUrl)? recoverBaseUrl;
 
   String get baseUrl => _baseUrl;
@@ -29,6 +30,10 @@ class ApiClient {
 
   void setClientHeaders(Map<String, String> headers) {
     _clientHeaders = Map.unmodifiable(headers);
+  }
+
+  void setLanguage(String languageCode) {
+    _languageCode = languageCode.toLowerCase().startsWith('en') ? 'en' : 'zh';
   }
 
   static String normalizeServerUrl(String input) {
@@ -125,6 +130,7 @@ class ApiClient {
   Options _authOptions() {
     final headers = <String, dynamic>{
       'Content-Type': 'application/json',
+      'Accept-Language': _languageCode,
       ..._clientHeaders,
     };
     if (_token != null && _token!.isNotEmpty) {

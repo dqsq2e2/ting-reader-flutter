@@ -23,7 +23,7 @@ class _ChapterGroups extends StatelessWidget {
         children: [
           for (var i = 0; i < groupCount; i++) ...[
             _ChapterRangeChip(
-              label: _labelFor(i),
+              label: _labelFor(context, i),
               selected: i == groupIndex,
               onTap: () => onGroupChanged(i),
             ),
@@ -34,11 +34,11 @@ class _ChapterGroups extends StatelessWidget {
     );
   }
 
-  String _labelFor(int index) {
+  String _labelFor(BuildContext context, int index) {
     final start = index * groupSize + 1;
     final end = math.min((index + 1) * groupSize, total);
     if (total == 0) return '0';
-    return '第 $start-$end 章';
+    return context.localeText('第 $start-$end 章', 'Ch. $start-$end');
   }
 }
 
@@ -207,9 +207,9 @@ class _ManagerChapterRow extends StatelessWidget {
                           color: const Color(0xffecfeff),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text(
-                          '已修改',
-                          style: TextStyle(
+                        child: Text(
+                          context.localeText('已修改', 'Changed'),
+                          style: const TextStyle(
                             color: AppColors.primary600,
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -224,7 +224,7 @@ class _ManagerChapterRow extends StatelessWidget {
               if (!selectionMode) ...[
                 const SizedBox(width: 8),
                 Tooltip(
-                  message: '编辑章节',
+                  message: context.localeText('编辑章节', 'Edit Chapter'),
                   child: Material(
                     color: context.isDark
                         ? AppColors.slate800

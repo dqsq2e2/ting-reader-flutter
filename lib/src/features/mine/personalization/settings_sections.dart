@@ -17,24 +17,29 @@ class _AccountSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return _SettingsSection(
       icon: Icons.person_rounded,
       iconColor: AppColors.primary500,
-      title: '账号信息',
-      trailing: _SavedBadge(visible: saved, label: '更新成功', compact: true),
+      title: l10n.settingsAccount,
+      trailing: _SavedBadge(
+        visible: saved,
+        label: l10n.settingsAccountUpdated,
+        compact: true,
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 720;
           final fields = [
             _TextSettingField(
               controller: usernameController,
-              label: '用户名',
+              label: l10n.settingsUsername,
               icon: Icons.person_rounded,
             ),
             _TextSettingField(
               controller: passwordController,
-              label: '修改密码 (留空则不修改)',
-              hintText: '新密码',
+              label: l10n.settingsPassword,
+              hintText: l10n.settingsNewPassword,
               icon: Icons.key_rounded,
               obscureText: true,
             ),
@@ -62,7 +67,7 @@ class _AccountSection extends StatelessWidget {
               Align(
                 alignment: Alignment.centerRight,
                 child: PrimaryButton(
-                  label: '更新账号信息',
+                  label: l10n.settingsUpdateAccount,
                   icon: Icons.save_rounded,
                   loading: saving,
                   onPressed: onSave,
@@ -87,46 +92,95 @@ class _AppearanceSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return _SettingsSection(
       icon: Icons.monitor_rounded,
       iconColor: Colors.blue,
-      title: '外观展示',
+      title: l10n.settingsAppearance,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 560;
-          const options = [
+          final options = [
             _ThemeOption(
               id: 'light',
               icon: Icons.light_mode_rounded,
-              label: '浅色模式',
+              label: l10n.settingsLight,
             ),
             _ThemeOption(
               id: 'dark',
               icon: Icons.dark_mode_rounded,
-              label: '深色模式',
+              label: l10n.settingsDark,
             ),
             _ThemeOption(
               id: 'system',
               icon: Icons.monitor_rounded,
-              label: '跟随系统',
+              label: l10n.settingsSystem,
             ),
           ];
-          return GridView.count(
-            crossAxisCount: 3,
-            crossAxisSpacing: compact ? 8 : 12,
-            mainAxisSpacing: compact ? 8 : 12,
-            childAspectRatio: compact ? 1.06 : 2.3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
+          return Row(
             children: [
-              for (final item in options)
-                _ThemeChoiceCard(
-                  option: item,
-                  selected: theme == item.id ||
-                      (theme == 'auto' && item.id == 'system'),
-                  onTap: () => onTheme(item.id),
-                  compact: compact,
+              for (var i = 0; i < options.length; i++) ...[
+                Expanded(
+                  child: _ThemeChoiceCard(
+                    option: options[i],
+                    selected: theme == options[i].id ||
+                        (theme == 'auto' && options[i].id == 'system'),
+                    onTap: () => onTheme(options[i].id),
+                    compact: compact,
+                  ),
                 ),
+                if (i != options.length - 1) SizedBox(width: compact ? 8 : 12),
+              ],
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LanguageSection extends StatelessWidget {
+  const _LanguageSection({
+    required this.language,
+    required this.onLanguage,
+  });
+
+  final String language;
+  final ValueChanged<String> onLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _SettingsSection(
+      icon: Icons.language_rounded,
+      iconColor: Colors.cyan,
+      title: l10n.settingsLanguage,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final copy = Text(
+            l10n.settingsLanguageDescription,
+            style: TextStyle(color: context.mutedText, fontSize: 13),
+          );
+          final dropdown = _LanguageDropdown(
+            value: language,
+            onChanged: onLanguage,
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                copy,
+                const SizedBox(height: 14),
+                dropdown,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: copy),
+              const SizedBox(width: 20),
+              SizedBox(width: 240, child: dropdown),
             ],
           );
         },
@@ -146,44 +200,45 @@ class _HomeLayoutSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final items = [
       _HomeLayoutItem(
-        title: '顶部推荐',
-        description: '展示继续收听和可点击切换的大封面 Hero',
+        title: l10n.settingsHomeHero,
+        description: l10n.settingsHomeHeroDescription,
         checked: value.showHero,
         onTap: () => onChanged(value.copyWith(showHero: !value.showHero)),
       ),
       _HomeLayoutItem(
-        title: '听书数据',
-        description: '展示最近已听、收藏、书单和当前播放',
+        title: l10n.settingsHomeStats,
+        description: l10n.settingsHomeStatsDescription,
         checked: value.showStats,
         onTap: () => onChanged(value.copyWith(showStats: !value.showStats)),
       ),
       _HomeLayoutItem(
-        title: '为你推荐',
-        description: '展示收藏、最近收听和最近上新的综合推荐',
+        title: l10n.settingsHomeRecommended,
+        description: l10n.settingsHomeRecommendedDescription,
         checked: value.showRecommended,
         onTap: () => onChanged(
           value.copyWith(showRecommended: !value.showRecommended),
         ),
       ),
       _HomeLayoutItem(
-        title: '最近收听',
-        description: '展示首页内的最近收听卡片',
+        title: l10n.settingsHomeRecent,
+        description: l10n.settingsHomeRecentDescription,
         checked: value.showRecent,
         onTap: () => onChanged(value.copyWith(showRecent: !value.showRecent)),
       ),
       _HomeLayoutItem(
-        title: '最近上新',
-        description: '展示最新加入馆藏的作品列表',
+        title: l10n.settingsHomeRecentlyAdded,
+        description: l10n.settingsHomeRecentlyAddedDescription,
         checked: value.showRecentlyAdded,
         onTap: () => onChanged(
           value.copyWith(showRecentlyAdded: !value.showRecentlyAdded),
         ),
       ),
       _HomeLayoutItem(
-        title: '书单与系列',
-        description: '展示我的书单和系列入口',
+        title: l10n.settingsHomeCollections,
+        description: l10n.settingsHomeCollectionsDescription,
         checked: value.showCollections,
         onTap: () => onChanged(
           value.copyWith(showCollections: !value.showCollections),
@@ -194,7 +249,7 @@ class _HomeLayoutSection extends StatelessWidget {
     return _SettingsSection(
       icon: Icons.home_rounded,
       iconColor: const Color(0xff10b981),
-      title: '首页调整',
+      title: l10n.settingsHomeLayout,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth < 720 ? 1 : 2;
@@ -321,10 +376,11 @@ class _PlaybackSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return _SettingsSection(
       icon: Icons.fast_forward_rounded,
       iconColor: Colors.orange,
-      title: '播放偏好',
+      title: l10n.settingsPlayback,
       child: Column(
         children: [
           LayoutBuilder(
@@ -339,9 +395,9 @@ class _PlaybackSection extends StatelessWidget {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _SettingCopy(
-                      title: '默认播放倍速',
-                      subtitle: '所有书籍开始播放时的初始倍速',
+                    _SettingCopy(
+                      title: l10n.settingsPlaybackSpeed,
+                      subtitle: l10n.settingsPlaybackSpeedDescription,
                     ),
                     const SizedBox(height: 14),
                     SizedBox(width: double.infinity, child: speedPicker),
@@ -350,10 +406,10 @@ class _PlaybackSection extends StatelessWidget {
               }
               return Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: _SettingCopy(
-                      title: '默认播放倍速',
-                      subtitle: '所有书籍开始播放时的初始倍速',
+                      title: l10n.settingsPlaybackSpeed,
+                      subtitle: l10n.settingsPlaybackSpeedDescription,
                     ),
                   ),
                   speedPicker,
@@ -364,23 +420,23 @@ class _PlaybackSection extends StatelessWidget {
           const SizedBox(height: 22),
           _SettingDivider(),
           _ToggleSettingRow(
-            title: '自动预加载下一章',
-            subtitle: '播放当前章节时，后台自动缓冲下一章节',
+            title: l10n.settingsAutoPreload,
+            subtitle: l10n.settingsAutoPreloadDescription,
             value: autoPreload,
             onChanged: onAutoPreload,
           ),
           _SettingDivider(),
           _ToggleSettingRow(
-            title: '服务端自动缓存 (WebDAV)',
-            subtitle: '播放当前章节时，通知服务器预先缓存下一章节',
+            title: l10n.settingsAutoCache,
+            subtitle: l10n.settingsAutoCacheDescription,
             value: autoCache,
             onChanged: onAutoCache,
           ),
           if (showAudioFocusSetting) ...[
             _SettingDivider(),
             _ToggleSettingRow(
-              title: '与其他应用同时播放',
-              subtitle: '允许和其他应用声音共存',
+              title: l10n.settingsAudioFocus,
+              subtitle: l10n.settingsAudioFocusDescription,
               value: ignoreAudioFocus,
               onChanged: onIgnoreAudioFocus,
             ),
@@ -414,23 +470,25 @@ class _WidgetSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return _SettingsSection(
       icon: Icons.code_rounded,
       iconColor: Colors.purple,
-      title: '外挂组件 (Widget)',
+      title: l10n.settingsWidget,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  '自定义 CSS 注入',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                  l10n.settingsCustomCss,
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700),
                 ),
               ),
               Text(
-                '针对 Widget 生效',
+                l10n.settingsWidgetOnly,
                 style: TextStyle(
                   color: context.tertiaryText,
                   fontSize: 11,
@@ -455,7 +513,7 @@ class _WidgetSection extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: onSaveCss,
               icon: const Icon(Icons.save_rounded, size: 18),
-              label: const Text('保存 CSS'),
+              label: Text(l10n.settingsSaveCss),
             ),
           ),
           const SizedBox(height: 18),
@@ -473,7 +531,7 @@ class _WidgetSection extends StatelessWidget {
                   builder: (context, constraints) {
                     final compact = constraints.maxWidth < 640;
                     final title = Text(
-                      '嵌入代码 (Iframe)',
+                      l10n.settingsEmbedCode,
                       style: TextStyle(
                         color: context.tertiaryText,
                         fontSize: 12,
@@ -509,7 +567,7 @@ class _WidgetSection extends StatelessWidget {
                 const SizedBox(height: 18),
                 _SettingDivider(),
                 Text(
-                  '布局代码参考 (直接复制)',
+                  l10n.settingsLayoutCode,
                   style: TextStyle(
                     color: context.tertiaryText,
                     fontSize: 12,
@@ -522,12 +580,12 @@ class _WidgetSection extends StatelessWidget {
                     final compact = constraints.maxWidth < 780;
                     final blocks = [
                       _LayoutCodePanel(
-                        title: '1. 吸底模式 (Fixed Bottom)',
+                        title: l10n.settingsFixedBottom,
                         code: fixedBottomCode,
                         onCopy: () => onCopy(fixedBottomCode),
                       ),
                       _LayoutCodePanel(
-                        title: '2. 右下角悬浮 (Floating Right)',
+                        title: l10n.settingsFloatingRight,
                         code: floatingCode,
                         onCopy: () => onCopy(floatingCode),
                       ),

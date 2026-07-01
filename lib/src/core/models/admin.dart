@@ -20,13 +20,11 @@ class AdminStatistics {
   factory AdminStatistics.fromJson(Map<String, dynamic> json) {
     return AdminStatistics(
       overview: asMap(json['overview']),
-      libraryBreakdown:
-          asMapList(json['library_breakdown'] ?? json['libraryBreakdown']),
-      userActivity: asMapList(json['user_activity'] ?? json['userActivity']),
-      recentActivity:
-          asMapList(json['recent_activity'] ?? json['recentActivity']),
-      topBooks: asMapList(json['top_books'] ?? json['topBooks']),
-      generatedAt: readString(json, 'generated_at', 'generatedAt'),
+      libraryBreakdown: asMapList(json['library_breakdown']),
+      userActivity: asMapList(json['user_activity']),
+      recentActivity: asMapList(json['recent_activity']),
+      topBooks: asMapList(json['top_books']),
+      generatedAt: readString(json, 'generated_at'),
     );
   }
 }

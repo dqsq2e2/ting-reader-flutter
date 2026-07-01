@@ -19,7 +19,6 @@ class _MiniProgressSlider extends StatefulWidget {
   State<_MiniProgressSlider> createState() => _MiniProgressSliderState();
 }
 
-
 class _MiniProgressSliderState extends State<_MiniProgressSlider> {
   double? _dragValue;
 
@@ -62,6 +61,37 @@ class _MiniProgressSliderState extends State<_MiniProgressSlider> {
   }
 }
 
+class _MiniTimeLabel extends StatelessWidget {
+  const _MiniTimeLabel({
+    required this.value,
+    this.textAlign = TextAlign.left,
+  });
+
+  final String value;
+  final TextAlign textAlign;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52,
+      child: Text(
+        value,
+        maxLines: 1,
+        overflow: TextOverflow.visible,
+        softWrap: false,
+        textAlign: textAlign,
+        style: TextStyle(
+          color: context.tertiaryText,
+          decoration: TextDecoration.none,
+          fontSize: 11,
+          fontWeight: FontWeight.w400,
+          height: 1,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+  }
+}
 
 class _MiniIconButton extends StatelessWidget {
   const _MiniIconButton({
@@ -99,7 +129,6 @@ class _MiniIconButton extends StatelessWidget {
     );
   }
 }
-
 
 class _MiniCollapseButton extends StatelessWidget {
   const _MiniCollapseButton({
@@ -155,7 +184,6 @@ class _MiniCollapseButton extends StatelessWidget {
   }
 }
 
-
 class _MiniTextButton extends StatelessWidget {
   const _MiniTextButton({
     required this.label,
@@ -192,7 +220,6 @@ class _MiniTextButton extends StatelessWidget {
     );
   }
 }
-
 
 class _PlaybackSettingField extends StatelessWidget {
   const _PlaybackSettingField({
@@ -252,7 +279,6 @@ class _PlaybackSettingField extends StatelessWidget {
   }
 }
 
-
 class _IconCircle extends StatelessWidget {
   const _IconCircle({
     required this.icon,
@@ -304,7 +330,6 @@ class _IconCircle extends StatelessWidget {
     );
   }
 }
-
 
 class _QuickActionButton extends StatelessWidget {
   const _QuickActionButton({
@@ -368,7 +393,6 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
-
 class _ExpandedDownloadAction {
   const _ExpandedDownloadAction({
     required this.icon,
@@ -380,7 +404,6 @@ class _ExpandedDownloadAction {
   final String label;
   final bool active;
 }
-
 
 class _SeekButton extends StatelessWidget {
   const _SeekButton({
@@ -425,4 +448,3 @@ class _SeekButton extends StatelessWidget {
     );
   }
 }
-

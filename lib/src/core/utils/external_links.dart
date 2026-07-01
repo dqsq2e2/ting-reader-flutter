@@ -1,6 +1,10 @@
 import 'package:url_launcher/url_launcher.dart';
 
 const tingReaderWebsiteUrl = 'https://www.tingreader.cn';
+const userAgreementUrl = '$tingReaderWebsiteUrl/about/user-agreement';
+const privacyPolicyUrl = '$tingReaderWebsiteUrl/about/privacy-policy';
+const changelogUrl = '$tingReaderWebsiteUrl/about/changelog';
+const serverUpdateGuideUrl = '$tingReaderWebsiteUrl/guide/update';
 
 Future<bool> openExternalUrl(String rawUrl) async {
   final normalized = _normalizeUrl(rawUrl);

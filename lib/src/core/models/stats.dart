@@ -15,10 +15,10 @@ class Stats {
 
   factory Stats.fromJson(Map<String, dynamic> json) {
     return Stats(
-      totalBooks: readInt(json, 'total_books', 'totalBooks') ?? 0,
-      totalChapters: readInt(json, 'total_chapters', 'totalChapters') ?? 0,
-      totalDuration: readInt(json, 'total_duration', 'totalDuration') ?? 0,
-      lastScanTime: readString(json, 'last_scan_time', 'lastScanTime'),
+      totalBooks: readInt(json, 'total_books') ?? 0,
+      totalChapters: readInt(json, 'total_chapters') ?? 0,
+      totalDuration: readInt(json, 'total_duration') ?? 0,
+      lastScanTime: readString(json, 'last_scan_time'),
     );
   }
 }

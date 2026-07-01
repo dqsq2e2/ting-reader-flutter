@@ -1,38 +1,37 @@
 /// Shared JSON parsing helpers used by all model classes.
 ///
-/// These accept both snake_case and camelCase keys (server returns snake_case,
-/// some legacy responses use camelCase) and normalize loose values
-/// (e.g. parse `int` from `"123"` or `123.0`).
+/// These read backend snake_case keys and normalize loose values
+/// (for example parsing `int` from `"123"` or `123.0`).
 ///
 /// `asMap` / `asMapList` are also re-exported from `models.dart` to preserve
 /// the existing public API.
 library;
 
-String? readString(Map<String, dynamic> json, String snake, [String? camel]) {
-  final value = json[snake] ?? (camel == null ? null : json[camel]);
+String? readString(Map<String, dynamic> json, String key) {
+  final value = json[key];
   if (value == null) return null;
   final text = value.toString().trim();
   return text.isEmpty ? null : text;
 }
 
-int? readInt(Map<String, dynamic> json, String snake, [String? camel]) {
-  final value = json[snake] ?? (camel == null ? null : json[camel]);
+int? readInt(Map<String, dynamic> json, String key) {
+  final value = json[key];
   if (value == null) return null;
   if (value is int) return value;
   if (value is num) return value.toInt();
   return int.tryParse(value.toString());
 }
 
-double? readDouble(Map<String, dynamic> json, String snake, [String? camel]) {
-  final value = json[snake] ?? (camel == null ? null : json[camel]);
+double? readDouble(Map<String, dynamic> json, String key) {
+  final value = json[key];
   if (value == null) return null;
   if (value is double) return value;
   if (value is num) return value.toDouble();
   return double.tryParse(value.toString());
 }
 
-bool? readBool(Map<String, dynamic> json, String snake, [String? camel]) {
-  final value = json[snake] ?? (camel == null ? null : json[camel]);
+bool? readBool(Map<String, dynamic> json, String key) {
+  final value = json[key];
   if (value == null) return null;
   if (value is bool) return value;
   if (value is num) return value != 0;

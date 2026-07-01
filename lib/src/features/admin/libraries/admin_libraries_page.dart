@@ -28,7 +28,9 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
           data is Map ? asMapList(asMap(data)['libraries']) : asMapList(data);
       setState(() => _items = list.map(Library.fromJson).toList());
     } catch (_) {
-      if (mounted) _showSnack('获取存储库失败');
+      if (mounted) {
+        _showSnack(context.localeText('获取存储库失败', 'Failed to load libraries'));
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -42,10 +44,12 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
         data: {'mode': mode},
       );
       if (!mounted) return;
-      _showSnack(mode == 'full' ? '全量同步任务已启动' : '增量同步任务已启动');
+      _showSnack(mode == 'full'
+          ? context.localeText('全量同步任务已启动', 'Full sync started')
+          : context.localeText('增量同步任务已启动', 'Incremental sync started'));
     } catch (_) {
       if (!mounted) return;
-      _showSnack('同步启动失败');
+      _showSnack(context.localeText('同步启动失败', 'Failed to start sync'));
     } finally {
       if (mounted) setState(() => _scanningId = null);
     }
@@ -62,11 +66,12 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
     try {
       await AppScope.appOf(context).api.delete('/api/libraries/${library.id}');
       if (!mounted) return;
-      messenger.showSnackBar(const SnackBar(content: Text('存储库已删除')));
+      messenger.showSnackBar(SnackBar(
+          content: Text(context.localeText('存储库已删除', 'Library deleted'))));
       await _load();
     } catch (_) {
       if (!mounted) return;
-      _showSnack('删除失败');
+      _showSnack(context.localeText('删除失败', 'Delete failed'));
     }
   }
 
@@ -125,24 +130,25 @@ class _AdminLibrariesHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final addButton = PrimaryButton(
-      label: '添加库',
+      label: context.localeText('添加库', 'Add Library'),
       icon: Icons.add_rounded,
       onPressed: onAdd,
     );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        const header = HeaderText(
+        final header = HeaderText(
           icon: Icons.storage_rounded,
-          title: '存储库管理',
-          subtitle: '配置您的 WebDAV 或本地存储源并同步资源',
+          title: context.localeText('存储库管理', 'Library Management'),
+          subtitle: context.localeText('配置您的 WebDAV、本地存储或 RSS 订阅并同步资源',
+              'Configure WebDAV, local storage, or RSS feeds and sync resources'),
         );
 
         if (constraints.maxWidth < 720) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Align(alignment: Alignment.centerLeft, child: header),
+              Align(alignment: Alignment.centerLeft, child: header),
               const SizedBox(height: 18),
               addButton,
             ],
@@ -152,7 +158,7 @@ class _AdminLibrariesHeader extends StatelessWidget {
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Expanded(child: header),
+            Expanded(child: header),
             const SizedBox(width: 16),
             addButton,
           ],
@@ -186,7 +192,8 @@ class _LibrariesEmptyState extends StatelessWidget {
               size: 48, color: AppColors.slate300),
           const SizedBox(height: 16),
           Text(
-            '暂无存储库，点击右上角添加',
+            context.localeText('暂无存储库，点击右上角添加',
+                'No libraries yet. Add one from the top right.'),
             textAlign: TextAlign.center,
             style: TextStyle(color: context.mutedText),
           ),
@@ -245,8 +252,10 @@ class _LibraryCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 alignment: Alignment.center,
-                child: const Icon(
-                  Icons.storage_rounded,
+                child: Icon(
+                  library.libraryType == 'rss'
+                      ? Icons.rss_feed_rounded
+                      : Icons.storage_rounded,
                   size: 28,
                   color: AppColors.primary600,
                 ),
@@ -262,7 +271,7 @@ class _LibraryCard extends StatelessWidget {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          library.name,
+                          localizedLibraryName(context, library),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -283,14 +292,15 @@ class _LibraryCard extends StatelessWidget {
                             icon: Icons.public_rounded,
                             text: library.url ?? '',
                           ),
-                        _LibraryInfoLine(
-                          icon: Icons.folder_rounded,
-                          text: library.libraryType == 'local'
-                              ? (library.url?.isNotEmpty ?? false
-                                  ? library.url!
-                                  : library.rootPath)
-                              : library.rootPath,
-                        ),
+                        if (library.libraryType != 'rss')
+                          _LibraryInfoLine(
+                            icon: Icons.folder_rounded,
+                            text: library.libraryType == 'local'
+                                ? (library.url?.isNotEmpty ?? false
+                                    ? library.url!
+                                    : library.rootPath)
+                                : library.rootPath,
+                          ),
                       ],
                     ),
                   ],
@@ -307,12 +317,12 @@ class _LibraryCard extends StatelessWidget {
               _LibrarySyncButton(scanning: scanning, onSelected: onScanMode),
               _SoftIconButton(
                 icon: Icons.edit_rounded,
-                tooltip: '编辑存储库',
+                tooltip: context.localeText('编辑存储库', 'Edit library'),
                 onPressed: onEdit,
               ),
               _SoftIconButton(
                 icon: Icons.delete_outline_rounded,
-                tooltip: '删除存储库',
+                tooltip: context.localeText('删除存储库', 'Delete library'),
                 danger: true,
                 onPressed: onDelete,
               ),
@@ -352,23 +362,36 @@ class _LibraryTypeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final local = type == 'local';
+    final rss = type == 'rss';
     final bg = local
         ? const Color(0xfffffbeb)
-        : (context.isDark
-            ? AppColors.primary700.withValues(alpha: 0.22)
-            : AppColors.primary100);
-    final fg = local ? const Color(0xffd97706) : AppColors.primary600;
+        : rss
+            ? const Color(0xffecfdf5)
+            : (context.isDark
+                ? AppColors.primary700.withValues(alpha: 0.22)
+                : AppColors.primary100);
+    final fg = local
+        ? const Color(0xffd97706)
+        : rss
+            ? const Color(0xff059669)
+            : AppColors.primary600;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: context.isDark && local
             ? const Color(0xff78350f).withValues(alpha: 0.22)
-            : bg,
+            : context.isDark && rss
+                ? const Color(0xff064e3b).withValues(alpha: 0.24)
+                : bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        local ? '本地存储' : 'WebDAV',
+        local
+            ? context.localeText('本地存储', 'Local')
+            : rss
+                ? context.localeText('RSS订阅', 'RSS')
+                : 'WebDAV',
         style: TextStyle(
           fontSize: 11,
           height: 1.2,
@@ -446,25 +469,27 @@ class _LibrarySyncButtonState extends State<_LibrarySyncButton> {
       onExit: (_) => setState(() => _hovered = false),
       child: PopupMenuButton<String>(
         enabled: !widget.scanning,
-        tooltip: '同步',
+        tooltip: context.localeText('同步', 'Sync'),
         onSelected: widget.onSelected,
         offset: const Offset(0, 8),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         itemBuilder: (context) => [
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'incremental',
             child: _SyncModeMenuItem(
               icon: Icons.sync_rounded,
-              label: '增量同步',
-              description: '只同步新增和变化的资源',
+              label: context.localeText('增量同步', 'Incremental Sync'),
+              description: context.localeText(
+                  '只同步新增和变化的资源', 'Sync only new and changed resources'),
             ),
           ),
-          const PopupMenuItem(
+          PopupMenuItem(
             value: 'full',
             child: _SyncModeMenuItem(
               icon: Icons.restart_alt_rounded,
-              label: '全量同步',
-              description: '重新扫描并校准整个存储库',
+              label: context.localeText('全量同步', 'Full Sync'),
+              description: context.localeText(
+                  '重新扫描并校准整个存储库', 'Rescan and reconcile the whole library'),
             ),
           ),
         ],
@@ -488,7 +513,7 @@ class _LibrarySyncButtonState extends State<_LibrarySyncButton> {
                 Icon(Icons.sync_rounded, size: 18, color: foreground),
               const SizedBox(width: 8),
               Text(
-                '同步',
+                context.localeText('同步', 'Sync'),
                 style: TextStyle(
                   color: widget.scanning ? AppColors.slate400 : foreground,
                   fontWeight: FontWeight.w700,
@@ -636,13 +661,16 @@ class _DeleteLibraryDialog extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              const Text(
-                '确认删除？',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              Text(
+                context.localeText('确认删除？', 'Delete library?'),
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),
               Text(
-                '此操作将永久删除“$libraryName”及其所有关联的书籍、章节和播放进度，且不可恢复。',
+                context.localeText(
+                    '此操作将永久删除“$libraryName”及其所有关联的书籍、章节和播放进度，且不可恢复。',
+                    'This will permanently delete "$libraryName" and all related books, chapters, and playback progress.'),
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, color: context.mutedText),
               ),
@@ -659,7 +687,7 @@ class _DeleteLibraryDialog extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        '取消',
+                        context.l10n.commonCancel,
                         style: TextStyle(
                           color: context.mutedText,
                           fontWeight: FontWeight.w700,
@@ -680,9 +708,9 @@ class _DeleteLibraryDialog extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: const Text(
-                        '确认删除',
-                        style: TextStyle(fontWeight: FontWeight.w700),
+                      child: Text(
+                        context.localeText('确认删除', 'Delete'),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -697,12 +725,12 @@ class _DeleteLibraryDialog extends StatelessWidget {
 }
 
 const Map<String, dynamic> _defaultLibraryScraperConfig = {
-  'extractAudioCover': true,
-  'preferAudioTitle': true,
-  'nfoWritingEnabled': false,
-  'metadataWritingEnabled': false,
-  'disableWatcher': false,
-  'cloudMode': false,
+  'extract_audio_cover': true,
+  'use_filename_as_title': true,
+  'nfo_writing_enabled': false,
+  'metadata_writing_enabled': false,
+  'disable_watcher': false,
+  'cloud_mode': false,
 };
 
 String _prettyLibraryJson(Object? value) {

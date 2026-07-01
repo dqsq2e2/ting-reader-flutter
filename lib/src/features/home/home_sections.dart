@@ -30,36 +30,36 @@ class _HomeStatsGrid extends StatelessWidget {
               compact: compact,
               icon: Icons.headphones_rounded,
               iconColor: AppColors.primary600,
-              label: '最近已听',
+              label: context.localeText('最近已听', 'Listened'),
               value: listenMinutes.toString(),
-              unit: '分钟',
+              unit: context.localeText('分钟', 'min'),
             ),
             _MetricCard(
               width: width,
               compact: compact,
               icon: Icons.favorite_border_rounded,
               iconColor: Colors.red,
-              label: '收藏作品',
+              label: context.localeText('收藏作品', 'Favorites'),
               value: favoritesCount.toString(),
-              unit: '本',
+              unit: context.localeText('本', 'books'),
             ),
             _MetricCard(
               width: width,
               compact: compact,
               icon: Icons.queue_music_rounded,
               iconColor: Colors.orange,
-              label: '我的书单',
+              label: context.localeText('我的书单', 'Playlists'),
               value: playlistsCount.toString(),
-              unit: '个',
+              unit: context.localeText('个', 'lists'),
             ),
             _MetricCard(
               width: width,
               compact: compact,
               icon: Icons.history_rounded,
               iconColor: Colors.green,
-              label: '收听记录',
+              label: context.localeText('收听记录', 'History'),
               value: recentCount.toString(),
-              unit: '条',
+              unit: context.localeText('条', 'items'),
             ),
           ],
         );
@@ -202,9 +202,9 @@ class _RecommendedShelf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (books.isEmpty) {
-      return const _EmptyBand(
+      return _EmptyBand(
         icon: Icons.library_books_rounded,
-        title: '还没有可推荐的内容',
+        title: context.localeText('还没有可推荐的内容', 'No recommendations yet'),
       );
     }
     return LayoutBuilder(
@@ -320,7 +320,7 @@ class _RecentListenTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.bookTitle ?? '未知书籍',
+                  item.bookTitle ?? context.localeText('未知书籍', 'Unknown Book'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -329,7 +329,10 @@ class _RecentListenTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '正在播放: ${item.chapterTitle ?? '未知章节'}',
+                  context.localeText(
+                    '正在播放: ${item.chapterTitle ?? '未知章节'}',
+                    'Playing: ${item.chapterTitle ?? 'Unknown Chapter'}',
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: context.mutedText, fontSize: 12),
@@ -381,9 +384,9 @@ class _RecentlyAddedGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (books.isEmpty) {
-      return const _EmptyBand(
+      return _EmptyBand(
         icon: Icons.trending_up_rounded,
-        title: '暂无上新内容',
+        title: context.localeText('暂无上新内容', 'No recent additions'),
       );
     }
     return LayoutBuilder(
@@ -447,16 +450,16 @@ class _RecentlyAddedTile extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '最近入库',
-                  style: TextStyle(
+                Text(
+                  context.localeText('最近入库', 'Recently Added'),
+                  style: const TextStyle(
                     color: Colors.green,
                     fontSize: 11,
                   ),
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  book.title,
+                  localizedBookTitle(context, book),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -465,7 +468,9 @@ class _RecentlyAddedTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  book.author?.isNotEmpty == true ? book.author! : '未知作者',
+                  book.author?.isNotEmpty == true
+                      ? book.author!
+                      : context.localeText('未知作者', 'Unknown Author'),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -501,8 +506,11 @@ class _CollectionsGrid extends StatelessWidget {
     final items = <Widget>[
       for (final playlist in playlists)
         _CollectionCard(
-          title: playlist.title,
-          subtitle: '${_playlistBookCount(playlist)} 本书',
+          title: localizedPlaylistTitle(context, playlist),
+          subtitle: context.localeText(
+            '${_playlistBookCount(playlist)} 本书',
+            '${_playlistBookCount(playlist)} books',
+          ),
           color: AppColors.primary600,
           coverUrlValue: _playlistRandomCoverUrl(
             context,
@@ -513,16 +521,19 @@ class _CollectionsGrid extends StatelessWidget {
         ),
       for (final item in series)
         _CollectionCard(
-          title: item.title,
-          subtitle: '${item.books.length} 本系列作品',
+          title: localizedSeriesTitle(context, item),
+          subtitle: context.localeText(
+            '${item.books.length} 本系列作品',
+            '${item.books.length} series books',
+          ),
           coverUrlValue: seriesCoverUrl(AppScope.appOf(context), item),
           onTap: onPlaylists,
         ),
     ];
     if (items.isEmpty) {
-      return const _EmptyBand(
+      return _EmptyBand(
         icon: Icons.queue_music_rounded,
-        title: '还没有书单或系列',
+        title: context.localeText('还没有书单或系列', 'No playlists or series yet'),
       );
     }
     return LayoutBuilder(

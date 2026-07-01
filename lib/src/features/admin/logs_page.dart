@@ -59,9 +59,10 @@ class _LogsPageState extends State<LogsPage> {
 
   Future<void> _clear() async {
     final ok = await _confirm(
-      title: '清空日志',
-      message: '确定要清空所有日志和任务记录吗？这将删除所有系统日志和已完成/失败的任务。',
-      action: '清空',
+      title: context.localeText('清空日志', 'Clear Logs'),
+      message: context.localeText('确定要清空所有日志和任务记录吗？这将删除所有系统日志和已完成/失败的任务。',
+          'Clear all logs and task records? This deletes system logs and completed or failed tasks.'),
+      action: context.localeText('清空', 'Clear'),
     );
     if (!ok || !mounted) return;
 
@@ -81,9 +82,9 @@ class _LogsPageState extends State<LogsPage> {
 
   Future<void> _deleteTask(String taskId) async {
     final ok = await _confirm(
-      title: '删除任务记录',
-      message: '确定要删除这条任务记录吗？',
-      action: '删除',
+      title: context.localeText('删除任务记录', 'Delete Task Record'),
+      message: context.localeText('确定要删除这条任务记录吗？', 'Delete this task record?'),
+      action: context.localeText('删除', 'Delete'),
     );
     if (!ok || !mounted) return;
 
@@ -99,7 +100,10 @@ class _LogsPageState extends State<LogsPage> {
     await Clipboard.setData(ClipboardData(text: res.data?.toString() ?? ''));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(level == 'ERROR' ? '错误日志已复制' : '日志已复制')),
+      SnackBar(
+          content: Text(level == 'ERROR'
+              ? context.localeText('错误日志已复制', 'Error logs copied')
+              : context.localeText('日志已复制', 'Logs copied'))),
     );
   }
 
@@ -116,7 +120,7 @@ class _LogsPageState extends State<LogsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -160,7 +164,7 @@ class _LogsPageState extends State<LogsPage> {
       log.taskId ?? '',
       log.timestamp,
       log.module,
-      log.message,
+      log.messageKey ?? log.message,
       index,
     ].join('|');
   }
@@ -247,6 +251,9 @@ class _LogEntry {
     required this.level,
     required this.module,
     required this.message,
+    this.rawMessage,
+    this.messageKey,
+    this.messageParams = const {},
     this.fields = const {},
     this.taskId,
     this.taskStatus,
@@ -257,6 +264,9 @@ class _LogEntry {
   final String level;
   final String module;
   final String message;
+  final String? rawMessage;
+  final String? messageKey;
+  final Map<String, dynamic> messageParams;
   final Map<String, dynamic> fields;
   final String? taskId;
   final String? taskStatus;
@@ -266,16 +276,17 @@ class _LogEntry {
 
   factory _LogEntry.fromJson(Map<String, dynamic> json) {
     return _LogEntry(
-      timestamp:
-          (json['timestamp'] ?? json['created_at'] ?? json['createdAt'] ?? '')
-              .toString(),
+      timestamp: (json['timestamp'] ?? json['created_at'] ?? '').toString(),
       level: (json['level'] ?? 'INFO').toString(),
       module: (json['module'] ?? 'audit').toString(),
       message: (json['message'] ?? '').toString(),
+      rawMessage: json['raw_message']?.toString(),
+      messageKey: json['message_key']?.toString(),
+      messageParams: asMap(json['message_params']),
       fields: asMap(json['fields']),
-      taskId: (json['task_id'] ?? json['taskId'])?.toString(),
-      taskStatus: (json['task_status'] ?? json['taskStatus'])?.toString(),
-      taskType: (json['task_type'] ?? json['taskType'])?.toString(),
+      taskId: json['task_id']?.toString(),
+      taskStatus: json['task_status']?.toString(),
+      taskType: json['task_type']?.toString(),
     );
   }
 }
@@ -319,27 +330,30 @@ class _LogsHeader extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _LogSelect(
-              label: '模块',
+              label: context.localeText('模块', 'Module'),
               width: compact ? 172 : 164,
               value: moduleFilter,
-              items: const [
-                ('audit', '全部核心日志'),
-                ('audit::login', '登录记录'),
-                ('audit::playback', '播放记录'),
-                ('audit::scan', '扫描记录'),
-                ('audit::metadata', '元数据记录'),
-                ('audit::library', '存储库记录'),
-                ('audit::notification', '通知记录'),
-                ('all', '系统所有日志'),
+              items: [
+                ('audit', context.localeText('全部核心日志', 'Core')),
+                ('audit::login', context.localeText('登录记录', 'Login')),
+                ('audit::playback', context.localeText('播放记录', 'Playback')),
+                ('audit::scan', context.localeText('扫描记录', 'Scan')),
+                ('audit::metadata', context.localeText('元数据记录', 'Metadata')),
+                ('audit::library', context.localeText('存储库记录', 'Library')),
+                (
+                  'audit::notification',
+                  context.localeText('通知记录', 'Notification')
+                ),
+                ('all', context.localeText('系统所有日志', 'All')),
               ],
               onChanged: onModuleChanged,
             ),
             _LogSelect(
-              label: '等级',
+              label: context.localeText('等级', 'Level'),
               width: 130,
               value: levelFilter,
-              items: const [
-                ('', '全部'),
+              items: [
+                ('', context.localeText('全部', 'All')),
                 ('INFO', 'INFO'),
                 ('WARN', 'WARN'),
                 ('ERROR', 'ERROR'),
@@ -348,22 +362,28 @@ class _LogsHeader extends StatelessWidget {
             ),
             _LogActionButton(
               icon: Icons.cleaning_services_rounded,
-              label: '清空',
+              label: context.localeText('清空', 'Clear'),
               onPressed: onClear,
             ),
             PopupMenuButton<String>(
-              tooltip: '更多',
+              tooltip: context.localeText('更多', 'More'),
               onSelected: (value) {
                 if (value == 'all') onExportAll();
                 if (value == 'error') onExportError();
               },
-              itemBuilder: (context) => const [
-                PopupMenuItem(value: 'all', child: Text('导出所有日志')),
-                PopupMenuItem(value: 'error', child: Text('导出错误日志')),
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                    value: 'all',
+                    child:
+                        Text(context.localeText('导出所有日志', 'Export All Logs'))),
+                PopupMenuItem(
+                    value: 'error',
+                    child: Text(
+                        context.localeText('导出错误日志', 'Export Error Logs'))),
               ],
-              child: const _LogActionButtonVisual(
+              child: _LogActionButtonVisual(
                 icon: Icons.more_horiz_rounded,
-                label: '更多',
+                label: context.localeText('更多', 'More'),
               ),
             ),
             _AutoRefreshSwitch(
@@ -430,7 +450,7 @@ class _LogsTitle extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Text(
-              '系统日志',
+              context.localeText('系统日志', 'System Logs'),
               style: TextStyle(
                 fontSize: compact ? 24 : 30,
                 height: 1.15,
@@ -440,7 +460,8 @@ class _LogsTitle extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '实时监控系统后台运行状态与任务进度',
+          context.localeText('实时监控系统后台运行状态与任务进度',
+              'Monitor backend status and task progress in real time'),
           textAlign: compact ? TextAlign.center : TextAlign.start,
           style: TextStyle(
             fontSize: compact ? 14 : 16,
@@ -615,7 +636,7 @@ class _AutoRefreshSwitch extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '自动刷新',
+              context.localeText('自动刷新', 'Auto Refresh'),
               style: TextStyle(
                 color: context.mutedText,
                 fontSize: 13,
@@ -799,6 +820,7 @@ class _LogBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final message = _logMessage(context, log);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -808,7 +830,7 @@ class _LogBody extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             Text(
-              _moduleName(log.module),
+              _moduleName(context, log.module),
               style: const TextStyle(fontSize: 16),
             ),
             _LevelChip(level: log.level),
@@ -833,16 +855,16 @@ class _LogBody extends StatelessWidget {
                       : Icons.keyboard_arrow_right_rounded,
                   size: 16,
                 ),
-                label: const Text(
-                  '详情',
-                  style: TextStyle(fontSize: 12),
+                label: Text(
+                  context.localeText('详情', 'Details'),
+                  style: const TextStyle(fontSize: 12),
                 ),
               ),
           ],
         ),
         const SizedBox(height: 10),
         SelectableText(
-          log.message,
+          message,
           style: TextStyle(
             color: log.isTask
                 ? context.mutedText
@@ -984,7 +1006,9 @@ class _LogTrailing extends StatelessWidget {
               children: [
                 Icon(statusIcon.$1, color: statusIcon.$2, size: 22),
                 IconButton(
-                  tooltip: onCancelTask != null ? '停止任务' : '删除记录',
+                  tooltip: onCancelTask != null
+                      ? context.localeText('停止任务', 'Stop Task')
+                      : context.localeText('删除记录', 'Delete Record'),
                   onPressed: onCancelTask ?? onDeleteTask,
                   icon: Icon(
                     onCancelTask != null
@@ -1010,7 +1034,9 @@ class _LogTrailing extends StatelessWidget {
             children: [
               Icon(statusIcon.$1, color: statusIcon.$2, size: 22),
               IconButton(
-                tooltip: onCancelTask != null ? '停止任务' : '删除记录',
+                tooltip: onCancelTask != null
+                    ? context.localeText('停止任务', 'Stop Task')
+                    : context.localeText('删除记录', 'Delete Record'),
                 onPressed: onCancelTask ?? onDeleteTask,
                 icon: Icon(
                   onCancelTask != null
@@ -1080,7 +1106,7 @@ class _TaskStatusChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        _taskStatusText(status),
+        _taskStatusText(context, status),
         style: TextStyle(
           color: icon.$2,
           fontSize: 11,
@@ -1096,32 +1122,478 @@ class _LogsEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 80),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 80),
       child: Column(
         children: [
-          Icon(Icons.terminal_rounded, size: 48, color: AppColors.slate300),
-          SizedBox(height: 14),
-          Text('暂无记录', style: TextStyle(color: AppColors.slate500)),
+          const Icon(Icons.terminal_rounded,
+              size: 48, color: AppColors.slate300),
+          const SizedBox(height: 14),
+          Text(context.localeText('暂无记录', 'No records'),
+              style: const TextStyle(color: AppColors.slate500)),
         ],
       ),
     );
   }
 }
 
-String _moduleName(String module) {
-  if (module.startsWith('audit::login')) return '登录记录';
-  if (module.startsWith('audit::playback')) return '播放记录';
-  if (module.startsWith('audit::scan')) return '扫描记录';
-  if (module.startsWith('audit::metadata')) return '元数据记录';
-  if (module.startsWith('audit::library')) return '存储库记录';
-  if (module.startsWith('audit::notification')) return '通知记录';
-  if (module.startsWith('audit::task')) return '任务记录';
-  if (module == 'audit') return '核心业务';
-  if (module.startsWith('auth')) return '鉴权系统';
-  if (module.startsWith('ting_reader::core::error')) return '核心错误';
-  if (module.startsWith('ting_reader::api')) return 'API服务';
+String _moduleName(BuildContext context, String module) {
+  if (module.startsWith('audit::login')) {
+    return context.localeText('登录记录', 'Login');
+  }
+  if (module.startsWith('audit::playback')) {
+    return context.localeText('播放记录', 'Playback');
+  }
+  if (module.startsWith('audit::scan')) {
+    return context.localeText('扫描记录', 'Scan');
+  }
+  if (module.startsWith('audit::metadata')) {
+    return context.localeText('元数据记录', 'Metadata');
+  }
+  if (module.startsWith('audit::library')) {
+    return context.localeText('存储库记录', 'Library');
+  }
+  if (module.startsWith('audit::notification')) {
+    return context.localeText('通知记录', 'Notification');
+  }
+  if (module.startsWith('audit::task')) {
+    return context.localeText('任务记录', 'Task');
+  }
+  if (module == 'audit') return context.localeText('核心业务', 'Core');
+  if (module.startsWith('auth')) return context.localeText('鉴权系统', 'Auth');
+  if (module.startsWith('ting_reader::core::error')) {
+    return context.localeText('核心错误', 'Core Errors');
+  }
+  if (module.startsWith('ting_reader::api')) {
+    return context.localeText('API服务', 'API Service');
+  }
   return module;
+}
+
+String _logMessage(BuildContext context, _LogEntry log) {
+  final key = log.messageKey;
+  if (key == null || key.isEmpty) {
+    return log.message.isNotEmpty ? log.message : (log.rawMessage ?? '');
+  }
+  final template = _logMessageTemplate(context, key);
+  if (template == null) {
+    if (log.message.isNotEmpty) return log.message;
+    if (log.rawMessage != null && log.rawMessage!.isNotEmpty) {
+      return log.rawMessage!;
+    }
+    return key;
+  }
+  return _renderLogTemplate(template, log.messageParams);
+}
+
+String? _logMessageTemplate(BuildContext context, String key) {
+  final isZh = context.localeText('zh', 'en') == 'zh';
+  const zh = <String, String>{
+    'logging.initialized': '日志系统初始化完成',
+    'system.config.loaded': '配置加载成功',
+    'system.backend.starting': '正在启动 Ting Reader 后端 v{version}',
+    'system.server.config': '服务器配置',
+    'system.database.config': '数据库配置',
+    'system.plugin.config': '插件配置',
+    'system.directories.ensuring': '正在确保必需的目录存在...',
+    'system.directory.creating': '正在创建目录：{path}',
+    'system.directories.ready': '所有必需的目录已就绪',
+    'system.database.initializing': '正在初始化数据库...',
+    'system.database.migrating': '正在运行数据库迁移...',
+    'system.database.initialized': '数据库初始化成功',
+    'system.http.initializing': '正在初始化 HTTP 服务器...',
+    'system.http.starting': '正在启动 HTTP 服务器：{host}:{port}',
+    'system.http.listening': 'HTTP 服务器正在监听：{addr}',
+    'system.backend.initialized': '听书后端初始化成功',
+    'system.server.ready': '服务器已就绪：{url}',
+    'system.master_key.derived': '主密钥已基于机器特征和数据库路径自动派生',
+    'system.jwt_key.initialized': 'JWT 密钥管理器初始化成功',
+    'system.jwt_key.init_failed': 'JWT 密钥管理器初始化失败，使用配置文件密钥：{error}',
+    'security.machine_id.env': '使用环境变量中的机器 ID',
+    'security.master_key.derived': '主密钥已基于机器特征自动派生',
+    'security.machine_id.existing': '使用现有机器 ID：{path}',
+    'security.machine_id.created_data': '已在数据目录创建新的机器 ID：{path}',
+    'security.machine_id.created_user': '已在用户目录创建新的机器 ID：{path}',
+    'security.machine_id.temporary': '无法持久化机器 ID，使用临时标识符',
+    'security.machine_id.system_fallback': '使用系统信息组合生成机器标识',
+    'system.default_admin.creating': '未发现用户，正在创建默认管理员',
+    'system.default_admin.created': '默认管理员已创建：{username}',
+    'cache.file.delete_failed': '删除缓存文件失败：{path}',
+    'cache.orphan.delete_failed': '删除孤立缓存文件失败：{path}',
+    'cache.cleanup.completed': '缓存清理完成，移除了 {removed_count} 个文件',
+    'database.connection.failed': '获取数据库连接失败',
+    'audio.format.probe_failed': '音频格式探测失败：{path}',
+    'strm.file.read_failed': '读取 strm 文件失败：{path}',
+    'strm.url.invalid': 'strm 文件包含无效 URL：{path}',
+    'ffprobe.output_parse_failed': '解析 FFprobe 输出失败',
+    'ffprobe.duration_failed': 'FFprobe 获取时长失败',
+    'ffprobe.run_failed': '无法运行 FFprobe',
+    'ffprobe.missing': '未找到 FFprobe，时长将设为 0',
+    'ffmpeg.missing': '未找到 FFmpeg，时长将设为 0',
+    'webdav.duration.mismatch': 'WebDAV 文件时长与大小估算差距过大，将使用 FFprobe：{file_url}',
+    'scraper.plugin.failed': '刮削器插件失败：{source_id}',
+    'scraper.search.failed': '刮削器搜索失败：{source_id}',
+    'media.plugin_stream.read_failed': '插件解码流读取失败',
+    'media.ffmpeg.pipe_failed': '无法将输入通过管道传输到 FFmpeg',
+    'media.cache.rename_failed': '重命名临时缓存文件失败：{chapter_id}',
+    'media.cache.write_failed': '写入临时缓存文件失败：{chapter_id}',
+    'media.preload.read_failed': '读取下一章预加载失败：{chapter_id}',
+    'media.cache.stream_copy_failed': '自动缓存的流复制失败：{chapter_id}',
+    'media.cache.temp_create_failed': '创建临时缓存文件失败：{chapter_id}',
+    'media.metadata_read_size.failed': '获取元数据读取大小失败',
+    'media.decryption_plan.failed': '获取解密计划失败',
+    'media.hls.first_segment_timeout': '等待首分片超时，但继续返回',
+    'media.hls.concurrent_limit':
+        'HLS 转码并发已达上限：{active_count}/{max_concurrent}',
+    'media.preload.reader_failed': '获取下一章读取器失败：{chapter_id}',
+    'image.palette.extract_failed': '提取图像调色板失败',
+    'image.decode_failed': '解码图像失败',
+    'image.cover.download_failed': '下载封面图像失败',
+    'image.cover.fetch_failed': '获取封面图像失败',
+    'image.cover.read_failed': '读取本地封面图像失败：{path}',
+    'websocket.progress_save_failed': 'WebSocket 进度保存失败',
+    'plugin.gc_failed': '插件垃圾回收失败：{plugin}',
+    'plugin.unload_during_uninstall_failed': '卸载期间卸载插件失败：{plugin_id}',
+    'plugin.reload.started': '正在重新加载插件：{plugin_id}',
+    'plugin.reload.same_version': '正在重新加载相同版本插件：{plugin_id}',
+    'plugin.unload_old_failed': '卸载旧版本插件失败：{plugin_id}',
+    'plugin.reload.completed': '插件重新加载完成：{plugin_id}',
+    'plugin.reload_new_instance_failed': '加载新插件实例失败：{plugin_id}',
+    'plugin.reload.version_changed': '随着版本更改重新加载插件：{old_id} -> {new_id}',
+    'plugin.unload_after_upgrade_failed': '升级后卸载旧版本插件失败：{plugin_id}',
+    'plugin.upgrade.completed': '插件升级完成：{old_id} -> {new_id}',
+    'plugin.load_new_version_failed': '加载新版本插件失败：{plugin_id}',
+    'plugin.uninstall_old_failed': '卸载旧版本插件失败：{plugin_id}',
+    'plugin.unload_before_install_failed': '安装前卸载插件失败：{plugin_id}',
+    'plugin.auto_load_after_install_failed': '安装后自动加载插件失败：{plugin_id}',
+    'plugin.temp_file.delete_failed': '删除临时插件文件失败：{path}',
+    'system.memory.release_failed': '释放内存失败',
+    'plugin.version.invalid': '插件版本格式无效：{version}',
+    'plugin.version_requirement.invalid': '插件版本要求无效：{requirement}',
+    'library.initial_scan.enqueue_failed': '队列初始扫描任务失败：{library_id}',
+    'library.watcher.watch_failed': '开始监视新库失败：{library_id}',
+    'library.watcher.update_failed': '更新库监视器失败：{library_id}',
+    'library.tasks.cancel_failed': '取消库任务失败：{library_id}',
+    'library.orphan_books.cleanup_failed': '清理孤立书籍失败：{library_id}',
+    'library.cover_cache.delete_failed': '删除封面缓存失败：{path}',
+    'library.created': '管理员 {actor} 创建了媒体库 {library_name}（{url}）',
+    'library.deleted': '管理员 {actor} 删除了媒体库 {library_name}',
+    'book.created': '作品已入库：{book_title}',
+    'book.deleted': '作品已删除：{book_title}',
+    'metadata.nfo.write_failed': '写入 NFO 失败：{book_title}',
+    'metadata.json.write_failed': '写入 metadata.json 失败',
+    'metadata.json.write_succeeded': 'metadata.json 写入成功：{path}',
+    'metadata.json.update_failed': '更新 metadata.json 失败：{book_id}',
+    'book.theme_color.calculate_failed': '计算主题颜色失败',
+    'book.theme_color.extract_failed': '无法从封面提取主题颜色',
+    'config.validation_failed': '配置验证失败',
+    'user.settings.restricted_update_ignored': '已忽略受限设置更新：{user_id}',
+    'plugin.fetch.body_read_failed': '插件 fetch 读取响应主体失败',
+    'plugin.fetch.request_failed': '插件 fetch 请求失败',
+    'auth.jwt.rotation.started': '正在轮换 JWT 密钥',
+    'auth.jwt.rotation.completed': 'JWT 密钥轮换完成',
+    'auth.jwt.loaded': '已从数据库加载加密 JWT 密钥',
+    'auth.jwt.generated': '已生成新的加密 JWT 密钥对',
+    'auth.jwt.rotated': 'JWT 密钥已自动轮换并保存',
+    'auth.jwt.rotation_check_failed': 'JWT 密钥轮换检查失败：{error}',
+    'http.error.authentication': '认证失败：{error_type}（{status_code}）',
+    'http.error.request': '请求失败：{error_type}（{status_code}）',
+    'http.error.permission': '权限不足：{error_type}（{status_code}）',
+    'http.error.database_busy': '数据库繁忙：{error_type}（{status_code}）',
+    'http.response.failed': 'HTTP 响应失败：{classification}（{latency_ms} ms）',
+    'http.response.status_failed':
+        'HTTP 响应失败，状态码 {status_code}（{latency_ms} ms）',
+    'http.response.service_failed': 'HTTP 服务失败（{latency_ms} ms）',
+    'auth.login.success': '用户 {username} 登录成功',
+    'auth.login.failed.invalid_token': 'JWT Token 登录失败：令牌验证失败',
+    'auth.login.failed.user_missing': 'JWT Token 登录失败：用户不存在',
+    'auth.login.failed.user_not_found': '用户 {username} 登录失败：用户不存在',
+    'auth.login.failed.bad_password': '用户 {username} 登录失败：密码错误',
+    'auth.login.failed.empty_token': 'JWT Token 登录失败：令牌为空',
+    'auth.login.session_restore.duplicate_skipped': '跳过重复的浏览器会话恢复登录日志',
+    'auth.register.success': '用户 {username} 注册成功，角色：{role}',
+    'auth.register.failed': '用户 {username} 注册失败：{error}',
+    'playback.started':
+        '用户 {username} 开始播放《{book_title}》章节「{chapter_title}」，位置 {position}/{duration}',
+    'notification.webhook.dispatch_failed': '发送 Webhook 通知失败：{event}',
+    'notification.webhook.sent': 'Webhook 通知已发送：{webhook_name}（{event}）',
+    'notification.webhook.status_failed':
+        'Webhook 通知返回失败：{webhook_name}（HTTP {status}）',
+    'notification.webhook.request_failed': 'Webhook 通知请求失败：{webhook_name}',
+    'notification.webhook.created': 'Webhook 通知配置已创建：{webhook_name}',
+    'notification.webhook.updated': 'Webhook 通知配置已更新：{webhook_name}',
+    'notification.webhook.deleted': 'Webhook 通知配置已删除：{webhook_name}',
+    'task.execute': '执行任务',
+    'task.execute_with_payload': '执行任务：{payload}',
+    'task.recovery.started': '正在从数据库恢复未完成的任务',
+    'task.recovery.completed': '任务恢复完成：{count} 个',
+    'task.recovery.failed': '任务恢复失败：{error}',
+    'task.executor.started': '任务队列执行器已启动',
+    'task.submitted': '任务已提交：{task_name}',
+    'task.executing': '正在执行任务：{task_name}',
+    'task.completed': '任务完成：{task_id}',
+    'task.failed': '任务失败：{error}',
+    'task.retrying': '任务重试中：第 {retry}/{max_retries} 次，{delay_secs} 秒后重试',
+    'task.max_retries_failed': '任务达到最大重试次数后失败：{task_id}',
+    'task.timed_out': '任务超时：{timeout_secs} 秒',
+    'scan.started': '开始扫描存储库：{path}',
+    'scan.local.scanning': '正在扫描本地目录...',
+    'scan.webdav.scanning': '正在扫描 WebDAV 目录...',
+    'scan.rss.fetching': '正在获取 RSS：{url}',
+    'scan.rss.fetched': 'RSS 获取完成，发现 {count} 个音频条目',
+    'scan.rss.completed': 'RSS 库扫描完成，发现 {episodes} 个音频条目',
+    'scan.audio_dirs.found': '找到 {count} 个包含音频文件的目录',
+    'scan.item.processing': '处理中 ({current}/{total})：{name}',
+    'scan.chapter.processing': '处理章节 {current}/{total}',
+    'scan.auto_merge.processing': '正在处理自动合并...',
+    'scan.completed':
+        '扫描完成：共 {total} 本，新增 {created} 本，更新 {updated} 本，删除 {deleted} 本，错误 {errors} 个',
+    'scan.library.completed':
+        '存储库「{library_name}」扫描完成，新增 {created} 本，更新 {updated} 本，删除 {deleted} 本',
+    'library.watcher.start_failed': '启动库监听器失败：{error}',
+    'metadata.chapter.writing': '正在写入第 {current}/{total} 章：{chapter_title}',
+    'metadata.write.completed': '元数据写入完成，成功 {success} 章，失败 {failed} 章',
+    'metadata.write.completed_for_book':
+        '书籍「{book_title}」音频文件元数据写入完成，成功 {success} 章，失败 {failed} 章',
+  };
+  const en = <String, String>{
+    'logging.initialized': 'Logging initialized',
+    'system.config.loaded': 'Configuration loaded',
+    'system.backend.starting': 'Starting Ting Reader backend v{version}',
+    'system.server.config': 'Server configuration',
+    'system.database.config': 'Database configuration',
+    'system.plugin.config': 'Plugin configuration',
+    'system.directories.ensuring': 'Ensuring required directories exist...',
+    'system.directory.creating': 'Creating directory: {path}',
+    'system.directories.ready': 'All required directories are ready',
+    'system.database.initializing': 'Initializing database...',
+    'system.database.migrating': 'Running database migrations...',
+    'system.database.initialized': 'Database initialized',
+    'system.http.initializing': 'Initializing HTTP server...',
+    'system.http.starting': 'Starting HTTP server on {host}:{port}',
+    'system.http.listening': 'HTTP server listening at {addr}',
+    'system.backend.initialized': 'Ting Reader backend initialized',
+    'system.server.ready': 'Server ready: {url}',
+    'system.master_key.derived':
+        'Master key derived from machine features and database path',
+    'system.jwt_key.initialized': 'JWT key manager initialized',
+    'system.jwt_key.init_failed':
+        'JWT key manager initialization failed; using configured secret: {error}',
+    'security.machine_id.env': 'Using machine ID from environment',
+    'security.master_key.derived': 'Master key derived from machine features',
+    'security.machine_id.existing': 'Using existing machine ID: {path}',
+    'security.machine_id.created_data':
+        'Created new machine ID in data directory: {path}',
+    'security.machine_id.created_user':
+        'Created new machine ID in user directory: {path}',
+    'security.machine_id.temporary':
+        'Could not persist machine ID; using temporary identifier',
+    'security.machine_id.system_fallback':
+        'Using system information fallback for machine ID',
+    'system.default_admin.creating': 'No users found, creating default admin',
+    'system.default_admin.created': 'Default admin created: {username}',
+    'cache.file.delete_failed': 'Failed to delete cache file: {path}',
+    'cache.orphan.delete_failed':
+        'Failed to delete orphaned cache file: {path}',
+    'cache.cleanup.completed':
+        'Cache cleanup completed: {removed_count} files removed',
+    'database.connection.failed': 'Failed to get database connection',
+    'audio.format.probe_failed': 'Audio format probe failed: {path}',
+    'strm.file.read_failed': 'Failed to read strm file: {path}',
+    'strm.url.invalid': 'strm file contains an invalid URL: {path}',
+    'ffprobe.output_parse_failed': 'Failed to parse FFprobe output',
+    'ffprobe.duration_failed': 'FFprobe duration detection failed',
+    'ffprobe.run_failed': 'Failed to run FFprobe',
+    'ffprobe.missing': 'FFprobe not found; duration will be set to zero',
+    'ffmpeg.missing': 'FFmpeg not found; duration will be set to zero',
+    'webdav.duration.mismatch':
+        'WebDAV duration differs from size estimate; using FFprobe: {file_url}',
+    'scraper.plugin.failed': 'Scraper plugin failed: {source_id}',
+    'scraper.search.failed': 'Scraper search failed: {source_id}',
+    'media.plugin_stream.read_failed': 'Plugin decode stream read failed',
+    'media.ffmpeg.pipe_failed': 'Failed to pipe input to FFmpeg',
+    'media.cache.rename_failed':
+        'Failed to rename temporary cache file: {chapter_id}',
+    'media.cache.write_failed':
+        'Failed to write temporary cache file: {chapter_id}',
+    'media.preload.read_failed':
+        'Failed to read next chapter preload: {chapter_id}',
+    'media.cache.stream_copy_failed':
+        'Auto-cache stream copy failed: {chapter_id}',
+    'media.cache.temp_create_failed':
+        'Failed to create temporary cache file: {chapter_id}',
+    'media.metadata_read_size.failed': 'Failed to get metadata read size',
+    'media.decryption_plan.failed': 'Failed to get decryption plan',
+    'media.hls.first_segment_timeout':
+        'Timed out waiting for first HLS segment; returning anyway',
+    'media.hls.concurrent_limit':
+        'HLS transcoding concurrency limit reached: {active_count}/{max_concurrent}',
+    'media.preload.reader_failed':
+        'Failed to get next chapter reader: {chapter_id}',
+    'image.palette.extract_failed': 'Image palette extraction failed',
+    'image.decode_failed': 'Image decode failed',
+    'image.cover.download_failed': 'Failed to download cover image',
+    'image.cover.fetch_failed': 'Failed to fetch cover image',
+    'image.cover.read_failed': 'Failed to read local cover image: {path}',
+    'websocket.progress_save_failed': 'WebSocket progress save failed',
+    'plugin.gc_failed': 'Plugin garbage collection failed: {plugin}',
+    'plugin.unload_during_uninstall_failed':
+        'Failed to unload plugin during uninstall: {plugin_id}',
+    'plugin.reload.started': 'Reloading plugin: {plugin_id}',
+    'plugin.reload.same_version': 'Reloading same plugin version: {plugin_id}',
+    'plugin.unload_old_failed':
+        'Failed to unload old plugin version: {plugin_id}',
+    'plugin.reload.completed': 'Plugin reloaded: {plugin_id}',
+    'plugin.reload_new_instance_failed':
+        'Failed to load new plugin instance: {plugin_id}',
+    'plugin.reload.version_changed':
+        'Reloading plugin with version change: {old_id} -> {new_id}',
+    'plugin.unload_after_upgrade_failed':
+        'Failed to unload old plugin version after upgrade: {plugin_id}',
+    'plugin.upgrade.completed': 'Plugin upgraded: {old_id} -> {new_id}',
+    'plugin.load_new_version_failed':
+        'Failed to load new plugin version: {plugin_id}',
+    'plugin.uninstall_old_failed':
+        'Failed to uninstall old plugin version: {plugin_id}',
+    'plugin.unload_before_install_failed':
+        'Failed to unload plugin before install: {plugin_id}',
+    'plugin.auto_load_after_install_failed':
+        'Failed to auto-load plugin after install: {plugin_id}',
+    'plugin.temp_file.delete_failed':
+        'Failed to delete temporary plugin file: {path}',
+    'system.memory.release_failed': 'Memory release failed',
+    'plugin.version.invalid': 'Invalid plugin version format: {version}',
+    'plugin.version_requirement.invalid':
+        'Invalid plugin version requirement: {requirement}',
+    'library.initial_scan.enqueue_failed':
+        'Failed to enqueue initial library scan task: {library_id}',
+    'library.watcher.watch_failed': 'Failed to watch new library: {library_id}',
+    'library.watcher.update_failed':
+        'Failed to update library watcher: {library_id}',
+    'library.tasks.cancel_failed':
+        'Failed to cancel library tasks: {library_id}',
+    'library.orphan_books.cleanup_failed':
+        'Failed to clean up orphan books: {library_id}',
+    'library.cover_cache.delete_failed': 'Failed to delete cover cache: {path}',
+    'library.created': 'Admin {actor} created library {library_name} ({url})',
+    'library.deleted': 'Admin {actor} deleted library {library_name}',
+    'book.created': 'Book imported: {book_title}',
+    'book.deleted': 'Book deleted: {book_title}',
+    'metadata.nfo.write_failed': 'Failed to write NFO: {book_title}',
+    'metadata.json.write_failed': 'Failed to write metadata.json',
+    'metadata.json.write_succeeded': 'metadata.json written: {path}',
+    'metadata.json.update_failed': 'Failed to update metadata.json: {book_id}',
+    'book.theme_color.calculate_failed': 'Book theme color calculation failed',
+    'book.theme_color.extract_failed':
+        'Could not extract theme color from cover',
+    'config.validation_failed': 'Configuration validation failed',
+    'user.settings.restricted_update_ignored':
+        'Restricted settings update ignored: {user_id}',
+    'plugin.fetch.body_read_failed': 'Plugin fetch body read failed',
+    'plugin.fetch.request_failed': 'Plugin fetch request failed',
+    'auth.jwt.rotation.started': 'Rotating JWT keys',
+    'auth.jwt.rotation.completed': 'JWT key rotation completed',
+    'auth.jwt.loaded': 'Loaded encrypted JWT keys from database',
+    'auth.jwt.generated': 'Generated new encrypted JWT key pair',
+    'auth.jwt.rotated': 'JWT keys rotated and saved',
+    'auth.jwt.rotation_check_failed': 'JWT key rotation check failed: {error}',
+    'http.error.authentication':
+        'Authentication failed: {error_type} ({status_code})',
+    'http.error.request': 'Request failed: {error_type} ({status_code})',
+    'http.error.permission': 'Permission denied: {error_type} ({status_code})',
+    'http.error.database_busy': 'Database busy: {error_type} ({status_code})',
+    'http.response.failed':
+        'HTTP response failed: {classification} ({latency_ms} ms)',
+    'http.response.status_failed':
+        'HTTP response failed with status {status_code} ({latency_ms} ms)',
+    'http.response.service_failed': 'HTTP service failed ({latency_ms} ms)',
+    'auth.login.success': 'User {username} logged in',
+    'auth.login.failed.invalid_token':
+        'JWT token login failed: token validation failed',
+    'auth.login.failed.user_missing':
+        'JWT token login failed: user does not exist',
+    'auth.login.failed.user_not_found':
+        'User {username} login failed: user not found',
+    'auth.login.failed.bad_password':
+        'User {username} login failed: bad password',
+    'auth.login.failed.empty_token': 'JWT token login failed: token is empty',
+    'auth.login.session_restore.duplicate_skipped':
+        'Skipped duplicate browser session restore login log',
+    'auth.register.success': 'User {username} registered with role {role}',
+    'auth.register.failed': 'User {username} registration failed: {error}',
+    'playback.started':
+        'User {username} started playing "{book_title}" chapter "{chapter_title}" at {position}/{duration}',
+    'notification.webhook.dispatch_failed':
+        'Webhook notification dispatch failed: {event}',
+    'notification.webhook.sent':
+        'Webhook notification sent: {webhook_name} ({event})',
+    'notification.webhook.status_failed':
+        'Webhook notification returned failure: {webhook_name} (HTTP {status})',
+    'notification.webhook.request_failed':
+        'Webhook notification request failed: {webhook_name}',
+    'notification.webhook.created':
+        'Webhook configuration created: {webhook_name}',
+    'notification.webhook.updated':
+        'Webhook configuration updated: {webhook_name}',
+    'notification.webhook.deleted':
+        'Webhook configuration deleted: {webhook_name}',
+    'task.execute': 'Run task',
+    'task.execute_with_payload': 'Run task: {payload}',
+    'task.recovery.started': 'Restoring unfinished tasks from database',
+    'task.recovery.completed': 'Task recovery completed: {count}',
+    'task.recovery.failed': 'Task recovery failed: {error}',
+    'task.executor.started': 'Task queue executor started',
+    'task.submitted': 'Task submitted: {task_name}',
+    'task.executing': 'Executing task: {task_name}',
+    'task.completed': 'Task completed: {task_id}',
+    'task.failed': 'Task failed: {error}',
+    'task.retrying':
+        'Retrying task: {retry}/{max_retries}, retrying in {delay_secs}s',
+    'task.max_retries_failed': 'Task failed after max retries: {task_id}',
+    'task.timed_out': 'Task timed out after {timeout_secs}s',
+    'scan.started': 'Started scanning library: {path}',
+    'scan.local.scanning': 'Scanning local directory...',
+    'scan.webdav.scanning': 'Scanning WebDAV directory...',
+    'scan.rss.fetching': 'Fetching RSS: {url}',
+    'scan.rss.fetched': 'RSS fetched, found {count} audio items',
+    'scan.rss.completed':
+        'RSS library scan completed with {episodes} audio items',
+    'scan.audio_dirs.found': 'Found {count} directories with audio files',
+    'scan.item.processing': 'Processing ({current}/{total}): {name}',
+    'scan.chapter.processing': 'Processing chapter {current}/{total}',
+    'scan.auto_merge.processing': 'Processing automatic merges...',
+    'scan.completed':
+        'Scan completed: {total} total, {created} created, {updated} updated, {deleted} deleted, {errors} errors',
+    'scan.library.completed':
+        'Library "{library_name}" scan completed: {created} created, {updated} updated, {deleted} deleted',
+    'library.watcher.start_failed': 'Library watcher failed to start: {error}',
+    'metadata.chapter.writing':
+        'Writing chapter {current}/{total}: {chapter_title}',
+    'metadata.write.completed':
+        'Metadata write completed: {success} succeeded, {failed} failed',
+    'metadata.write.completed_for_book':
+        'Metadata write completed for "{book_title}": {success} succeeded, {failed} failed',
+  };
+  return (isZh ? zh : en)[key];
+}
+
+String _renderLogTemplate(String template, Map<String, dynamic> params) {
+  var rendered = template;
+  for (final entry in params.entries) {
+    rendered =
+        rendered.replaceAll('{${entry.key}}', _formatLogParam(entry.value));
+  }
+  return rendered;
+}
+
+String _formatLogParam(Object? value) {
+  if (value == null) return '';
+  if (value is String || value is num || value is bool) return value.toString();
+  try {
+    return jsonEncode(value);
+  } catch (_) {
+    return value.toString();
+  }
 }
 
 IconData _logIcon(String module) {
@@ -1188,18 +1660,18 @@ Color _levelColor(String level) {
   }
 }
 
-String _taskStatusText(String status) {
+String _taskStatusText(BuildContext context, String status) {
   switch (status) {
     case 'queued':
-      return '排队中';
+      return context.localeText('排队中', 'Queued');
     case 'running':
-      return '运行中';
+      return context.localeText('运行中', 'Running');
     case 'completed':
-      return '已完成';
+      return context.localeText('已完成', 'Completed');
     case 'failed':
-      return '失败';
+      return context.localeText('失败', 'Failed');
     case 'cancelled':
-      return '已取消';
+      return context.localeText('已取消', 'Cancelled');
     default:
       return status;
   }

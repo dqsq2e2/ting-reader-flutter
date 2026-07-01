@@ -4,14 +4,17 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/plugin_extensions/types.dart';
 import '../../../core/state/download_state.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/chapter_sort.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/urls.dart';
+import '../../../core/utils/locale.dart';
 import '../../../shared/cards/book_card.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
+import '../../../shared/plugin_extensions/plugin_extension_host.dart';
 
 part 'book_detail_components.dart';
 part 'book_detail_chapter_section.dart';
@@ -24,6 +27,80 @@ part 'chapter_manager/layout.dart';
 part 'chapter_manager/list.dart';
 part 'chapter_manager/controls.dart';
 part 'chapter_manager/edit.dart';
+
+typedef _ChapterGroupOrderEntry = Map<String, String>;
+
+String? _normalizeChapterGroupOrder(dynamic value) {
+  final text = value?.toString();
+  return text == 'asc' || text == 'desc' ? text : null;
+}
+
+List<_ChapterGroupOrderEntry> _readChapterGroupOrders(
+  Map<String, dynamic> settings,
+) {
+  final raw = settings['chapter_group_orders'];
+  if (raw is Iterable) {
+    return raw.expand<_ChapterGroupOrderEntry>((entry) {
+      final item = asMap(entry);
+      final bookId = item['book_id']?.toString() ?? '';
+      final order = _normalizeChapterGroupOrder(item['order']);
+      return bookId.isNotEmpty && order != null
+          ? [
+              {'book_id': bookId, 'order': order},
+            ]
+          : const [];
+    }).toList(growable: false);
+  }
+  final rawMap = asMap(raw);
+  if (rawMap.isNotEmpty) {
+    return rawMap.entries.expand<_ChapterGroupOrderEntry>((entry) {
+      final order = _normalizeChapterGroupOrder(entry.value);
+      return order != null
+          ? [
+              {'book_id': entry.key, 'order': order},
+            ]
+          : const [];
+    }).toList(growable: false);
+  }
+  return const [];
+}
+
+String? _findChapterGroupOrder(
+  List<_ChapterGroupOrderEntry> orders,
+  String bookId,
+) {
+  for (final entry in orders) {
+    if (entry['book_id'] == bookId) return entry['order'];
+  }
+  return null;
+}
+
+List<_ChapterGroupOrderEntry> _upsertChapterGroupOrder(
+  List<_ChapterGroupOrderEntry> orders,
+  String bookId,
+  String order,
+) {
+  var found = false;
+  final next = orders.map<_ChapterGroupOrderEntry>((entry) {
+    if (entry['book_id'] != bookId) return {...entry};
+    found = true;
+    return {'book_id': bookId, 'order': order};
+  }).toList();
+  if (!found) next.add({'book_id': bookId, 'order': order});
+  return next;
+}
+
+List<Map<String, String>> _serializeChapterGroupOrders(
+  List<_ChapterGroupOrderEntry> orders,
+) {
+  return orders
+      .map((entry) => {
+            'book_id': entry['book_id'] ?? '',
+            'order': entry['order'] ?? 'asc',
+          })
+      .where((entry) => entry['book_id']!.isNotEmpty)
+      .toList(growable: false);
+}
 
 class BookDetailPage extends StatefulWidget {
   const BookDetailPage({
@@ -57,6 +134,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
   String _activeTab = 'main';
   int _groupIndex = 0;
   bool _chapterAscending = true;
+  bool _chapterGroupsDescending = false;
+  List<_ChapterGroupOrderEntry> _chapterGroupOrders = const [];
   bool _tagsExpanded = false;
   CoverShapePreference _coverShape = CoverShapePreference.rect;
   final _chapterSectionKey = GlobalKey();
@@ -94,8 +173,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
       final progress = results[1] as ProgressItem?;
       final settingsResponse = results[2] as Response<dynamic>;
       final book = Book.fromJson(asMap(bookResponse.data));
-      final settings = asMap(asMap(settingsResponse.data)['settings_json'] ??
-          asMap(settingsResponse.data)['settingsJson']);
+      final defaultGroupDescending = book.libraryType == 'rss';
+      final settings = asMap(asMap(settingsResponse.data)['settings_json']);
+      final groupOrders = _readChapterGroupOrders(settings);
+      final effectiveGroupOrder =
+          _findChapterGroupOrder(groupOrders, book.id) ??
+              (defaultGroupDescending ? 'desc' : 'asc');
       setState(() {
         _book = book;
         _chapters = [];
@@ -107,10 +190,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
         _chapterRowKeys.clear();
         _favorite = book.isFavorite;
         _activeTab = 'main';
+        _chapterAscending = effectiveGroupOrder == 'asc';
+        _chapterGroupsDescending = effectiveGroupOrder == 'desc';
+        _chapterGroupOrders = groupOrders;
         _tagsExpanded = false;
-        _coverShape = (settings['bookshelf_cover_shape'] ??
-                    settings['bookshelfCoverShape']) ==
-                'square'
+        _coverShape = settings['bookshelf_cover_shape'] == 'square'
             ? CoverShapePreference.square
             : CoverShapePreference.rect;
         _groupIndex = 0;
@@ -118,6 +202,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
       await _loadChapterPage(
         targetChapterId: widget.initialChapterId,
         scrollToTarget: widget.initialChapterId != null,
+        preferLastGroup:
+            effectiveGroupOrder == 'desc' && widget.initialChapterId == null,
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -130,11 +216,17 @@ class _BookDetailPageState extends State<BookDetailPage> {
   int get _groupCount =>
       _activeTotal <= 0 ? 0 : ((_activeTotal - 1) ~/ _chaptersPerGroup) + 1;
 
+  int _lastGroupIndexFor(String tab) {
+    final total = tab == 'extra' ? _extraChapterTotal : _mainChapterTotal;
+    return total <= 0 ? 0 : ((total - 1) ~/ _chaptersPerGroup);
+  }
+
   Future<ChaptersPage?> _loadChapterPage({
     String? tab,
     int? groupIndex,
     String? targetChapterId,
     bool scrollToTarget = false,
+    bool preferLastGroup = false,
   }) async {
     final book = _book;
     if (book == null) return null;
@@ -163,6 +255,26 @@ class _BookDetailPageState extends State<BookDetailPage> {
       final page = ChaptersPage.fromJson(asMap(res.data));
       final resolvedTab = page.chapterType == 'extra' ? 'extra' : 'main';
       final resolvedGroup = page.offset ~/ _chaptersPerGroup;
+      final filteredTotal =
+          resolvedTab == 'extra' ? page.extraTotal : page.mainTotal;
+      final lastGroup =
+          filteredTotal <= 0 ? 0 : ((filteredTotal - 1) ~/ _chaptersPerGroup);
+      if (preferLastGroup &&
+          targetChapterId == null &&
+          requestedGroup != lastGroup) {
+        if (mounted) {
+          setState(() {
+            _activeTab = resolvedTab;
+            _groupIndex = lastGroup;
+            _chapterTotal = page.total;
+            _mainChapterTotal = page.mainTotal;
+            _extraChapterTotal = page.extraTotal;
+            _chapters = [];
+            _chapterRowKeys.clear();
+          });
+        }
+        return _loadChapterPage(tab: resolvedTab, groupIndex: lastGroup);
+      }
       final visibleIds = page.chapters.map((chapter) => chapter.id).toSet();
       if (!mounted) return page;
       setState(() {
@@ -262,7 +374,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
       return Chapter(
         id: progressChapterId,
         bookId: book.id,
-        title: progress.chapterTitle ?? '上次收听章节',
+        title:
+            progress.chapterTitle ?? context.l10n.bookDetailLastListenedChapter,
         path: '',
         chapterIndex: 0,
         duration: progress.chapterDuration ?? progress.duration.round(),
@@ -389,7 +502,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
         .post('/api/books/${book.id}/write-metadata');
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已开始后台写入元数据，请稍候查看任务进度。')),
+      SnackBar(content: Text(context.l10n.bookDetailWriteMetadataStarted)),
     );
   }
 
@@ -434,10 +547,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
         children: [
           AppBackButton(onPressed: widget.onBack),
           const SizedBox(height: 24),
-          const EmptyState(
+          EmptyState(
             icon: Icons.search_off_rounded,
-            title: '未找到书籍',
-            message: '这本书可能已被删除或您没有访问权限。',
+            title: context.l10n.bookDetailNotFoundTitle,
+            message: context.l10n.bookDetailNotFoundMessage,
           ),
         ],
       );
@@ -455,12 +568,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
         ? initialChapterId
         : sameBookCurrentChapter?.id ?? resume?.id;
     final playLabel = sameBookCurrentChapter != null
-        ? '正在播放：${sameBookCurrentChapter.title}'
+        ? context.l10n.bookDetailNowPlaying(sameBookCurrentChapter.title)
         : resume == null
-            ? '立即播放'
+            ? context.l10n.bookDetailPlayNow
             : resume.progressPosition != null
-                ? '继续播放：${resume.title}'
-                : '立即播放';
+                ? context.l10n.bookDetailContinuePlaying(resume.title)
+                : context.l10n.bookDetailPlayNow;
     final themeColor = _effectiveThemeColor(book.themeColor);
 
     final page = PageListView(
@@ -526,12 +639,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   children: [
                     _Meta(
                         icon: Icons.person_rounded,
-                        text: book.author ?? '未知作者'),
+                        text: book.author ??
+                            context.l10n.bookDetailUnknownAuthor),
                     _Meta(
-                        icon: Icons.mic_rounded, text: book.narrator ?? '未知演播'),
+                        icon: Icons.mic_rounded,
+                        text: book.narrator ??
+                            context.l10n.bookDetailUnknownNarrator),
                     _Meta(
                         icon: Icons.queue_music_rounded,
-                        text: '$_chapterTotal 章节'),
+                        text:
+                            context.l10n.bookDetailChapterCount(_chapterTotal)),
                     if (book.year != null)
                       _Meta(icon: Icons.event_rounded, text: '${book.year}'),
                   ],
@@ -558,6 +675,15 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   admin: appState.isAdmin,
                   resumeLabel: playLabel,
                   themeColor: themeColor,
+                  extensionContext: {
+                    'book_id': book.id,
+                    'book_title': book.title,
+                    'book_path': book.path,
+                    'library_id': book.libraryId,
+                    'author': book.author,
+                    'narrator': book.narrator,
+                    'chapter_count': _chapterTotal,
+                  },
                   onPlay: _playResume,
                   onFavorite: _toggleFavorite,
                   onScrape: _showScrapeDialog,
@@ -567,7 +693,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 _DescriptionPanel(
                   description: book.description?.isNotEmpty == true
                       ? _inlineDescription(book.description!)
-                      : '暂无简介',
+                      : context.l10n.bookDetailNoDescription,
                   themeColor: themeColor,
                 ),
               ],
@@ -610,6 +736,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 groupCount: _groupCount,
                 activeTotal: _activeTotal,
                 groupIndex: _groupIndex,
+                groupDescending: _chapterGroupsDescending,
                 activeTab: _activeTab,
                 mainCount: _mainChapterTotal,
                 extraCount: _extraChapterTotal,
@@ -630,8 +757,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 },
                 onGroupChanged: (index) =>
                     _loadChapterPage(tab: _activeTab, groupIndex: index),
-                onTabChanged: (tab) =>
-                    _loadChapterPage(tab: tab, groupIndex: 0),
+                onTabChanged: (tab) => _loadChapterPage(
+                  tab: tab,
+                  groupIndex:
+                      _chapterGroupsDescending ? _lastGroupIndexFor(tab) : 0,
+                ),
                 onManage: _showChapterManager,
               ),
             );
@@ -665,6 +795,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final genFilename = TextEditingController();
     final genNum = TextEditingController();
     final genTitle = TextEditingController();
+    var selectedGroupOrder = _chapterGroupsDescending ? 'desc' : 'asc';
 
     final result = await showDialog<_EditBookDialogResult>(
       context: context,
@@ -685,6 +816,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 dialogError = null;
               });
               try {
+                final appState = AppScope.appOf(dialogContext);
                 final payload = {
                   'title': title.text.trim(),
                   'author': author.text.trim(),
@@ -698,20 +830,53 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   'chapter_regex': chapterRegex.text.trim(),
                   'description': description.text.trim(),
                 };
-                final res = await AppScope.appOf(dialogContext).api.patch(
-                      '/api/books/${book.id}',
-                      data: payload,
-                    );
+                final res = await appState.api.patch(
+                  '/api/books/${book.id}',
+                  data: payload,
+                );
+                final shouldSaveGroupOrder =
+                    _findChapterGroupOrder(_chapterGroupOrders, book.id) !=
+                        selectedGroupOrder;
+                final groupOrderChanged = selectedGroupOrder !=
+                    (_chapterGroupsDescending ? 'desc' : 'asc');
+                if (shouldSaveGroupOrder) {
+                  final nextOrders = _upsertChapterGroupOrder(
+                    _chapterGroupOrders,
+                    book.id,
+                    selectedGroupOrder,
+                  );
+                  await appState.updateSettings({
+                    'chapter_group_orders':
+                        _serializeChapterGroupOrders(nextOrders),
+                  });
+                  if (mounted) {
+                    setState(() => _chapterGroupOrders = nextOrders);
+                  }
+                }
+                if (groupOrderChanged) {
+                  if (mounted) {
+                    final nextDescending = selectedGroupOrder == 'desc';
+                    final nextGroup =
+                        nextDescending ? _lastGroupIndexFor(_activeTab) : 0;
+                    setState(() {
+                      _chapterGroupsDescending = nextDescending;
+                      _chapterAscending = !nextDescending;
+                      _groupIndex = nextGroup;
+                    });
+                  }
+                }
                 if (dialogContext.mounted) {
                   Navigator.pop(
                     dialogContext,
                     _EditBookDialogResult.saved(
                       Book.fromJson(asMap(res.data)),
+                      reloadGroup: groupOrderChanged,
                     ),
                   );
                 }
               } catch (error) {
-                setDialogState(() => dialogError = '保存失败：$error');
+                setDialogState(() => dialogError =
+                    context.l10n.bookDetailSaveFailed(error.toString()));
               } finally {
                 if (dialogContext.mounted) {
                   setDialogState(() => saving = false);
@@ -724,14 +889,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
               final confirmed = await showDialog<bool>(
                 context: dialogContext,
                 builder: (confirmContext) => AlertDialog(
-                  title: const Text('确认删除书籍？'),
+                  title: Text(context.l10n.bookDetailDeleteBookTitle),
                   content: Text(
-                    '此操作会从书架中移除《${book.title}》，并清除相关播放进度。',
+                    context.l10n.bookDetailDeleteBookMessage(book.title),
                   ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(confirmContext, false),
-                      child: const Text('取消'),
+                      child: Text(context.l10n.commonCancel),
                     ),
                     ElevatedButton.icon(
                       onPressed: () => Navigator.pop(confirmContext, true),
@@ -740,7 +905,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                         foregroundColor: Colors.white,
                       ),
                       icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                      label: const Text('确认删除'),
+                      label: Text(context.l10n.commonDelete),
                     ),
                   ],
                 ),
@@ -761,7 +926,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   );
                 }
               } catch (error) {
-                setDialogState(() => dialogError = '删除失败：$error');
+                setDialogState(() => dialogError =
+                    context.l10n.bookDetailDeleteFailed(error.toString()));
               } finally {
                 if (dialogContext.mounted) {
                   setDialogState(() => deleting = false);
@@ -791,7 +957,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 );
                 setDialogState(() => regexResult = asMap(res.data));
               } catch (error) {
-                setDialogState(() => dialogError = '生成失败：$error');
+                setDialogState(() => dialogError = context.localeText(
+                    '生成失败：$error', 'Generation failed: $error'));
               } finally {
                 if (dialogContext.mounted) {
                   setDialogState(() => generating = false);
@@ -804,12 +971,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
 
             Widget dialogBody() {
               if (showRegexGenerator) {
-                final capturedIndex = (regexResult?['capturedIndex'] ??
-                        regexResult?['captured_index'])
-                    ?.toString();
-                final capturedTitle = (regexResult?['capturedTitle'] ??
-                        regexResult?['captured_title'])
-                    ?.toString();
+                final capturedIndex =
+                    regexResult?['captured_index']?.toString();
+                final capturedTitle =
+                    regexResult?['captured_title']?.toString();
                 final generatedRegex = regexResult?['regex']?.toString();
                 return Padding(
                   padding: EdgeInsets.all(compact ? 20 : 30),
@@ -822,10 +987,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           const Icon(Icons.auto_fix_high_rounded,
                               color: AppColors.primary600),
                           const SizedBox(width: 10),
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              '正则生成器',
-                              style: TextStyle(
+                              context.l10n.bookDetailRegexGeneratorTitle,
+                              style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -843,8 +1008,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                       const SizedBox(height: 18),
                       _EditMetadataField(
                         controller: genFilename,
-                        label: '示例文件名（不含后缀）',
-                        hint: '例如：书名 第1集 章节名',
+                        label: context.l10n.bookDetailSampleFilenameLabel,
+                        hint: context.l10n.bookDetailSampleFilenameHint,
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -852,16 +1017,19 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           Expanded(
                             child: _EditMetadataField(
                               controller: genNum,
-                              label: '提取章节号',
-                              hint: '例如：1',
+                              label:
+                                  context.l10n.bookDetailExtractChapterNumber,
+                              hint: context
+                                  .l10n.bookDetailExtractChapterNumberHint,
                             ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
                             child: _EditMetadataField(
                               controller: genTitle,
-                              label: '提取章节名',
-                              hint: '例如：章节名',
+                              label: context.l10n.bookDetailExtractChapterTitle,
+                              hint: context
+                                  .l10n.bookDetailExtractChapterTitleHint,
                             ),
                           ),
                         ],
@@ -878,7 +1046,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           ),
                         ),
                         child: Text(
-                          generating ? '生成中...' : '生成规则',
+                          generating
+                              ? context.l10n.bookDetailGenerating
+                              : context.l10n.bookDetailGenerateRule,
                           style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -897,7 +1067,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              const _EditFieldLabel('生成正则'),
+                              _EditFieldLabel(
+                                  context.l10n.bookDetailGeneratedRegex),
                               const SizedBox(height: 7),
                               Container(
                                 padding: const EdgeInsets.all(10),
@@ -921,16 +1092,20 @@ class _BookDetailPageState extends State<BookDetailPage> {
                                 children: [
                                   Expanded(
                                     child: _RegexMatchPreview(
-                                      label: '提取序号',
-                                      value: capturedIndex ?? '未匹配',
+                                      label:
+                                          context.l10n.bookDetailExtractIndex,
+                                      value: capturedIndex ??
+                                          context.l10n.bookDetailNoMatch,
                                       matched: capturedIndex == genNum.text,
                                     ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _RegexMatchPreview(
-                                      label: '提取标题',
-                                      value: capturedTitle ?? '未匹配',
+                                      label:
+                                          context.l10n.bookDetailExtractTitle,
+                                      value: capturedTitle ??
+                                          context.l10n.bookDetailNoMatch,
                                       matched: capturedTitle == genTitle.text,
                                     ),
                                   ),
@@ -957,7 +1132,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                                   textStyle: const TextStyle(
                                       fontWeight: FontWeight.w700),
                                 ),
-                                child: const Text('使用此规则'),
+                                child: Text(context.l10n.bookDetailUseThisRule),
                               ),
                             ],
                           ),
@@ -975,29 +1150,39 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     final twoColumns = constraints.maxWidth >= 620;
                     final leftColumn = Column(
                       children: [
-                        _EditMetadataField(controller: title, label: '书名'),
+                        _EditMetadataField(
+                            controller: title,
+                            label: context.l10n.bookDetailTitleField),
                         const SizedBox(height: 14),
-                        _EditMetadataField(controller: author, label: '作者'),
+                        _EditMetadataField(
+                            controller: author,
+                            label: context.l10n.bookDetailAuthorField),
                         const SizedBox(height: 14),
-                        _EditMetadataField(controller: narrator, label: '演播者'),
+                        _EditMetadataField(
+                            controller: narrator,
+                            label: context.l10n.bookDetailNarratorField),
                         const SizedBox(height: 14),
-                        _EditMetadataField(controller: tags, label: '标签（逗号分隔）'),
+                        _EditMetadataField(
+                            controller: tags,
+                            label: context.l10n.bookDetailTagsField),
                         const SizedBox(height: 14),
-                        _EditMetadataField(controller: genre, label: '流派'),
+                        _EditMetadataField(
+                            controller: genre,
+                            label: context.l10n.bookDetailGenreField),
                         const SizedBox(height: 14),
                         _EditMetadataField(
                           controller: year,
-                          label: '年份',
-                          hint: '例如: 2024',
+                          label: context.l10n.bookDetailYearField,
+                          hint: context.l10n.bookDetailYearHint,
                           number: true,
                         ),
                         const SizedBox(height: 14),
                         _EditMetadataField(
                           controller: chapterRegex,
-                          label: '章节正则清洗规则',
+                          label: context.l10n.bookDetailChapterRegexRule,
                           mono: true,
                           hint: r'^...(\d+)...(.+)$',
-                          helper: '用于从文件名提取章节号和标题。修改后需重新扫描生效。',
+                          helper: context.l10n.bookDetailChapterRegexHelp,
                           trailing: TextButton.icon(
                             onPressed: disabled
                                 ? null
@@ -1012,9 +1197,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
                             ),
                             icon: const Icon(Icons.auto_fix_high_rounded,
                                 size: 14),
-                            label: const Text(
-                              '自动生成',
-                              style: TextStyle(
+                            label: Text(
+                              context.l10n.bookDetailAutoGenerate,
+                              style: const TextStyle(
                                   fontSize: 12, fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -1023,14 +1208,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     );
                     final rightColumn = Column(
                       children: [
-                        _EditMetadataField(controller: cover, label: '封面 URL'),
+                        _EditMetadataField(
+                            controller: cover,
+                            label: context.l10n.bookDetailCoverUrlField),
                         const SizedBox(height: 14),
                         Row(
                           children: [
                             Expanded(
                               child: _EditMetadataField(
                                 controller: skipIntro,
-                                label: '跳过片头（秒）',
+                                label: context.l10n.bookDetailSkipIntroField,
                                 number: true,
                               ),
                             ),
@@ -1038,11 +1225,20 @@ class _BookDetailPageState extends State<BookDetailPage> {
                             Expanded(
                               child: _EditMetadataField(
                                 controller: skipOutro,
-                                label: '跳过片尾（秒）',
+                                label: context.l10n.bookDetailSkipOutroField,
                                 number: true,
                               ),
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 14),
+                        _ChapterGroupOrderSelector(
+                          value: selectedGroupOrder,
+                          onChanged: disabled
+                              ? null
+                              : (value) => setDialogState(
+                                    () => selectedGroupOrder = value,
+                                  ),
                         ),
                       ],
                     );
@@ -1050,9 +1246,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text(
-                          '编辑书籍元数据',
-                          style: TextStyle(
+                        Text(
+                          context.l10n.bookDetailEditMetadataTitle,
+                          style: const TextStyle(
                             fontSize: 24,
                             fontWeight: FontWeight.w700,
                           ),
@@ -1075,7 +1271,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                         const SizedBox(height: 18),
                         _EditMetadataField(
                           controller: description,
-                          label: '简介',
+                          label: context.l10n.bookDetailDescriptionField,
                           minLines: 4,
                           maxLines: 6,
                         ),
@@ -1108,7 +1304,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                       )
                     : Icon(Icons.delete_outline_rounded,
                         size: compact ? 17 : 19),
-                label: Text(compact ? '删除' : '删除书籍', style: textStyle),
+                label: Text(context.l10n.commonDelete, style: textStyle),
               );
               final writeButton = TextButton.icon(
                 onPressed: disabled ? null : _writeMetadata,
@@ -1124,7 +1320,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   ),
                 ),
                 icon: Icon(Icons.edit_document, size: compact ? 17 : 19),
-                label: Text(compact ? '写入' : '写入文件', style: textStyle),
+                label: Text(context.l10n.bookDetailWriteFile, style: textStyle),
               );
               final cancelButton = TextButton(
                 onPressed: disabled ? null : () => Navigator.pop(dialogContext),
@@ -1135,7 +1331,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     vertical: compact ? 9 : 13,
                   ),
                 ),
-                child: Text('取消', style: textStyle),
+                child: Text(context.l10n.commonCancel, style: textStyle),
               );
               final saveButton = ElevatedButton.icon(
                 onPressed: disabled ? null : save,
@@ -1164,8 +1360,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     : Icon(Icons.save_outlined, size: compact ? 17 : 19),
                 label: Text(
                   saving
-                      ? (compact ? '保存中' : '保存中...')
-                      : (compact ? '保存' : '保存更改'),
+                      ? context.l10n.commonSaving
+                      : (compact
+                          ? context.l10n.commonSave
+                          : context.l10n.bookDetailSaveChanges),
                   style: textStyle,
                 ),
               );
@@ -1294,6 +1492,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
           chapterRegex: saved.chapterRegex,
         );
       });
+      if (result?.reloadGroup == true) {
+        await _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
+      }
     }
   }
 }

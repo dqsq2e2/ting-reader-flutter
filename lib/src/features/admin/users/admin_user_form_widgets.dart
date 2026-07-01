@@ -56,7 +56,8 @@ class _LibraryPermissionBox extends StatelessWidget {
       ),
       child: libraries.isEmpty
           ? Text(
-              '暂无库可分配，请先添加库',
+              context.localeText('暂无库可分配，请先添加库',
+                  'No libraries available. Add a library first.'),
               style: TextStyle(
                 color: context.tertiaryText,
                 fontSize: 12,
@@ -75,7 +76,7 @@ class _LibraryPermissionBox extends StatelessWidget {
                       controlAffinity: ListTileControlAffinity.leading,
                       activeColor: AppColors.primary600,
                       title: Text(
-                        library.name,
+                        localizedLibraryName(context, library),
                         style: TextStyle(
                           color: context.isDark
                               ? AppColors.slate300
@@ -120,7 +121,8 @@ class _BookPermissionSearch extends StatelessWidget {
           onChanged: onChanged,
           style: const TextStyle(fontSize: 14),
           decoration: InputDecoration(
-            hintText: '输入书名或系列名搜索...',
+            hintText: context.localeText(
+                '输入书名或系列名搜索...', 'Search books or series...'),
             hintStyle: TextStyle(
               color: context.tertiaryText,
             ),
@@ -159,7 +161,8 @@ class _BookPermissionSearch extends StatelessWidget {
               border: Border.all(color: context.faintBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: context.isDark ? 0.18 : 0.08),
+                  color: Colors.black
+                      .withValues(alpha: context.isDark ? 0.18 : 0.08),
                   blurRadius: 18,
                   offset: const Offset(0, 8),
                 ),
@@ -170,19 +173,21 @@ class _BookPermissionSearch extends StatelessWidget {
               child: Column(
                 children: [
                   if (seriesResults.isNotEmpty) ...[
-                    const _SearchSectionHeader('系列'),
+                    _SearchSectionHeader(context.localeText('系列', 'Series')),
                     for (final series in seriesResults)
                       _SearchResultRow(
-                        title: series.title,
-                        subtitle: '共 ${series.books.length} 本书',
+                        title: localizedSeriesTitle(context, series),
+                        subtitle: context.localeText(
+                            '共 ${series.books.length} 本书',
+                            '${series.books.length} books'),
                         onTap: () => onSeriesTap(series),
                       ),
                   ],
                   if (bookResults.isNotEmpty) ...[
-                    const _SearchSectionHeader('书籍'),
+                    _SearchSectionHeader(context.localeText('书籍', 'Books')),
                     for (final book in bookResults)
                       _SearchResultRow(
-                        title: book.title,
+                        title: localizedBookTitle(context, book),
                         onTap: () => onBookTap(book),
                       ),
                   ],
@@ -307,7 +312,7 @@ class _SelectedBookChips extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 150),
                   child: Text(
-                    book.title,
+                    localizedBookTitle(context, book),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -348,11 +353,16 @@ String _shortUserId(String id, {bool dotted = true}) {
   return dotted ? '${id.substring(0, 8)}...' : id.substring(0, 8);
 }
 
-String _formatUserDate(String? raw) {
-  if (raw == null || raw.isEmpty) return '从未';
+String _formatUserDate(BuildContext context, String? raw) {
+  if (raw == null || raw.isEmpty) return context.localeText('从未', 'Never');
   final date = DateTime.tryParse(raw)?.toLocal();
   if (date == null) return raw;
   final hour = date.hour.toString().padLeft(2, '0');
   final minute = date.minute.toString().padLeft(2, '0');
+  if (context.isEnglishLocale) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$month/$day/${date.year} $hour:$minute';
+  }
   return '${date.year}年${date.month}月${date.day}日 $hour:$minute';
 }

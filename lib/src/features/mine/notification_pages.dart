@@ -80,17 +80,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('删除 Webhook'),
-        content: Text('确定删除「${webhook.name}」吗？这不会影响历史事件。'),
+        title: Text(context.l10n.notificationsDeleteWebhookTitle),
+        content: Text(
+          context.l10n.notificationsDeleteWebhookMessage(webhook.name),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           ElevatedButton.icon(
             onPressed: () => Navigator.pop(context, true),
             icon: const Icon(Icons.delete_outline_rounded, size: 18),
-            label: const Text('删除'),
+            label: Text(context.l10n.notificationsDeleteAction),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xffef4444),
               foregroundColor: Colors.white,
@@ -135,29 +137,29 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            const Expanded(
+            Expanded(
               child: HeaderText(
                 icon: Icons.notifications_active_rounded,
-                title: '通知与事件',
-                subtitle: 'Webhook 监听与事件推送',
+                title: context.l10n.notificationsTitle,
+                subtitle: context.l10n.notificationsSubtitle,
               ),
             ),
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
               child: _saved
-                  ? const Row(
-                      key: ValueKey('saved'),
+                  ? Row(
+                      key: const ValueKey('saved'),
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
+                        const Icon(
                           Icons.check_circle_rounded,
                           color: Color(0xff16a34a),
                           size: 16,
                         ),
-                        SizedBox(width: 5),
+                        const SizedBox(width: 5),
                         Text(
-                          '已保存',
-                          style: TextStyle(
+                          context.l10n.commonSaved,
+                          style: const TextStyle(
                             color: Color(0xff16a34a),
                           ),
                         ),
@@ -187,21 +189,21 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                 ),
                 _NotificationStatCard(
                   width: width,
-                  label: '已开启',
+                  label: context.l10n.notificationsEnabled,
                   value: enabledCount.toString(),
                   icon: Icons.power_settings_new_rounded,
                   color: const Color(0xff16a34a),
                 ),
                 _NotificationStatCard(
                   width: width,
-                  label: '已关闭',
+                  label: context.l10n.notificationsDisabled,
                   value: disabledCount.toString(),
                   icon: Icons.power_off_rounded,
                   color: AppColors.slate500,
                 ),
                 _NotificationStatCard(
                   width: width,
-                  label: '监听事件',
+                  label: context.l10n.notificationsListeningEvents,
                   value: listenedEvents.toString(),
                   icon: Icons.notifications_active_rounded,
                   color: const Color(0xff7c3aed),
@@ -237,15 +239,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Webhook 列表',
-                            style: TextStyle(
+                          Text(
+                            context.l10n.notificationsWebhookList,
+                            style: const TextStyle(
                               fontSize: 18,
                             ),
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${_webhooks.length} 个配置',
+                            context.l10n
+                                .notificationsWebhookCount(_webhooks.length),
                             style: TextStyle(
                               color: context.mutedText,
                               fontSize: 12,
@@ -255,7 +258,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       ),
                     ),
                     PrimaryButton(
-                      label: '添加 Webhook',
+                      label: context.l10n.notificationsAddWebhook,
                       icon: Icons.add_rounded,
                       onPressed: () => _upsert(),
                     ),
@@ -303,7 +306,8 @@ class _WebhookTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final eventLabels = webhook.events.map(_eventLabel).toList();
+    final eventLabels =
+        webhook.events.map((id) => _eventLabel(context, id)).toList();
     final visibleEvents = eventLabels.take(6).toList();
     final hiddenCount = math.max(eventLabels.length - visibleEvents.length, 0);
     return Padding(
@@ -374,7 +378,9 @@ class _WebhookTile extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           IconButton(
-            tooltip: webhook.enabled ? '关闭' : '开启',
+            tooltip: webhook.enabled
+                ? context.l10n.notificationsDisable
+                : context.l10n.notificationsEnable,
             onPressed: onToggle,
             icon: Icon(
               webhook.enabled
@@ -384,12 +390,12 @@ class _WebhookTile extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: '编辑',
+            tooltip: context.l10n.notificationsEdit,
             onPressed: onEdit,
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
-            tooltip: '删除',
+            tooltip: context.l10n.notificationsDeleteAction,
             onPressed: onDelete,
             icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
           ),
@@ -398,9 +404,11 @@ class _WebhookTile extends StatelessWidget {
     );
   }
 
-  String _eventLabel(String id) {
+  String _eventLabel(BuildContext context, String id) {
     for (final event in events) {
-      if (event.id == id) return event.label.isEmpty ? id : event.label;
+      if (event.id == id) {
+        return _notificationEventLabel(context, event.id, event.label);
+      }
     }
     return id;
   }
@@ -488,7 +496,7 @@ class _NotificationEmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 22),
             Text(
-              '暂无 Webhook',
+              context.l10n.notificationsNoWebhook,
               style: TextStyle(
                 color: context.isDark ? AppColors.slate50 : AppColors.slate900,
                 fontSize: 18,
@@ -496,7 +504,7 @@ class _NotificationEmptyState extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              '点击列表右上角添加一个监听配置',
+              context.l10n.notificationsNoWebhookHint,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: context.mutedText,
@@ -526,7 +534,9 @@ class _WebhookStatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        enabled ? '已开启' : '已关闭',
+        enabled
+            ? context.l10n.notificationsEnabled
+            : context.l10n.notificationsDisabled,
         style: TextStyle(
           color: enabled ? const Color(0xff15803d) : context.mutedText,
           fontSize: 11,
@@ -534,6 +544,46 @@ class _WebhookStatusBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+String _notificationEventLabel(
+  BuildContext context,
+  String id,
+  String fallback,
+) {
+  return switch (id) {
+    'user.login' => context.localeText('用户登录', 'User Login'),
+    'playback.play' => context.localeText('播放', 'Playback'),
+    'library.created' => context.localeText('新增媒体库', 'Library Created'),
+    'library.deleted' => context.localeText('删除媒体库', 'Library Deleted'),
+    'book.created' => context.localeText('作品入库', 'Book Imported'),
+    'book.deleted' => context.localeText('删除作品', 'Book Deleted'),
+    'library.scan_completed' => context.localeText('扫描完成', 'Scan Completed'),
+    _ => fallback.isEmpty ? id : fallback,
+  };
+}
+
+String _notificationEventDescription(
+  BuildContext context,
+  String id,
+  String fallback,
+) {
+  return switch (id) {
+    'user.login' =>
+      context.localeText('用户成功登录系统', 'A user successfully logged in'),
+    'playback.play' => context.localeText(
+        '用户开始播放作品或章节', 'A user started playing a work or chapter'),
+    'library.created' =>
+      context.localeText('管理员创建媒体库', 'An admin created a library'),
+    'library.deleted' =>
+      context.localeText('管理员删除媒体库', 'An admin deleted a library'),
+    'book.created' =>
+      context.localeText('作品被创建或入库', 'A work was created or imported'),
+    'book.deleted' => context.localeText('作品被删除', 'A work was deleted'),
+    'library.scan_completed' =>
+      context.localeText('媒体库扫描任务完成', 'A library scan completed'),
+    _ => fallback.isEmpty ? id : fallback,
+  };
 }
 
 class _WebhookEventChip extends StatelessWidget {
@@ -607,10 +657,8 @@ class _WebhookTestResult {
     return _WebhookTestResult(
       success: json['success'] == true,
       status: (json['status'] as num?)?.toInt() ?? 0,
-      responseBody:
-          (json['response_body'] ?? json['responseBody'] ?? '').toString(),
-      renderedBody:
-          (json['rendered_body'] ?? json['renderedBody'] ?? '').toString(),
+      responseBody: (json['response_body'] ?? '').toString(),
+      renderedBody: (json['rendered_body'] ?? '').toString(),
       error: (json['error'] as String?)?.trim(),
     );
   }
@@ -619,14 +667,14 @@ class _WebhookTestResult {
 const _webhookPresets = [
   _WebhookPreset(
     id: 'ting-json',
-    name: '原始事件 JSON',
+    name: 'raw-json',
     urlPlaceholder: 'https://example.com/webhook',
     headers: {'Content-Type': 'application/json'},
     bodyTemplate: _defaultWebhookBodyTemplate,
   ),
   _WebhookPreset(
     id: 'wecom-markdown',
-    name: '企业微信 Markdown',
+    name: 'wecom-markdown',
     urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
     headers: {'Content-Type': 'application/json'},
     bodyTemplate: '''{
@@ -638,7 +686,7 @@ const _webhookPresets = [
   ),
   _WebhookPreset(
     id: 'wecom-text',
-    name: '企业微信文本',
+    name: 'wecom-text',
     urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
     headers: {'Content-Type': 'application/json'},
     bodyTemplate: '''{
@@ -674,7 +722,7 @@ const _webhookPresets = [
   ),
   _WebhookPreset(
     id: 'plain-text',
-    name: '纯文本',
+    name: 'plain-text',
     urlPlaceholder: 'https://example.com/webhook',
     headers: {'Content-Type': 'text/plain; charset=utf-8'},
     bodyTemplate: '{{notification}}',
@@ -771,6 +819,16 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     return null;
   }
 
+  String _presetDisplayName(_WebhookPreset preset) {
+    return switch (preset.id) {
+      'ting-json' => context.l10n.notificationsPresetRawJson,
+      'wecom-markdown' => context.l10n.notificationsPresetWecomMarkdown,
+      'wecom-text' => context.l10n.notificationsPresetWecomText,
+      'plain-text' => context.l10n.notificationsPresetPlainText,
+      _ => preset.name,
+    };
+  }
+
   void _applyPreset(String? presetId) {
     if (presetId == null || presetId.isEmpty) return;
     final preset = _webhookPresets.firstWhere((item) => item.id == presetId);
@@ -798,13 +856,13 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   bool _validate() {
     if (_name.text.trim().isEmpty || _url.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写名称和 Webhook URL')),
+        SnackBar(content: Text(context.l10n.notificationsValidateRequired)),
       );
       return false;
     }
     if (_events.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请至少选择一个监听事件')),
+        SnackBar(content: Text(context.l10n.notificationsValidateEvents)),
       );
       return false;
     }
@@ -833,7 +891,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
         _testResult = _WebhookTestResult(
           success: false,
           status: 0,
-          error: '测试发送失败：$error',
+          error: context.l10n.notificationsTestFailed('$error'),
         );
       });
     } finally {
@@ -850,7 +908,10 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     final keyword = _filter.text.trim().toLowerCase();
     final filteredEvents = widget.events.where((event) {
       if (keyword.isEmpty) return true;
-      return '${event.label} ${event.id} ${event.description}'
+      final label = _notificationEventLabel(context, event.id, event.label);
+      final description =
+          _notificationEventDescription(context, event.id, event.description);
+      return '$label ${event.id} $description ${event.label} ${event.description}'
           .toLowerCase()
           .contains(keyword);
     }).toList();
@@ -884,7 +945,9 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          widget.webhook == null ? '添加 Webhook' : '编辑 Webhook',
+                          widget.webhook == null
+                              ? context.l10n.notificationsAddWebhookTitle
+                              : context.l10n.notificationsEditWebhookTitle,
                           style: TextStyle(
                             color: context.primaryText,
                             fontSize: compact ? 22 : 26,
@@ -893,7 +956,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '${_events.length} 个事件',
+                          context.l10n.notificationsEventCount(_events.length),
                           style: TextStyle(
                             color: context.mutedText,
                             fontSize: 13,
@@ -903,7 +966,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                     ),
                   ),
                   IconButton(
-                    tooltip: '关闭',
+                    tooltip: context.l10n.notificationsClose,
                     onPressed: () => Navigator.pop(context),
                     icon: const Icon(Icons.close_rounded),
                   ),
@@ -924,12 +987,12 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                   children: [
                     _labeledField(
                       context,
-                      '配置名称',
+                      context.l10n.notificationsNameLabel,
                       TextField(
                         controller: _name,
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.badge_outlined),
-                          hintText: '例如：企业微信通知',
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.badge_outlined),
+                          hintText: context.l10n.notificationsNameHint,
                         ),
                       ),
                     ),
@@ -976,11 +1039,11 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('取消'),
+                    child: Text(context.l10n.commonCancel),
                   ),
                   const Spacer(),
                   PrimaryButton(
-                    label: '保存',
+                    label: context.l10n.mineSave,
                     icon: Icons.save_rounded,
                     onPressed: _save,
                   ),
@@ -1010,12 +1073,12 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   Widget _buildPresetRow(bool compact) {
     final dropdown = DropdownButtonFormField<String>(
       initialValue: _selectedPresetId,
-      hint: const Text('选择模板'),
+      hint: Text(context.l10n.notificationsSelectTemplate),
       items: [
         for (final preset in _webhookPresets)
           DropdownMenuItem(
             value: preset.id,
-            child: Text(preset.name),
+            child: Text(_presetDisplayName(preset)),
           ),
       ],
       onChanged: _applyPreset,
@@ -1029,7 +1092,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.science_outlined, size: 18),
-      label: const Text('测试发送'),
+      label: Text(context.l10n.notificationsTestSend),
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(132, 52),
         foregroundColor: AppColors.primary600,
@@ -1043,7 +1106,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            '常见模板',
+            context.l10n.notificationsCommonTemplates,
             style: TextStyle(color: context.secondaryText, fontSize: 13),
           ),
           const SizedBox(height: 8),
@@ -1057,7 +1120,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '常见模板',
+          context.l10n.notificationsCommonTemplates,
           style: TextStyle(color: context.secondaryText, fontSize: 13),
         ),
         const SizedBox(height: 8),
@@ -1088,12 +1151,12 @@ class _WebhookDialogState extends State<_WebhookDialog> {
             children: [
               Expanded(
                 child: Text(
-                  '请求头',
+                  context.l10n.notificationsRequestHeaders,
                   style: TextStyle(color: context.primaryText, fontSize: 15),
                 ),
               ),
               IconButton(
-                tooltip: '添加请求头',
+                tooltip: context.l10n.notificationsAddHeader,
                 onPressed: () {
                   setState(() {
                     _headers.add(_WebhookHeaderDraft());
@@ -1108,7 +1171,10 @@ class _WebhookDialogState extends State<_WebhookDialog> {
           if (_headers.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 10),
-              child: Text('未设置请求头', style: TextStyle(color: context.mutedText)),
+              child: Text(
+                context.l10n.notificationsNoHeaders,
+                style: TextStyle(color: context.mutedText),
+              ),
             )
           else
             for (var i = 0; i < _headers.length; i++) ...[
@@ -1140,7 +1206,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
       },
     );
     final deleteButton = IconButton(
-      tooltip: '删除请求头',
+      tooltip: context.l10n.notificationsDeleteHeader,
       onPressed: () {
         setState(() {
           _headers.removeWhere((item) => item.id == header.id);
@@ -1192,7 +1258,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
             ),
             const SizedBox(width: 8),
             Text(
-              'Body 模板',
+              context.l10n.notificationsBodyTemplate,
               style: TextStyle(color: context.secondaryText, fontSize: 14),
             ),
           ],
@@ -1253,10 +1319,10 @@ class _WebhookDialogState extends State<_WebhookDialog> {
         children: [
           Text(
             success
-                ? '发送成功 · HTTP ${result.status}'
+                ? context.l10n.notificationsSendSuccess(result.status)
                 : (result.error?.isNotEmpty == true
                     ? result.error!
-                    : '发送失败 · HTTP ${result.status}'),
+                    : context.l10n.notificationsSendFailed(result.status)),
             style: TextStyle(color: color, fontSize: 13),
           ),
           if (result.responseBody.isNotEmpty) ...[
@@ -1274,7 +1340,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
               tilePadding: EdgeInsets.zero,
               childrenPadding: EdgeInsets.zero,
               title: Text(
-                '实际请求体',
+                context.l10n.notificationsRenderedBody,
                 style: TextStyle(color: context.secondaryText, fontSize: 12),
               ),
               children: [
@@ -1308,8 +1374,12 @@ class _WebhookDialogState extends State<_WebhookDialog> {
       child: SwitchListTile(
         value: _enabled,
         onChanged: (value) => setState(() => _enabled = value),
-        title: const Text('启用'),
-        subtitle: Text(_enabled ? '开启' : '关闭'),
+        title: Text(context.l10n.notificationsEnabledSwitch),
+        subtitle: Text(
+          _enabled
+              ? context.l10n.notificationsEnable
+              : context.l10n.notificationsDisable,
+        ),
         activeThumbColor: AppColors.primary600,
         contentPadding: EdgeInsets.zero,
       ),
@@ -1341,22 +1411,22 @@ class _WebhookDialogState extends State<_WebhookDialog> {
                     onPressed: () => setState(() {
                       _events = _commonEvents();
                     }),
-                    child: const Text('常用'),
+                    child: Text(context.l10n.notificationsCommon),
                   ),
                   TextButton(
                     onPressed: () => setState(() {
                       _events = widget.events.map((event) => event.id).toSet();
                     }),
-                    child: const Text('全选'),
+                    child: Text(context.l10n.notificationsSelectAll),
                   ),
                   TextButton(
                     onPressed: () => setState(() => _events = <String>{}),
-                    child: const Text('清空'),
+                    child: Text(context.l10n.notificationsClear),
                   ),
                 ],
               );
               final title = Text(
-                '监听事件',
+                context.l10n.notificationsListeningEvents,
                 style: TextStyle(color: context.primaryText, fontSize: 15),
               );
               if (constraints.maxWidth < 440) {
@@ -1380,9 +1450,9 @@ class _WebhookDialogState extends State<_WebhookDialog> {
           const SizedBox(height: 12),
           TextField(
             controller: _filter,
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search_rounded),
-              hintText: '搜索事件',
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search_rounded),
+              hintText: context.l10n.notificationsSearchEvents,
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -1392,7 +1462,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
               padding: const EdgeInsets.symmetric(vertical: 24),
               child: Center(
                 child: Text(
-                  '没有匹配事件',
+                  context.l10n.notificationsNoMatchedEvents,
                   style: TextStyle(color: context.mutedText),
                 ),
               ),
@@ -1452,6 +1522,9 @@ class _WebhookEventToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final label = _notificationEventLabel(context, event.id, event.label);
+    final description =
+        _notificationEventDescription(context, event.id, event.description);
     final selectedBackground =
         context.isDark ? const Color(0xff172033) : AppColors.primary50;
     final selectedBorder =
@@ -1491,7 +1564,7 @@ class _WebhookEventToggle extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      event.label.isEmpty ? event.id : event.label,
+                      label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1502,7 +1575,7 @@ class _WebhookEventToggle extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      event.description.isEmpty ? event.id : event.description,
+                      description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

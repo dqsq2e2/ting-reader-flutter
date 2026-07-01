@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/locale.dart';
 import '../cards/book_card.dart';
 
 class DisplayFilterSortOption {
@@ -52,38 +53,40 @@ class DisplayFilterMenu extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const _DisplayFilterSection('排序方式'),
+            _DisplayFilterSection(context.localeText('排序方式', 'Sort')),
             for (final option in sortOptions)
               _DisplayFilterOption(
                 label: option.label,
                 selected: _sortSelected(option.value),
                 onTap: () => onSortChanged(option.value),
               ),
-            const _DisplayFilterSection('图标大小', topBorder: true),
+            _DisplayFilterSection(context.localeText('图标大小', 'Icon Size'),
+                topBorder: true),
             _DisplayFilterOption(
-              label: '大图标',
+              label: context.localeText('大图标', 'Large'),
               selected: iconSize == IconSizeSetting.large,
               onTap: () => onIconSizeChanged(IconSizeSetting.large),
             ),
             _DisplayFilterOption(
-              label: '中图标（默认）',
+              label: context.localeText('中图标（默认）', 'Medium (Default)'),
               selected: iconSize == IconSizeSetting.medium,
               onTap: () => onIconSizeChanged(IconSizeSetting.medium),
             ),
             _DisplayFilterOption(
-              label: '小图标',
+              label: context.localeText('小图标', 'Small'),
               selected: iconSize == IconSizeSetting.small,
               onTap: () => onIconSizeChanged(IconSizeSetting.small),
             ),
             if (coverShape != null && onCoverShapeChanged != null) ...[
-              const _DisplayFilterSection('封面形状', topBorder: true),
+              _DisplayFilterSection(context.localeText('封面形状', 'Cover Shape'),
+                  topBorder: true),
               _DisplayFilterOption(
-                label: '3:4 比例（默认）',
+                label: context.localeText('3:4 比例（默认）', '3:4 (Default)'),
                 selected: coverShape == CoverShape.rect,
                 onTap: () => onCoverShapeChanged!(CoverShape.rect),
               ),
               _DisplayFilterOption(
-                label: '1:1 方形',
+                label: context.localeText('1:1 方形', '1:1 Square'),
                 selected: coverShape == CoverShape.square,
                 onTap: () => onCoverShapeChanged!(CoverShape.square),
               ),
@@ -95,12 +98,6 @@ class DisplayFilterMenu extends StatelessWidget {
   }
 
   bool _sortSelected(String optionValue) {
-    if (optionValue == 'createdAt') {
-      return sortBy == 'createdAt' || sortBy == 'created_at';
-    }
-    if (optionValue == 'updatedAt') {
-      return sortBy == 'updatedAt' || sortBy == 'updated_at';
-    }
     return sortBy == optionValue;
   }
 }
@@ -145,8 +142,9 @@ class _DisplayFilterOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color:
-          selected ? AppColors.primary50.withValues(alpha: 0.7) : Colors.transparent,
+      color: selected
+          ? AppColors.primary50.withValues(alpha: 0.7)
+          : Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Padding(

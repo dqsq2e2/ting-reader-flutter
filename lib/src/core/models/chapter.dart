@@ -26,17 +26,15 @@ class Chapter {
   factory Chapter.fromJson(Map<String, dynamic> json) {
     return Chapter(
       id: readString(json, 'id') ?? '',
-      bookId: readString(json, 'book_id', 'bookId') ?? '',
-      title: readString(json, 'title') ?? '未命名章节',
+      bookId: readString(json, 'book_id') ?? '',
+      title: readString(json, 'title') ?? '',
       path: readString(json, 'path') ?? '',
       duration: readInt(json, 'duration') ?? 0,
-      chapterIndex: readInt(json, 'chapter_index', 'chapterIndex') ?? 0,
-      isExtra: (readInt(json, 'is_extra', 'isExtra') ?? 0) != 0 ||
-          (readBool(json, 'is_extra', 'isExtra') ?? false),
-      progressPosition:
-          readDouble(json, 'progress_position', 'progressPosition'),
-      progressUpdatedAt:
-          readString(json, 'progress_updated_at', 'progressUpdatedAt'),
+      chapterIndex: readInt(json, 'chapter_index') ?? 0,
+      isExtra: (readInt(json, 'is_extra') ?? 0) != 0 ||
+          (readBool(json, 'is_extra') ?? false),
+      progressPosition: readDouble(json, 'progress_position'),
+      progressUpdatedAt: readString(json, 'progress_updated_at'),
     );
   }
 
@@ -87,11 +85,11 @@ class ChaptersPage {
     return ChaptersPage(
       chapters: asMapList(json['chapters']).map(Chapter.fromJson).toList(),
       total: readInt(json, 'total') ?? 0,
-      mainTotal: readInt(json, 'main_total', 'mainTotal') ?? 0,
-      extraTotal: readInt(json, 'extra_total', 'extraTotal') ?? 0,
+      mainTotal: readInt(json, 'main_total') ?? 0,
+      extraTotal: readInt(json, 'extra_total') ?? 0,
       offset: readInt(json, 'offset') ?? 0,
       limit: readInt(json, 'limit') ?? 100,
-      chapterType: readString(json, 'chapter_type', 'chapterType') ?? 'main',
+      chapterType: readString(json, 'chapter_type') ?? 'main',
       order: readString(json, 'order') ?? 'asc',
     );
   }

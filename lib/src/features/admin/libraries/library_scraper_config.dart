@@ -4,14 +4,12 @@ class _ScraperConfigTab {
   const _ScraperConfigTab({
     required this.id,
     required this.label,
-    required this.camelKey,
-    required this.snakeKey,
+    required this.key,
   });
 
   final String id;
   final String label;
-  final String camelKey;
-  final String snakeKey;
+  final String key;
 }
 
 class _ScraperSourceChoice {
@@ -38,8 +36,8 @@ class _ScraperSource {
   factory _ScraperSource.fromJson(Map<String, dynamic> json) {
     return _ScraperSource(
       id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? '未命名插件',
-      autoScrape: json['auto_scrape'] == true || json['autoScrape'] == true,
+      name: json['name']?.toString() ?? 'Unnamed plugin',
+      autoScrape: json['auto_scrape'] == true,
     );
   }
 }
@@ -68,52 +66,45 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
   static const _tabs = [
     _ScraperConfigTab(
       id: 'priority',
-      label: '优先级',
-      camelKey: 'metadataPriority',
-      snakeKey: 'metadata_priority',
+      label: 'priority',
+      key: 'metadata_priority',
     ),
     _ScraperConfigTab(
       id: 'default',
-      label: '默认',
-      camelKey: 'defaultSources',
-      snakeKey: 'default_sources',
+      label: 'default',
+      key: 'default_sources',
     ),
     _ScraperConfigTab(
       id: 'cover',
-      label: '封面',
-      camelKey: 'coverSources',
-      snakeKey: 'cover_sources',
+      label: 'cover',
+      key: 'cover_sources',
     ),
     _ScraperConfigTab(
       id: 'intro',
-      label: '简介',
-      camelKey: 'introSources',
-      snakeKey: 'intro_sources',
+      label: 'intro',
+      key: 'intro_sources',
     ),
     _ScraperConfigTab(
       id: 'author',
-      label: '作者',
-      camelKey: 'authorSources',
-      snakeKey: 'author_sources',
+      label: 'author',
+      key: 'author_sources',
     ),
     _ScraperConfigTab(
       id: 'narrator',
-      label: '演播',
-      camelKey: 'narratorSources',
-      snakeKey: 'narrator_sources',
+      label: 'narrator',
+      key: 'narrator_sources',
     ),
     _ScraperConfigTab(
       id: 'tags',
-      label: '标签',
-      camelKey: 'tagsSources',
-      snakeKey: 'tags_sources',
+      label: 'tags',
+      key: 'tags_sources',
     ),
   ];
 
   static const _prioritySources = [
-    _ScraperSourceChoice(id: 'local_metadata', name: '本地元数据 (JSON/NFO)'),
-    _ScraperSourceChoice(id: 'audio_metadata', name: '音频文件元数据 (ID3)'),
-    _ScraperSourceChoice(id: 'scraper', name: '刮削器 (Plugins)'),
+    _ScraperSourceChoice(id: 'local_metadata', name: 'local_metadata'),
+    _ScraperSourceChoice(id: 'audio_metadata', name: 'audio_metadata'),
+    _ScraperSourceChoice(id: 'scraper', name: 'scraper'),
   ];
 
   Map<String, dynamic> _config() {
@@ -126,16 +117,15 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
     return Map<String, dynamic>.from(_defaultLibraryScraperConfig);
   }
 
-  bool _boolValue(String camel, String snake, bool fallback) {
+  bool _boolValue(String key, bool fallback) {
     final config = _config();
-    final value = config[camel] ?? config[snake];
+    final value = config[key];
     return value is bool ? value : fallback;
   }
 
-  void _setBool(String camel, String snake, bool value) {
+  void _setBool(String key, bool value) {
     final config = _config();
-    config[camel] = value;
-    config.remove(snake);
+    config[key] = value;
     widget.controller.text = _prettyLibraryJson(config);
     setState(() {});
   }
@@ -145,7 +135,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
 
   List<String> _stringListFor(_ScraperConfigTab tab) {
     final config = _config();
-    final raw = config[tab.camelKey] ?? config[tab.snakeKey];
+    final raw = config[tab.key];
     if (raw is List) return raw.map((value) => value.toString()).toList();
     if (tab.id == 'priority') {
       return _prioritySources.map((source) => source.id).toList();
@@ -155,8 +145,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
 
   void _setListFor(_ScraperConfigTab tab, List<String> ids) {
     final config = _config();
-    config[tab.camelKey] = ids;
-    config.remove(tab.snakeKey);
+    config[tab.key] = ids;
     widget.controller.text = _prettyLibraryJson(config);
     setState(() {});
   }
@@ -199,16 +188,12 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final nfo = _boolValue('nfoWritingEnabled', 'nfo_writing_enabled', false);
-    final metadata =
-        _boolValue('metadataWritingEnabled', 'metadata_writing_enabled', false);
-    final preferTitle =
-        _boolValue('preferAudioTitle', 'prefer_audio_title', true);
-    final extractCover =
-        _boolValue('extractAudioCover', 'extract_audio_cover', true);
-    final watcherEnabled =
-        !_boolValue('disableWatcher', 'disable_watcher', false);
-    final cloudMode = _boolValue('cloudMode', 'cloud_mode', false);
+    final nfo = _boolValue('nfo_writing_enabled', false);
+    final metadata = _boolValue('metadata_writing_enabled', false);
+    final preferTitle = _boolValue('use_filename_as_title', true);
+    final extractCover = _boolValue('extract_audio_cover', true);
+    final watcherEnabled = !_boolValue('disable_watcher', false);
+    final cloudMode = _boolValue('cloud_mode', false);
     final tab = _currentTab;
     final choices = _choicesFor(tab);
     final activeIds = _stringListFor(tab)
@@ -225,10 +210,15 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
       children: [
         Row(
           children: [
-            const Expanded(child: DialogLabel('刮削源配置', fontSize: 14)),
+            Expanded(
+                child: DialogLabel(
+                    context.localeText('刮削源配置', 'Scraper Sources'),
+                    fontSize: 14)),
             TextButton(
               onPressed: () => setState(() => _showJson = !_showJson),
-              child: Text(_showJson ? '切换至简易模式' : '切换至高级模式 (JSON)'),
+              child: Text(_showJson
+                  ? context.localeText('切换至简易模式', 'Simple Mode')
+                  : context.localeText('切换至高级模式 (JSON)', 'Advanced (JSON)')),
             ),
           ],
         ),
@@ -239,7 +229,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
             maxLines: 8,
             style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
             decoration: const InputDecoration(
-              hintText: '{"defaultSources": ["xiimalaya-scraper-js"]}',
+              hintText: '{"default_sources": ["ximalaya-scraper-wasm"]}',
             ),
           )
         else
@@ -253,54 +243,58 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
             child: Column(
               children: [
                 _ConfigSwitchRow(
-                  title: '启用 NFO 元数据写入',
-                  subtitle: '刮削或修改元数据时同步写入 book.nfo 文件',
+                  title:
+                      context.localeText('启用 NFO 元数据写入', 'Write NFO metadata'),
+                  subtitle: context.localeText('刮削或修改元数据时同步写入 book.nfo 文件',
+                      'Write book.nfo when scraping or editing metadata'),
                   value: nfo,
-                  onChanged: (value) => _setBool(
-                      'nfoWritingEnabled', 'nfo_writing_enabled', value),
+                  onChanged: (value) => _setBool('nfo_writing_enabled', value),
                 ),
                 _ConfigSwitchRow(
-                  title: '写入 metadata.json',
-                  subtitle: '生成 Audiobookshelf 兼容的 metadata.json 文件',
+                  title: context.localeText(
+                      '写入 metadata.json', 'Write metadata.json'),
+                  subtitle: context.localeText(
+                      '生成 Audiobookshelf 兼容的 metadata.json 文件',
+                      'Generate an Audiobookshelf-compatible metadata.json file'),
                   value: metadata,
-                  onChanged: (value) => _setBool(
-                    'metadataWritingEnabled',
-                    'metadata_writing_enabled',
-                    value,
-                  ),
+                  onChanged: (value) =>
+                      _setBool('metadata_writing_enabled', value),
                 ),
                 _ConfigSwitchRow(
-                  title: '优先使用文件/文件夹名作为标题',
-                  subtitle: '忽略优先级配置，强制使用路径名称',
+                  title: context.localeText(
+                      '优先使用文件/文件夹名作为标题', 'Prefer file/folder title'),
+                  subtitle: context.localeText('忽略优先级配置，强制使用路径名称',
+                      'Ignore source priority and use the path name'),
                   value: preferTitle,
                   onChanged: (value) =>
-                      _setBool('preferAudioTitle', 'prefer_audio_title', value),
+                      _setBool('use_filename_as_title', value),
                 ),
                 _ConfigSwitchRow(
-                  title: '提取音频封面',
-                  subtitle: '系统或插件将尝试从音频文件中提取封面',
+                  title: context.localeText('提取音频封面', 'Extract audio cover'),
+                  subtitle: context.localeText('系统或插件将尝试从音频文件中提取封面',
+                      'System or plugins will try to extract cover art from audio files'),
                   value: extractCover,
-                  onChanged: (value) => _setBool(
-                      'extractAudioCover', 'extract_audio_cover', value),
+                  onChanged: (value) => _setBool('extract_audio_cover', value),
                 ),
                 if (widget.libraryType == 'local')
                   _ConfigSwitchRow(
-                    title: '自动检测媒体库变化',
-                    subtitle: '监控目录变化并自动触发扫描',
+                    title: context.localeText(
+                        '自动检测媒体库变化', 'Watch library changes'),
+                    subtitle: context.localeText('监控目录变化并自动触发扫描',
+                        'Monitor folders and trigger scans automatically'),
                     value: watcherEnabled,
                     onChanged: (value) => _setBool(
-                      'disableWatcher',
                       'disable_watcher',
                       !value,
                     ),
                   ),
                 _ConfigSwitchRow(
-                  title: '网盘模式（减少远程音频探测）',
-                  subtitle: '优先使用元数据文件，减少远程音频读取',
+                  title: context.localeText('网盘模式（减少远程音频探测）', 'Cloud mode'),
+                  subtitle: context.localeText('优先使用元数据文件，减少远程音频读取',
+                      'Prefer metadata files and reduce remote audio reads'),
                   value: cloudMode,
                   last: true,
-                  onChanged: (value) =>
-                      _setBool('cloudMode', 'cloud_mode', value),
+                  onChanged: (value) => _setBool('cloud_mode', value),
                 ),
                 const SizedBox(height: 16),
                 _ScraperTabBar(
@@ -340,6 +334,42 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
   }
 }
 
+String _scraperTabLabel(BuildContext context, _ScraperConfigTab tab) {
+  switch (tab.id) {
+    case 'priority':
+      return context.localeText('优先级', 'Priority');
+    case 'default':
+      return context.localeText('默认', 'Default');
+    case 'cover':
+      return context.localeText('封面', 'Cover');
+    case 'intro':
+      return context.localeText('简介', 'Description');
+    case 'author':
+      return context.localeText('作者', 'Author');
+    case 'narrator':
+      return context.localeText('演播', 'Narrator');
+    case 'tags':
+      return context.localeText('标签', 'Tags');
+    default:
+      return tab.label;
+  }
+}
+
+String _scraperSourceChoiceName(
+    BuildContext context, _ScraperSourceChoice source) {
+  switch (source.id) {
+    case 'local_metadata':
+      return context.localeText(
+          '本地元数据 (JSON/NFO)', 'Local metadata (JSON/NFO)');
+    case 'audio_metadata':
+      return context.localeText('音频文件元数据 (ID3)', 'Audio metadata (ID3)');
+    case 'scraper':
+      return context.localeText('刮削器 (Plugins)', 'Scraper (Plugins)');
+    default:
+      return source.name;
+  }
+}
+
 class _ScraperTabBar extends StatelessWidget {
   const _ScraperTabBar({
     required this.tabs,
@@ -364,7 +394,7 @@ class _ScraperTabBar extends StatelessWidget {
           children: [
             for (final tab in tabs) ...[
               _ScraperTabButton(
-                label: tab.label,
+                label: _scraperTabLabel(context, tab),
                 selected: activeTab == tab.id,
                 onPressed: () => onChanged(tab.id),
               ),
@@ -431,10 +461,14 @@ class _ScraperSourceGrid extends StatelessWidget {
       builder: (context, constraints) {
         final split = constraints.maxWidth >= 520 && tab.id != 'priority';
         final active = _ScraperSourceColumn(
-          title: tab.id == 'priority' ? '元数据来源优先级排序' : '已启用（按优先级排序）',
+          title: tab.id == 'priority'
+              ? context.localeText('元数据来源优先级排序', 'Metadata source priority')
+              : context.localeText('已启用（按优先级排序）', 'Enabled by priority'),
           count: activeSources.length,
-          emptyTitle: '暂无启用的源',
-          emptySubtitle: tab.id == 'priority' ? '' : '请从右侧添加',
+          emptyTitle: context.localeText('暂无启用的源', 'No enabled sources'),
+          emptySubtitle: tab.id == 'priority'
+              ? ''
+              : context.localeText('请从右侧添加', 'Add from the right'),
           child: Column(
             children: [
               for (var i = 0; i < activeSources.length; i++)
@@ -452,10 +486,10 @@ class _ScraperSourceGrid extends StatelessWidget {
         );
 
         final available = _ScraperSourceColumn(
-          title: '可用插件',
+          title: context.localeText('可用插件', 'Available plugins'),
           count: availableSources.length,
           mutedCount: true,
-          emptyTitle: '没有更多可用插件',
+          emptyTitle: context.localeText('没有更多可用插件', 'No more plugins'),
           emptySubtitle: '',
           child: Column(
             children: [
@@ -610,7 +644,7 @@ class _ActiveScraperSourceRow extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              source.name,
+              _scraperSourceChoiceName(context, source),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
@@ -667,7 +701,7 @@ class _AvailableScraperSourceRow extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                source.name,
+                _scraperSourceChoiceName(context, source),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:

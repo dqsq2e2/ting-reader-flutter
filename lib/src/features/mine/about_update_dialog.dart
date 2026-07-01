@@ -4,27 +4,30 @@ import '../../core/models/models.dart';
 import '../../core/services/client_update_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/external_links.dart';
+import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/common/common_widgets.dart';
 
-const _serverUpdateGuideUrl = 'https://www.tingreader.cn/guide/update';
-
-class AboutUpdateDialog extends StatefulWidget {
-  const AboutUpdateDialog({
+class AboutPage extends StatefulWidget {
+  const AboutPage({
     super.key,
     required this.backendVersion,
+    required this.onBack,
   });
 
   final String? backendVersion;
+  final VoidCallback onBack;
 
   @override
-  State<AboutUpdateDialog> createState() => _AboutUpdateDialogState();
+  State<AboutPage> createState() => _AboutPageState();
 }
 
-class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
+class _AboutPageState extends State<AboutPage> {
   final _clientUpdateService = ClientUpdateService();
 
+  String? _backendVersion;
   String _clientVersion = 'Unknown';
+  bool _loadingBackend = false;
   bool _checkingBackend = false;
   bool _checkingClient = false;
   bool _downloadingClient = false;
@@ -33,7 +36,34 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
   @override
   void initState() {
     super.initState();
+    _backendVersion = widget.backendVersion;
     _loadClientVersion();
+    if ((_backendVersion ?? '').trim().isEmpty) {
+      _loadBackendVersion();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant AboutPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.backendVersion != oldWidget.backendVersion &&
+        (widget.backendVersion ?? '').trim().isNotEmpty) {
+      _backendVersion = widget.backendVersion;
+    }
+  }
+
+  Future<void> _loadBackendVersion() async {
+    if (_loadingBackend) return;
+    setState(() => _loadingBackend = true);
+    try {
+      final res = await AppScope.appOf(context).api.get('/api/health');
+      final data = asMap(res.data);
+      if (mounted) {
+        setState(() => _backendVersion = data['version']?.toString());
+      }
+    } finally {
+      if (mounted) setState(() => _loadingBackend = false);
+    }
   }
 
   Future<void> _loadClientVersion() async {
@@ -41,7 +71,7 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
       final version = await _clientUpdateService.currentVersionLabel();
       if (mounted) setState(() => _clientVersion = version);
     } catch (_) {
-      // Best effort only; the dialog should still be usable.
+      // Best effort only; the page should still be usable.
     }
   }
 
@@ -53,24 +83,30 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
           await AppScope.appOf(context).api.get('/api/system/check-update');
       final data = asMap(res.data);
       final remoteVersion = _firstString(data, const ['version']);
-      final currentVersion = _normalizeVersion(widget.backendVersion ?? '');
+      final currentVersion = _normalizeVersion(_backendVersion ?? '');
 
       if (remoteVersion.isNotEmpty &&
           _normalizeVersion(remoteVersion) != currentVersion) {
         if (!mounted) return;
         final open = await _showUpdateDialog(
-          title: '发现服务端新版本 ${_versionLabel(remoteVersion)}',
+          title: context.localeText(
+            '发现服务端新版本 ${_versionLabel(context, remoteVersion)}',
+            'Server update ${_versionLabel(context, remoteVersion)} available',
+          ),
           date: _firstString(data, const ['date', 'published_at']),
-          actionLabel: '前往官网更新',
+          actionLabel: context.localeText('前往官网更新', 'Open Guide'),
         );
         if (open == true) {
-          await openExternalUrl(_serverUpdateGuideUrl);
+          await openExternalUrl(serverUpdateGuideUrl);
         }
       } else {
-        _showSnack('服务端已是最新版本');
+        _showLocalizedSnack('服务端已是最新版本', 'Server is up to date');
       }
     } catch (error) {
-      _showSnack('检查服务端更新失败: $error');
+      _showLocalizedSnack(
+        '检查服务端更新失败: $error',
+        'Failed to check server update: $error',
+      );
     } finally {
       if (mounted) setState(() => _checkingBackend = false);
     }
@@ -82,22 +118,30 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
     try {
       final latest = await _clientUpdateService.fetchLatest();
       if (latest == null || !latest.hasDownload) {
-        _showSnack('当前平台请前往官网下载客户端');
+        _showLocalizedSnack(
+          '当前平台请前往官网下载客户端',
+          'Download the client from the website for this platform',
+        );
         await _clientUpdateService.openDownloadPage();
         return;
       }
 
       final current = await _clientUpdateService.currentVersion();
       if (!_clientUpdateService.isNewer(latest.version, current)) {
-        _showSnack('客户端已是最新版本');
+        _showLocalizedSnack('客户端已是最新版本', 'Client is up to date');
         return;
       }
 
       if (!mounted) return;
       final confirm = await _showUpdateDialog(
-        title: '发现客户端新版本 ${_versionLabel(latest.version)}',
+        title: context.localeText(
+          '发现客户端新版本 ${_versionLabel(context, latest.version)}',
+          'Client update ${_versionLabel(context, latest.version)} available',
+        ),
         date: latest.date,
-        actionLabel: _clientUpdateService.updateActionLabel,
+        actionLabel: _clientUpdateService.canInstallDirectly
+            ? context.localeText('下载安装', 'Download')
+            : context.localeText('前往浏览器下载', 'Open in Browser'),
       );
       if (confirm != true) return;
 
@@ -119,7 +163,10 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
       if (mounted) setState(() => _downloadingClient = false);
     } catch (error) {
       if (mounted) setState(() => _downloadingClient = false);
-      _showSnack('检查客户端更新失败: $error');
+      _showLocalizedSnack(
+        '检查客户端更新失败: $error',
+        'Failed to check client update: $error',
+      );
     } finally {
       if (mounted) setState(() => _checkingClient = false);
     }
@@ -178,11 +225,13 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                   if (releaseDate.isNotEmpty) ...[
                     const SizedBox(height: 14),
                     Text(
-                      '发布时间：$releaseDate',
+                      context.localeText(
+                        '发布时间：$releaseDate',
+                        'Published: $releaseDate',
+                      ),
                       style: TextStyle(
                         color: context.mutedText,
                         fontSize: 16,
-                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -202,10 +251,10 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text(
-                            '暂不更新',
+                          child: Text(
+                            context.localeText('暂不更新', 'Later'),
                             maxLines: 1,
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                             ),
@@ -275,122 +324,268 @@ class _AboutUpdateDialogState extends State<AboutUpdateDialog> {
     );
   }
 
+  void _showLocalizedSnack(String zh, String en) {
+    if (!mounted) return;
+    _showSnack(context.localeText(zh, en));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 430;
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: compact ? 22 : 32,
-        vertical: 24,
-      ),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 392),
-        child: TingCard(
-          radius: 28,
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 28 : 32,
-            vertical: compact ? 30 : 34,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                'assets/images/logo.png',
-                width: compact ? 74 : 78,
-                height: compact ? 74 : 78,
-              ),
-              const SizedBox(height: 22),
-              const Text(
-                '关于 Ting Reader',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 28),
-              _AboutVersionRow(
-                label: '服务端版本',
-                version: _versionLabel(widget.backendVersion ?? ''),
-                checking: _checkingBackend,
-                onCheckUpdate: _checkBackendUpdate,
-              ),
-              const SizedBox(height: 12),
-              _AboutVersionRow(
-                label: '客户端版本',
-                version: _clientVersion.isEmpty ? '未知' : _clientVersion,
-                checking: _checkingClient,
-                onCheckUpdate: _checkClientUpdate,
-              ),
-              if (_downloadingClient) ...[
-                const SizedBox(height: 16),
-                LinearProgressIndicator(
-                  value: _clientDownloadProgress <= 0
-                      ? null
-                      : _clientDownloadProgress,
+    return PageListView(
+      onRefresh: _loadBackendVersion,
+      children: [
+        AppBackButton(onPressed: widget.onBack),
+        const SizedBox(height: 28),
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                PageHeaderRow(
+                  icon: Icons.info_outline_rounded,
+                  title: context.localeText(
+                    '关于 Ting Reader',
+                    'About Ting Reader',
+                  ),
+                  subtitle: context.localeText(
+                    '官方网站、法律协议、更新日志，以及当前服务端和客户端版本。',
+                    'Official website, legal documents, changelog, and current server and client versions.',
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  _clientDownloadProgress <= 0
-                      ? '准备下载...'
-                      : '${(_clientDownloadProgress * 100).clamp(0, 100).round()}%',
-                  style: TextStyle(color: context.mutedText, fontSize: 12),
-                ),
-              ],
-              const SizedBox(height: 24),
-              InkWell(
-                onTap: () => openExternalUrl(tingReaderWebsiteUrl),
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 10,
+                const SizedBox(height: 24),
+                TingCard(
+                  radius: 24,
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
                     children: [
-                      Text(
-                        '官网地址',
-                        style: TextStyle(
-                          color: context.mutedText,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w400,
-                        ),
+                      Image.asset(
+                        'assets/images/logo.png',
+                        width: 78,
+                        height: 78,
                       ),
+                      const SizedBox(height: 18),
                       const Text(
-                        'www.tingreader.cn',
+                        'Ting Reader',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
-                          color: AppColors.primary600,
-                          fontSize: 16,
+                          fontSize: 26,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
+                      const SizedBox(height: 22),
+                      _AboutVersionRow(
+                        label: context.localeText('服务端版本', 'Server Version'),
+                        version: _loadingBackend
+                            ? context.localeText('加载中...', 'Loading...')
+                            : _versionLabel(context, _backendVersion ?? ''),
+                        checking: _checkingBackend,
+                        onCheckUpdate: _checkBackendUpdate,
+                      ),
+                      const SizedBox(height: 12),
+                      _AboutVersionRow(
+                        label: context.localeText('客户端版本', 'Client Version'),
+                        version: _clientVersion.isEmpty
+                            ? context.localeText('未知', 'Unknown')
+                            : _clientVersion,
+                        checking: _checkingClient,
+                        onCheckUpdate: _checkClientUpdate,
+                      ),
+                      if (_downloadingClient) ...[
+                        const SizedBox(height: 16),
+                        LinearProgressIndicator(
+                          value: _clientDownloadProgress <= 0
+                              ? null
+                              : _clientDownloadProgress,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _clientDownloadProgress <= 0
+                              ? context.localeText(
+                                  '准备下载...',
+                                  'Preparing download...',
+                                )
+                              : '${(_clientDownloadProgress * 100).clamp(0, 100).round()}%',
+                          style:
+                              TextStyle(color: context.mutedText, fontSize: 12),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 26),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: context.isDark
-                        ? AppColors.slate100
-                        : AppColors.slate700,
-                    backgroundColor: context.isDark
-                        ? AppColors.slate800
-                        : AppColors.slate100,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                const SizedBox(height: 16),
+                _AboutLinksPanel(
+                  links: [
+                    _AboutLink(
+                      icon: Icons.public_rounded,
+                      label: context.localeText('官方网站', 'Official Website'),
+                      value: tingReaderWebsiteUrl,
+                      url: tingReaderWebsiteUrl,
+                      iconColor: Colors.blue.shade600,
+                      iconBackground: Colors.blue.shade50,
                     ),
-                  ),
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text(
-                    '关闭',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
+                    _AboutLink(
+                      icon: Icons.description_outlined,
+                      label: context.localeText('用户协议', 'User Agreement'),
+                      value: context.localeText(
+                        '使用许可与免责声明',
+                        'License and disclaimer',
+                      ),
+                      url: userAgreementUrl,
+                      iconColor: Colors.indigo.shade500,
+                      iconBackground: Colors.indigo.shade50,
+                    ),
+                    _AboutLink(
+                      icon: Icons.privacy_tip_outlined,
+                      label: context.localeText('隐私协议', 'Privacy Policy'),
+                      value: context.localeText(
+                        '个人信息与隐私说明',
+                        'Personal information and privacy',
+                      ),
+                      url: privacyPolicyUrl,
+                      iconColor: Colors.green.shade600,
+                      iconBackground: const Color(0xFFEAFBF3),
+                    ),
+                    _AboutLink(
+                      icon: Icons.history_rounded,
+                      label: context.localeText('更新日志', 'Changelog'),
+                      value: context.localeText(
+                        '版本迭代与修复记录',
+                        'Versions and fixes',
+                      ),
+                      url: changelogUrl,
+                      iconColor: Colors.orange.shade600,
+                      iconBackground: Colors.orange.shade50,
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                const SafeBottomSpacer(),
+              ],
+            ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AboutLink {
+  const _AboutLink({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.url,
+    required this.iconColor,
+    required this.iconBackground,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final String url;
+  final Color iconColor;
+  final Color iconBackground;
+}
+
+class _AboutLinksPanel extends StatelessWidget {
+  const _AboutLinksPanel({required this.links});
+
+  final List<_AboutLink> links;
+
+  @override
+  Widget build(BuildContext context) {
+    return TingCard(
+      radius: 20,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            context.localeText('官方网站', 'Official Website'),
+            style: const TextStyle(
+              color: AppColors.primary600,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 16),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 560 ? 2 : 1;
+              final width =
+                  (constraints.maxWidth - (columns - 1) * 16) / columns;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 18,
+                children: [
+                  for (final link in links)
+                    SizedBox(
+                      width: width,
+                      child: _AboutLinkTile(link: link),
+                    ),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutLinkTile extends StatelessWidget {
+  const _AboutLinkTile({required this.link});
+
+  final _AboutLink link;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => openExternalUrl(link.url),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: context.isDark
+                    ? link.iconColor.withValues(alpha: 0.18)
+                    : link.iconBackground,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(link.icon, color: link.iconColor, size: 23),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    link.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    link.value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: context.mutedText, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.slate300,
+              size: 18,
+            ),
+          ],
         ),
       ),
     );
@@ -413,8 +608,7 @@ class _AboutVersionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 430;
-    final labelWidth = compact ? 86.0 : 92.0;
-    final actionWidth = compact ? 74.0 : 82.0;
+    final labelWidth = compact ? 86.0 : 104.0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -432,8 +626,7 @@ class _AboutVersionRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: context.mutedText,
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
+                fontSize: 14,
               ),
             ),
           ),
@@ -444,33 +637,21 @@ class _AboutVersionRow extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w400),
+              style: const TextStyle(fontSize: 15),
             ),
           ),
           const SizedBox(width: 12),
-          SizedBox(
-            width: actionWidth,
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: InkWell(
-                onTap: checking ? null : onCheckUpdate,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                  child: Text(
-                    checking ? '检查中...' : '检查更新',
-                    maxLines: 1,
-                    overflow: TextOverflow.visible,
-                    style: TextStyle(
-                      color:
-                          checking ? context.mutedText : AppColors.primary600,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                    ),
-                  ),
-                ),
-              ),
+          TextButton(
+            onPressed: checking ? null : onCheckUpdate,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(72, 36),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(
+              checking
+                  ? context.localeText('检查中...', 'Checking')
+                  : context.localeText('检查更新', 'Check'),
+              maxLines: 1,
             ),
           ),
         ],
@@ -493,9 +674,11 @@ String _firstString(
   return fallback;
 }
 
-String _versionLabel(String raw) {
+String _versionLabel(BuildContext context, String raw) {
   final value = raw.trim();
-  if (value.isEmpty || value.toLowerCase() == 'unknown') return '未知';
+  if (value.isEmpty || value.toLowerCase() == 'unknown') {
+    return context.localeText('未知', 'Unknown');
+  }
   return value.toLowerCase().startsWith('v') ? value : 'v$value';
 }
 

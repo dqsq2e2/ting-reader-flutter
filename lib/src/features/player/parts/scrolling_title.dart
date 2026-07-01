@@ -13,7 +13,6 @@ class _ScrollingPlayerTitle extends StatefulWidget {
   State<_ScrollingPlayerTitle> createState() => _ScrollingPlayerTitleState();
 }
 
-
 class _ScrollingPlayerTitleState extends State<_ScrollingPlayerTitle>
     with SingleTickerProviderStateMixin {
   static const _gap = 44.0;
@@ -101,5 +100,3 @@ class _ScrollingPlayerTitleState extends State<_ScrollingPlayerTitle>
     );
   }
 }
-
-

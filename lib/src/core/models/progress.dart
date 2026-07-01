@@ -30,16 +30,16 @@ class ProgressItem {
   factory ProgressItem.fromJson(Map<String, dynamic> json) {
     return ProgressItem(
       id: readString(json, 'id') ?? '',
-      bookId: readString(json, 'book_id', 'bookId') ?? '',
-      chapterId: readString(json, 'chapter_id', 'chapterId'),
+      bookId: readString(json, 'book_id') ?? '',
+      chapterId: readString(json, 'chapter_id'),
       position: readDouble(json, 'position') ?? 0,
       duration: readDouble(json, 'duration') ?? 0,
-      updatedAt: readString(json, 'updated_at', 'updatedAt'),
-      bookTitle: readString(json, 'book_title', 'bookTitle'),
-      chapterTitle: readString(json, 'chapter_title', 'chapterTitle'),
-      coverUrl: readString(json, 'cover_url', 'coverUrl'),
-      libraryId: readString(json, 'library_id', 'libraryId'),
-      chapterDuration: readInt(json, 'chapter_duration', 'chapterDuration'),
+      updatedAt: readString(json, 'updated_at'),
+      bookTitle: readString(json, 'book_title'),
+      chapterTitle: readString(json, 'chapter_title'),
+      coverUrl: readString(json, 'cover_url'),
+      libraryId: readString(json, 'library_id'),
+      chapterDuration: readInt(json, 'chapter_duration'),
     );
   }
 }

@@ -17,9 +17,7 @@ class ClientReleaseInfo {
   factory ClientReleaseInfo.fromJson(Map<String, dynamic> json) {
     return ClientReleaseInfo(
       version: json['version']?.toString() ?? '',
-      downloadUrl: json['downloadUrl']?.toString() ??
-          json['download_url']?.toString() ??
-          '',
+      downloadUrl: json['download_url']?.toString() ?? '',
       size: json['size']?.toString() ?? '',
       date: json['date']?.toString() ?? '',
     );
@@ -76,8 +74,6 @@ class ClientUpdateService {
     return defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.windows;
   }
-
-  String get updateActionLabel => canInstallDirectly ? '下载安装' : '前往浏览器下载';
 
   Future<void> openOrInstall(
     ClientReleaseInfo release, {

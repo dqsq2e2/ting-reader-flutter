@@ -29,14 +29,14 @@ class Series {
   factory Series.fromJson(Map<String, dynamic> json) {
     return Series(
       id: readString(json, 'id') ?? '',
-      libraryId: readString(json, 'library_id', 'libraryId') ?? '',
-      title: readString(json, 'title') ?? '未命名系列',
+      libraryId: readString(json, 'library_id') ?? '',
+      title: readString(json, 'title') ?? '',
       author: readString(json, 'author'),
       narrator: readString(json, 'narrator'),
       description: readString(json, 'description'),
-      coverUrl: readString(json, 'cover_url', 'coverUrl'),
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      updatedAt: readString(json, 'updated_at', 'updatedAt'),
+      coverUrl: readString(json, 'cover_url'),
+      createdAt: readString(json, 'created_at'),
+      updatedAt: readString(json, 'updated_at'),
       books: asMapList(json['books']).map(Book.fromJson).toList(),
     );
   }

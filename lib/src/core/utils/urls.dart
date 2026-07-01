@@ -25,7 +25,8 @@ String coverUrl(AppState appState,
     final params = <String, String>{
       'path': url,
       'library_id': libraryId,
-      if (url == 'embedded://first-chapter' && bookId != null) 'book_id': bookId,
+      if (url == 'embedded://first-chapter' && bookId != null)
+        'book_id': bookId,
       if (token != null && token.isNotEmpty) 'token': token,
     };
     return Uri.parse('$base/api/proxy/cover')

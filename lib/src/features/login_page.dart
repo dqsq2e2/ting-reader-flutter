@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../core/state/app_state.dart';
 import '../core/theme/app_theme.dart';
+import '../core/utils/external_links.dart';
+import '../core/utils/locale.dart';
 import '../shared/app_scope.dart';
 
 class LoginPage extends StatefulWidget {
@@ -37,7 +39,7 @@ class _LoginPageState extends State<LoginPage> {
     setState(() {
       _loading = true;
       _error = null;
-      _loginStage = '正在连接服务器...';
+      _loginStage = context.l10n.startupConnecting;
     });
 
     try {
@@ -95,7 +97,7 @@ class _LoginPageState extends State<LoginPage> {
       final status = error.response?.statusCode;
       final uri = error.requestOptions.uri.toString();
       final parts = <String>[
-        '登录失败',
+        context.l10n.authLoginFailed,
         if (status != null) 'HTTP $status',
         if (error.message != null && error.message!.isNotEmpty) error.message!,
         uri,
@@ -103,13 +105,14 @@ class _LoginPageState extends State<LoginPage> {
       return parts.join('：');
     }
     final text = error.toString().replaceFirst('Bad state: ', '');
-    return text.isEmpty ? '登录失败，请检查服务器、用户名和密码' : text;
+    return text.isEmpty ? context.l10n.authLoginFailedFallback : text;
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final profiles = appState.savedServers;
+    final l10n = context.l10n;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -125,8 +128,8 @@ class _LoginPageState extends State<LoginPage> {
                   border: Border.all(color: context.faintBorder),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 
-                        context.isDark ? 0.24 : 0.08,
+                      color: Colors.black.withValues(
+                        alpha: context.isDark ? 0.24 : 0.08,
                       ),
                       blurRadius: 30,
                       offset: const Offset(0, 18),
@@ -141,10 +144,10 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 22),
                     Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            '服务器',
-                            style: TextStyle(
+                            l10n.authServers,
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
                             ),
@@ -154,7 +157,7 @@ class _LoginPageState extends State<LoginPage> {
                           onPressed:
                               _loading ? null : () => _openServerDialog(),
                           icon: const Icon(Icons.add_rounded, size: 18),
-                          label: const Text('添加'),
+                          label: Text(l10n.authAdd),
                         ),
                       ],
                     ),
@@ -191,7 +194,7 @@ class _LoginPageState extends State<LoginPage> {
                     OutlinedButton.icon(
                       onPressed: _loading ? null : _offlineLogin,
                       icon: const Icon(Icons.cloud_off_rounded, size: 18),
-                      label: const Text('离线登录'),
+                      label: Text(l10n.authOfflineLogin),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
@@ -199,6 +202,8 @@ class _LoginPageState extends State<LoginPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    const _LegalLinks(),
                   ],
                 ),
               ),
@@ -230,11 +235,71 @@ class _LoginBrand extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          '您的私有有声书馆',
+          context.l10n.authTagline,
           textAlign: TextAlign.center,
           style: TextStyle(color: context.mutedText),
         ),
       ],
+    );
+  }
+}
+
+class _LegalLinks extends StatelessWidget {
+  const _LegalLinks();
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        Text(
+          context.localeText('登录即表示您已阅读并同意', 'By signing in, you agree to'),
+          style: TextStyle(color: context.mutedText, fontSize: 12),
+        ),
+        _LegalLink(
+          label: context.localeText('用户协议', 'User Agreement'),
+          url: userAgreementUrl,
+        ),
+        Text(
+          context.localeText('和', 'and'),
+          style: TextStyle(color: context.mutedText, fontSize: 12),
+        ),
+        _LegalLink(
+          label: context.localeText('隐私协议', 'Privacy Policy'),
+          url: privacyPolicyUrl,
+        ),
+      ],
+    );
+  }
+}
+
+class _LegalLink extends StatelessWidget {
+  const _LegalLink({required this.label, required this.url});
+
+  final String label;
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => openExternalUrl(url),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: AppColors.primary600,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            decoration: TextDecoration.underline,
+            decorationColor: AppColors.primary600,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -257,13 +322,13 @@ class _EmptyServerCard extends StatelessWidget {
         children: [
           Icon(Icons.dns_rounded, size: 30, color: context.mutedText),
           const SizedBox(height: 10),
-          const Text(
-            '还没有服务器',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          Text(
+            context.l10n.authNoServer,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(
-            '第一次添加服务器会保存并直接登录。',
+            context.l10n.authNoServerDescription,
             textAlign: TextAlign.center,
             style: TextStyle(color: context.mutedText, fontSize: 13),
           ),
@@ -271,7 +336,7 @@ class _EmptyServerCard extends StatelessWidget {
           ElevatedButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('添加服务器'),
+            label: Text(context.l10n.authAddServer),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary600,
               foregroundColor: Colors.white,
@@ -339,7 +404,7 @@ class _ServerProfileCard extends StatelessWidget {
                       profile.label.isNotEmpty
                           ? profile.label
                           : (profile.username.isEmpty
-                              ? '未命名服务器'
+                              ? context.l10n.authUnnamedServer
                               : profile.username),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -350,7 +415,7 @@ class _ServerProfileCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      _serverProfileSubtitle(profile),
+                      _serverProfileSubtitle(context, profile),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -363,7 +428,7 @@ class _ServerProfileCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: '编辑',
+                tooltip: context.l10n.authEdit,
                 onPressed: loading ? null : onEdit,
                 icon: const Icon(Icons.edit_rounded, size: 20),
               ),
@@ -449,6 +514,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final content = ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 520),
       child: Container(
@@ -460,8 +526,8 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
           boxShadow: widget.asPage
               ? [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 
-                      context.isDark ? 0.24 : 0.08,
+                    color: Colors.black.withValues(
+                      alpha: context.isDark ? 0.24 : 0.08,
                     ),
                     blurRadius: 30,
                     offset: const Offset(0, 18),
@@ -479,7 +545,9 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 children: [
                   Expanded(
                     child: Text(
-                      widget.profile == null ? '添加服务器' : '编辑服务器',
+                      widget.profile == null
+                          ? l10n.authAddServer
+                          : l10n.authEditServer,
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
@@ -487,7 +555,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                     ),
                   ),
                   IconButton(
-                    tooltip: widget.asPage ? '返回' : '关闭',
+                    tooltip: widget.asPage ? l10n.authBack : l10n.commonClose,
                     onPressed: () => Navigator.pop(context),
                     icon: Icon(
                       widget.asPage
@@ -500,45 +568,47 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
               const SizedBox(height: 14),
               _Field(
                 controller: _serverController,
-                label: '广域网地址',
-                hint: '例如: https://reader.example.com',
+                label: l10n.authWanAddress,
+                hint: l10n.authWanHint,
                 icon: Icons.public_rounded,
                 validator: (_) =>
-                    _hasAnyServerAddress ? null : '请填写广域网地址或局域网地址',
+                    _hasAnyServerAddress ? null : l10n.authRequireAnyServer,
               ),
               const SizedBox(height: 14),
               _Field(
                 controller: _localServerController,
-                label: '局域网地址',
-                hint: '例如: http://192.168.1.134:3000',
+                label: l10n.authLanAddress,
+                hint: l10n.authLanHint,
                 icon: Icons.router_rounded,
               ),
               const SizedBox(height: 12),
               _InfoBox(
                 icon: Icons.info_outline_rounded,
                 text: _hasAnyServerAddress
-                    ? '可同时填写两个地址；局域网内优先使用局域网地址。'
-                    : '至少填写一个地址。',
+                    ? l10n.authBothAddressHint
+                    : l10n.authOneAddressHint,
               ),
               const SizedBox(height: 14),
               _Field(
                 controller: _usernameController,
-                label: '用户名',
-                hint: '请输入用户名',
+                label: l10n.settingsUsername,
+                hint: l10n.authUsernameHint,
                 icon: Icons.person_rounded,
-                validator: (value) =>
-                    value == null || value.trim().isEmpty ? '请输入用户名' : null,
+                validator: (value) => value == null || value.trim().isEmpty
+                    ? l10n.authUsernameHint
+                    : null,
               ),
               const SizedBox(height: 14),
               _Field(
                 controller: _passwordController,
-                label: '密码',
-                hint: '请输入密码',
+                label: l10n.authPassword,
+                hint: l10n.authPasswordHint,
                 icon: Icons.lock_rounded,
                 obscureText: true,
                 onSubmitted: (_) => _submit(),
-                validator: (value) =>
-                    value == null || value.isEmpty ? '请输入密码' : null,
+                validator: (value) => value == null || value.isEmpty
+                    ? l10n.authPasswordHint
+                    : null,
               ),
               const SizedBox(height: 20),
               Row(
@@ -546,13 +616,13 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('取消'),
+                    child: Text(l10n.commonCancel),
                   ),
                   const SizedBox(width: 10),
                   ElevatedButton.icon(
                     onPressed: _submit,
                     icon: const Icon(Icons.login_rounded, size: 18),
-                    label: const Text('保存并登录'),
+                    label: Text(l10n.authSaveAndLogin),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary600,
                       foregroundColor: Colors.white,
@@ -616,13 +686,16 @@ class _ServerLoginDraft {
   final String password;
 }
 
-String _serverProfileSubtitle(SavedServerProfile profile) {
+String _serverProfileSubtitle(
+    BuildContext context, SavedServerProfile profile) {
+  final l10n = context.l10n;
   final parts = <String>[
-    if (profile.localServerUrl.isNotEmpty) '局域网 ${profile.localServerUrl}',
-    if (profile.serverUrl.isNotEmpty) '广域网 ${profile.serverUrl}',
+    if (profile.localServerUrl.isNotEmpty)
+      l10n.authLanPrefix(profile.localServerUrl),
+    if (profile.serverUrl.isNotEmpty) l10n.authWanPrefix(profile.serverUrl),
     if (profile.username.isNotEmpty) profile.username,
   ];
-  return parts.isEmpty ? '未保存地址' : parts.join(' · ');
+  return parts.isEmpty ? l10n.authNoSavedAddress : parts.join(' · ');
 }
 
 class _ErrorBox extends StatelessWidget {

@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
-import 'about_update_dialog.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
 
@@ -24,6 +24,7 @@ class MyPage extends StatefulWidget {
     required this.openPersonalization,
     required this.openNotifications,
     required this.openStatistics,
+    required this.openAbout,
     required this.openBook,
   });
 
@@ -33,6 +34,7 @@ class MyPage extends StatefulWidget {
   final VoidCallback openPersonalization;
   final VoidCallback openNotifications;
   final VoidCallback openStatistics;
+  final ValueChanged<String?> openAbout;
   final ValueChanged<String> openBook;
 
   @override
@@ -106,7 +108,7 @@ class _MyPageState extends State<MyPage> {
 
     if (nextUsername.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('用户名不能为空')),
+        SnackBar(content: Text(context.l10n.mineUsernameRequired)),
       );
       return;
     }
@@ -146,24 +148,19 @@ class _MyPageState extends State<MyPage> {
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('更新失败：$error')),
+        SnackBar(
+            content: Text(context.l10n.mineUpdateFailed(error.toString()))),
       );
     } finally {
       if (mounted) setState(() => _savingAccount = false);
     }
   }
 
-  void _showAboutDialog() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AboutUpdateDialog(backendVersion: _version),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
     final appState = AppScope.appOf(context);
+    final l10n = context.l10n;
     final downloadCount = AppScope.downloadOf(context).downloads.length;
     final user = appState.user;
     final username = user?.username ?? _usernameController.text;
@@ -201,32 +198,34 @@ class _MyPageState extends State<MyPage> {
                   onSave: _saveAccount,
                 ),
                 const SizedBox(height: 28),
-                const _MySectionTitle('我的内容'),
+                _MySectionTitle(l10n.mineMyContent),
                 const SizedBox(height: 12),
                 _EntrySection(
                   children: [
                     _EntryRow(
                       icon: Icons.history_rounded,
-                      title: '我的历史',
+                      title: l10n.mineHistoryTitle,
                       description: _recent.isEmpty
-                          ? '查看图文收听记录'
-                          : '最近听过 $recentBookCount 本 / ${_recent.length} 章，约 $listenedMinutes 分钟',
+                          ? l10n.mineHistoryEmptyDescription
+                          : l10n.mineHistoryDescription(
+                              recentBookCount, _recent.length, listenedMinutes),
                       color: AppColors.primary600,
                       backgroundColor: AppColors.primary50,
                       onTap: widget.openHistory,
                     ),
                     _EntryRow(
                       icon: Icons.favorite_border_rounded,
-                      title: '我的收藏',
-                      description: '收藏夹里有 ${_favorites.length} 部作品',
+                      title: l10n.mineFavoritesTitle,
+                      description:
+                          l10n.mineFavoritesDescription(_favorites.length),
                       color: Colors.red.shade500,
                       backgroundColor: Colors.red.shade50,
                       onTap: widget.openFavorites,
                     ),
                     _EntryRow(
                       icon: Icons.download_done_rounded,
-                      title: '我的下载',
-                      description: '已下载 $downloadCount 个音频',
+                      title: l10n.mineDownloadsTitle,
+                      description: l10n.mineDownloadsDescription(downloadCount),
                       color: Colors.orange.shade600,
                       backgroundColor: const Color(0xfffffbeb),
                       onTap: widget.openDownloads,
@@ -234,14 +233,14 @@ class _MyPageState extends State<MyPage> {
                   ],
                 ),
                 const SizedBox(height: 26),
-                const _MySectionTitle('设置与管理'),
+                _MySectionTitle(l10n.mineSettingsManagement),
                 const SizedBox(height: 12),
                 _EntrySection(
                   children: [
                     _EntryRow(
                       icon: Icons.settings_outlined,
-                      title: '个性化设置',
-                      description: '外观展示与播放偏好',
+                      title: l10n.settingsTitle,
+                      description: l10n.minePersonalizationDescription,
                       color: Colors.blue.shade600,
                       backgroundColor: Colors.blue.shade50,
                       onTap: widget.openPersonalization,
@@ -249,8 +248,8 @@ class _MyPageState extends State<MyPage> {
                     if (appState.isAdmin)
                       _EntryRow(
                         icon: Icons.notifications_none_rounded,
-                        title: '通知与事件',
-                        description: '配置 Webhook 监听登录、播放、入库和删除',
+                        title: l10n.mineNotificationTitle,
+                        description: l10n.mineNotificationDescription,
                         color: Colors.green.shade600,
                         backgroundColor: Colors.green.shade50,
                         onTap: widget.openNotifications,
@@ -258,8 +257,8 @@ class _MyPageState extends State<MyPage> {
                     if (appState.isAdmin)
                       _EntryRow(
                         icon: Icons.bar_chart_rounded,
-                        title: '数据统计',
-                        description: '用户使用情况与馆藏报表',
+                        title: l10n.mineStatisticsTitle,
+                        description: l10n.mineStatisticsDescription,
                         color: Colors.purple.shade600,
                         backgroundColor: Colors.purple.shade50,
                         onTap: widget.openStatistics,
@@ -268,9 +267,9 @@ class _MyPageState extends State<MyPage> {
                 ),
                 const SizedBox(height: 24),
                 TextButton.icon(
-                  onPressed: _showAboutDialog,
+                  onPressed: () => widget.openAbout(_version),
                   icon: const Icon(Icons.info_outline_rounded, size: 16),
-                  label: const Text('关于 Ting Reader'),
+                  label: Text(l10n.mineAboutTitle),
                   style: TextButton.styleFrom(
                     foregroundColor: context.mutedText,
                     textStyle: const TextStyle(
@@ -279,7 +278,7 @@ class _MyPageState extends State<MyPage> {
                   ),
                 ),
                 Text(
-                  '©2026 Ting Reader. 保留所有权利。',
+                  l10n.mineCopyright,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: context.mutedText.withValues(alpha: 0.62),
@@ -341,14 +340,12 @@ class _HistoryPageState extends State<HistoryPage> {
         api.get('/api/progress/recent'),
         api.get('/api/settings'),
       ]);
-      final settings = asMap(asMap(results[1].data)['settings_json'] ??
-          asMap(results[1].data)['settingsJson']);
+      final settings = asMap(asMap(results[1].data)['settings_json']);
       if (!mounted) return;
       setState(() {
         _items = asMapList(results[0].data).map(ProgressItem.fromJson).toList();
         _coverShape = coverShapeFromString(
-          (settings['bookshelf_cover_shape'] ?? settings['bookshelfCoverShape'])
-              ?.toString(),
+          settings['bookshelf_cover_shape']?.toString(),
         );
       });
     } finally {
@@ -370,7 +367,10 @@ class _HistoryPageState extends State<HistoryPage> {
       if (group == null) {
         map[item.bookId] = _HistoryBookGroup(
           bookId: item.bookId,
-          bookTitle: item.bookTitle ?? '未知书籍',
+          bookTitle: item.bookTitle ??
+              (mounted
+                  ? context.localeText('未知书籍', 'Unknown Book')
+                  : 'Unknown Book'),
           coverUrl: item.coverUrl,
           libraryId: item.libraryId,
           latest: item,
@@ -486,6 +486,7 @@ class _HistoryPageState extends State<HistoryPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
+    final l10n = context.l10n;
     final groups = _groups;
     final compactActions = MediaQuery.sizeOf(context).width < 420;
     return PageListView(
@@ -495,8 +496,11 @@ class _HistoryPageState extends State<HistoryPage> {
         const SizedBox(height: 28),
         PageHeaderRow(
           icon: Icons.history_rounded,
-          title: '我的历史',
-          subtitle: '按书籍整理，共 ${groups.length} 本、${_items.length} 个章节。',
+          title: l10n.mineHistoryTitle,
+          subtitle: context.localeText(
+            '按书籍整理，共 ${groups.length} 本、${_items.length} 个章节。',
+            '${groups.length} books, ${_items.length} chapters grouped by book.',
+          ),
           action: _items.isEmpty
               ? null
               : _selectionMode
@@ -506,17 +510,20 @@ class _HistoryPageState extends State<HistoryPage> {
                       children: [
                         BatchSelectButton(
                           checked: _allSelected,
-                          label: '全选',
+                          label: context.localeText('全选', 'Select All'),
                           compact: compactActions,
                           onPressed: _deleting ? null : _toggleAll,
                         ),
                         _HistoryActionButton(
                           icon: _deleting ? null : Icons.delete_outline_rounded,
                           label: _deleting
-                              ? '删除中...'
+                              ? context.localeText('删除中...', 'Deleting...')
                               : compactActions
-                                  ? '删除'
-                                  : '删除所选${_selectedIds.isEmpty ? '' : ' ${_selectedIds.length}'}',
+                                  ? context.localeText('删除', 'Delete')
+                                  : context.localeText(
+                                      '删除所选${_selectedIds.isEmpty ? '' : ' ${_selectedIds.length}'}',
+                                      'Delete selected${_selectedIds.isEmpty ? '' : ' ${_selectedIds.length}'}',
+                                    ),
                           danger: true,
                           loading: _deleting,
                           onPressed: _selectedIds.isEmpty || _deleting
@@ -525,7 +532,7 @@ class _HistoryPageState extends State<HistoryPage> {
                         ),
                         _HistoryActionButton(
                           icon: Icons.close_rounded,
-                          label: '取消',
+                          label: context.localeText('取消', 'Cancel'),
                           onPressed:
                               _deleting ? null : () => _setSelectionMode(false),
                         ),
@@ -534,7 +541,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   : TextButton.icon(
                       onPressed: () => _setSelectionMode(true),
                       icon: const Icon(Icons.checklist_rounded, size: 18),
-                      label: const Text('选择'),
+                      label: Text(context.localeText('选择', 'Select')),
                       style: TextButton.styleFrom(
                         foregroundColor: context.secondaryText,
                         backgroundColor:
@@ -554,10 +561,13 @@ class _HistoryPageState extends State<HistoryPage> {
         if (groups.isEmpty)
           EmptyState(
             icon: Icons.history_toggle_off_rounded,
-            title: '暂无我的历史',
-            message: '暂无我的历史，去书架开始第一本吧。',
+            title: context.localeText('暂无我的历史', 'No History Yet'),
+            message: context.localeText(
+              '暂无我的历史，去书架开始第一本吧。',
+              'Go to the bookshelf and start your first book.',
+            ),
             action: PrimaryButton(
-              label: '去书架',
+              label: context.localeText('去书架', 'Go to Bookshelf'),
               icon: Icons.library_books_rounded,
               onPressed: widget.openBookshelf,
             ),
@@ -630,6 +640,7 @@ class _AccountProfileCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial =
         username.isEmpty ? 'U' : username.substring(0, 1).toUpperCase();
+    final l10n = context.l10n;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -679,7 +690,7 @@ class _AccountProfileCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '我的',
+                          l10n.navMine,
                           style: TextStyle(
                             color: context.isDark
                                 ? AppColors.slate300
@@ -688,7 +699,7 @@ class _AccountProfileCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          username.isEmpty ? '听书用户' : username,
+                          username.isEmpty ? l10n.mineDefaultUser : username,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -698,7 +709,7 @@ class _AccountProfileCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          '管理听书记录、收藏、书单和个人偏好。',
+                          l10n.mineIntro,
                           maxLines: compact ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -718,16 +729,16 @@ class _AccountProfileCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     _AccountField(
-                      label: '用户名',
+                      label: l10n.settingsUsername,
                       controller: usernameController,
                       icon: Icons.person_outline_rounded,
                     ),
                     const SizedBox(height: 12),
                     _AccountField(
-                      label: '修改密码',
+                      label: l10n.mineChangePassword,
                       controller: passwordController,
                       icon: Icons.key_rounded,
-                      hintText: '留空则不修改',
+                      hintText: l10n.minePasswordUnchangedHint,
                       obscureText: true,
                     ),
                     const SizedBox(height: 14),
@@ -747,7 +758,7 @@ class _AccountProfileCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _AccountField(
-                        label: '用户名',
+                        label: l10n.settingsUsername,
                         controller: usernameController,
                         icon: Icons.person_outline_rounded,
                       ),
@@ -755,10 +766,10 @@ class _AccountProfileCard extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _AccountField(
-                        label: '修改密码',
+                        label: l10n.mineChangePassword,
                         controller: passwordController,
                         icon: Icons.key_rounded,
-                        hintText: '留空则不修改',
+                        hintText: l10n.minePasswordUnchangedHint,
                         obscureText: true,
                       ),
                     ),
@@ -775,27 +786,27 @@ class _AccountProfileCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _SummaryCard(
-                      label: '最近',
+                      label: l10n.mineRecent,
                       value: recentCount,
-                      unit: '本',
+                      unit: l10n.mineBookUnit,
                       compact: compact,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _SummaryCard(
-                      label: '收藏',
+                      label: l10n.mineFavorites,
                       value: favoriteCount,
-                      unit: '本',
+                      unit: l10n.mineBookUnit,
                       compact: compact,
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: _SummaryCard(
-                      label: '书单',
+                      label: l10n.minePlaylists,
                       value: playlistCount,
-                      unit: '个',
+                      unit: l10n.minePlaylistUnit,
                       compact: compact,
                     ),
                   ),
@@ -876,7 +887,7 @@ class _SaveAccountButton extends StatelessWidget {
       children: [
         if (saved) ...[
           Text(
-            '已更新',
+            context.l10n.mineAccountUpdated,
             style: TextStyle(
               color: Colors.green.shade600,
               fontSize: 14,
@@ -898,7 +909,8 @@ class _SaveAccountButton extends StatelessWidget {
                     ),
                   )
                 : const Icon(Icons.save_outlined, size: 18),
-            label: Text(saving ? '保存中' : '保存'),
+            label:
+                Text(saving ? context.l10n.mineSaving : context.l10n.mineSave),
             style: ElevatedButton.styleFrom(
               elevation: 8,
               shadowColor: AppColors.primary500.withValues(alpha: 0.22),
@@ -1256,7 +1268,10 @@ class _HistoryBookCard extends StatelessWidget {
                               ),
                               const SizedBox(width: 8),
                               Text(
-                                '${group.chapters.length} 章',
+                                context.localeText(
+                                  '${group.chapters.length} 章',
+                                  '${group.chapters.length} chapters',
+                                ),
                                 style: TextStyle(
                                   color: context.mutedText,
                                   fontSize: 11,
@@ -1267,7 +1282,8 @@ class _HistoryBookCard extends StatelessWidget {
                           ),
                           const SizedBox(height: 5),
                           Text(
-                            latest.chapterTitle ?? '未知章节',
+                            latest.chapterTitle ??
+                                context.localeText('未知章节', 'Unknown Chapter'),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -1286,7 +1302,10 @@ class _HistoryBookCard extends StatelessWidget {
                               const SizedBox(width: 5),
                               Expanded(
                                 child: Text(
-                                  '最后收听：${_formatLastListenedTime(latest.updatedAt)}',
+                                  context.localeText(
+                                    '最后收听：${_formatLastListenedTime(context, latest.updatedAt)}',
+                                    'Last listened: ${_formatLastListenedTime(context, latest.updatedAt)}',
+                                  ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -1387,7 +1406,8 @@ class _HistoryChapterTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      item.chapterTitle ?? '未知章节',
+                      item.chapterTitle ??
+                          context.localeText('未知章节', 'Unknown Chapter'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -1406,7 +1426,7 @@ class _HistoryChapterTile extends StatelessWidget {
                         const SizedBox(width: 5),
                         Expanded(
                           child: Text(
-                            _formatLastListenedTime(item.updatedAt),
+                            _formatLastListenedTime(context, item.updatedAt),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -1484,7 +1504,9 @@ class _HistoryProgressBar extends StatelessWidget {
         SizedBox(
           width: 44,
           child: Text(
-            percent >= 0.95 ? '已播完' : '${(percent * 100).round()}%',
+            percent >= 0.95
+                ? context.localeText('已播完', 'Done')
+                : '${(percent * 100).round()}%',
             textAlign: TextAlign.right,
             style: const TextStyle(
               color: AppColors.slate400,
@@ -1508,10 +1530,12 @@ double _historyPercent(ProgressItem item) {
   return (item.position / duration).clamp(0.0, 1.0).toDouble();
 }
 
-String _formatLastListenedTime(String? value) {
-  if (value == null || value.isEmpty) return '未知时间';
+String _formatLastListenedTime(BuildContext context, String? value) {
+  if (value == null || value.isEmpty) {
+    return context.localeText('未知时间', 'Unknown time');
+  }
   final date = DateTime.tryParse(value)?.toLocal();
-  if (date == null) return '未知时间';
+  if (date == null) return context.localeText('未知时间', 'Unknown time');
 
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
@@ -1519,8 +1543,10 @@ String _formatLastListenedTime(String? value) {
   final diff = today.difference(target).inDays;
   final time =
       '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-  if (diff == 0) return '今天 $time';
-  if (diff == 1) return '昨天 $time';
-  if (diff > 1 && diff < 7) return '$diff 天前 $time';
+  if (diff == 0) return context.localeText('今天 $time', 'Today $time');
+  if (diff == 1) return context.localeText('昨天 $time', 'Yesterday $time');
+  if (diff > 1 && diff < 7) {
+    return context.localeText('$diff 天前 $time', '$diff days ago $time');
+  }
   return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} $time';
 }

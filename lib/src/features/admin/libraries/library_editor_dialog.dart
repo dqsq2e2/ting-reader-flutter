@@ -25,12 +25,15 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
 
   bool get _editing => widget.library != null;
   bool get _isLocal => _type == 'local';
+  bool get _isRss => _type == 'rss';
 
   @override
   void initState() {
     super.initState();
     final library = widget.library;
-    _type = library?.libraryType == 'local' ? 'local' : 'webdav';
+    _type = library?.libraryType == 'local'
+        ? 'local'
+        : (library?.libraryType == 'rss' ? 'rss' : 'webdav');
     _nameController = TextEditingController(text: library?.name ?? '');
     _urlController = TextEditingController(text: library?.url ?? '');
     _usernameController = TextEditingController(text: library?.username ?? '');
@@ -57,7 +60,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
 
   Future<void> _testConnection() async {
     if (_urlController.text.trim().isEmpty) {
-      _showMessage('请输入 WebDAV 地址');
+      _showMessage(context.localeText('请输入 WebDAV 地址', 'Enter a WebDAV URL'));
       return;
     }
 
@@ -80,11 +83,15 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
       final map = asMap(res.data);
       final success = map['success'] == true;
       _showMessage(
-        map['message']?.toString() ?? (success ? '连接成功！' : '连接失败'),
+        map['message']?.toString() ??
+            (success
+                ? context.localeText('连接成功！', 'Connection successful')
+                : context.localeText('连接失败', 'Connection failed')),
       );
     } catch (_) {
       if (!mounted) return;
-      _showMessage('请求失败，请检查 WebDAV 配置');
+      _showMessage(context.localeText(
+          '请求失败，请检查 WebDAV 配置', 'Request failed. Check your WebDAV settings.'));
     } finally {
       if (mounted) setState(() => _testingConnection = false);
     }
@@ -103,7 +110,8 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
       setState(() => _scraperSources = sources);
     } catch (_) {
       if (!mounted) return;
-      _showMessage('获取刮削源失败');
+      _showMessage(
+          context.localeText('获取刮削源失败', 'Failed to load scraper sources'));
     } finally {
       if (mounted) setState(() => _scraperSourcesLoading = false);
     }
@@ -125,11 +133,12 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
 
     Object? scraperConfig;
     final scraperText = _scraperController.text.trim();
-    if (scraperText.isNotEmpty) {
+    if (!_isRss && scraperText.isNotEmpty) {
       try {
         scraperConfig = jsonDecode(scraperText);
       } catch (_) {
-        _showMessage('刮削源配置 JSON 格式错误');
+        _showMessage(context.localeText(
+            '刮削源配置 JSON 格式错误', 'Scraper source config JSON is invalid'));
         return;
       }
     }
@@ -143,6 +152,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
 
     if (_isLocal) {
       payload['path'] = _urlController.text.trim();
+      payload['root_path'] = '/';
+    } else if (_isRss) {
+      payload['rss_feed_url'] = _urlController.text.trim();
       payload['root_path'] = '/';
     } else {
       payload['webdav_url'] = _urlController.text.trim();
@@ -166,7 +178,11 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (_) {
       if (!mounted) return;
-      _showMessage(_editing ? '修改失败，请检查配置' : '添加失败，请检查配置');
+      _showMessage(_editing
+          ? context.localeText(
+              '修改失败，请检查配置', 'Update failed. Check the configuration.')
+          : context.localeText(
+              '添加失败，请检查配置', 'Create failed. Check the configuration.'));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -208,7 +224,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                   children: [
                     Expanded(
                       child: Text(
-                        _editing ? '编辑存储库' : '添加存储库',
+                        _editing
+                            ? context.localeText('编辑存储库', 'Edit Library')
+                            : context.localeText('添加存储库', 'Add Library'),
                         style: const TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -216,7 +234,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                       ),
                     ),
                     IconButton(
-                      tooltip: '关闭',
+                      tooltip: context.l10n.commonClose,
                       onPressed:
                           _saving ? null : () => Navigator.pop(context, false),
                       icon: const Icon(Icons.close_rounded),
@@ -232,14 +250,24 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const DialogLabel('库类型', fontSize: 14),
+                        DialogLabel(context.localeText('库类型', 'Library Type'),
+                            fontSize: 14),
                         const SizedBox(height: 8),
                         Row(
                           children: [
                             Expanded(
                               child: _LibraryTypeOption(
+                                label: context.localeText('RSS订阅', 'RSS'),
+                                selected: _isRss,
+                                disabled: _editing,
+                                onTap: () => _setType('rss'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _LibraryTypeOption(
                                 label: 'WebDAV',
-                                selected: !_isLocal,
+                                selected: _type == 'webdav',
                                 disabled: _editing,
                                 onTap: () => _setType('webdav'),
                               ),
@@ -247,7 +275,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: _LibraryTypeOption(
-                                label: '本地存储',
+                                label: context.localeText('本地存储', 'Local'),
                                 selected: _isLocal,
                                 disabled: _editing,
                                 onTap: () => _setType('local'),
@@ -256,30 +284,37 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                           ],
                         ),
                         const SizedBox(height: 18),
-                        const DialogLabel('库名称', fontSize: 14),
+                        DialogLabel(context.localeText('库名称', 'Library Name'),
+                            fontSize: 14),
                         const SizedBox(height: 8),
                         TextFormField(
                           controller: _nameController,
                           validator: (value) =>
                               (value == null || value.trim().isEmpty)
-                                  ? '请输入库名称'
+                                  ? context.localeText(
+                                      '请输入库名称', 'Enter a library name')
                                   : null,
-                          decoration: const InputDecoration(
-                            hintText: '例如：我的 NAS',
+                          decoration: InputDecoration(
+                            hintText: context.localeText(
+                                '例如：我的 NAS', 'For example: My NAS'),
                           ),
                         ),
                         const SizedBox(height: 18),
                         if (_isLocal)
                           _buildLocalFields()
+                        else if (_isRss)
+                          _buildRssFields()
                         else
                           _buildWebDavFields(),
-                        const SizedBox(height: 18),
-                        _ScraperConfigPanel(
-                          controller: _scraperController,
-                          libraryType: _type,
-                          sources: _scraperSources,
-                          sourcesLoading: _scraperSourcesLoading,
-                        ),
+                        if (!_isRss) ...[
+                          const SizedBox(height: 18),
+                          _ScraperConfigPanel(
+                            controller: _scraperController,
+                            libraryType: _type,
+                            sources: _scraperSources,
+                            sourcesLoading: _scraperSourcesLoading,
+                          ),
+                        ],
                         const SizedBox(height: 28),
                       ],
                     ),
@@ -302,7 +337,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                           ),
                         ),
                         child: Text(
-                          '取消',
+                          context.l10n.commonCancel,
                           style: TextStyle(
                             color: context.mutedText,
                             fontWeight: FontWeight.w700,
@@ -313,7 +348,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                     const SizedBox(width: 14),
                     Expanded(
                       child: PrimaryButton(
-                        label: '保存配置',
+                        label: context.localeText('保存配置', 'Save'),
                         icon: Icons.check_rounded,
                         loading: _saving,
                         onPressed: _saving ? null : () => _save(),
@@ -333,19 +368,25 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const DialogLabel('WebDAV 地址', fontSize: 14),
+        DialogLabel(context.localeText('WebDAV 地址', 'WebDAV URL'),
+            fontSize: 14),
         const SizedBox(height: 8),
         TextFormField(
           controller: _urlController,
           validator: (value) {
             final text = value?.trim() ?? '';
-            if (text.isEmpty) return '请输入 WebDAV 地址';
+            if (text.isEmpty) {
+              return context.localeText('请输入 WebDAV 地址', 'Enter a WebDAV URL');
+            }
             if (!text.startsWith('http://') && !text.startsWith('https://')) {
-              return '地址需要以 http:// 或 https:// 开头';
+              return context.localeText('地址需要以 http:// 或 https:// 开头',
+                  'URL must start with http:// or https://');
             }
             return null;
           },
-          decoration: const InputDecoration(hintText: 'https://nas.local:5006'),
+          decoration: InputDecoration(
+              hintText: context.localeText(
+                  'https://nas.local:5006', 'https://nas.local:5006')),
         ),
         const SizedBox(height: 14),
         LayoutBuilder(
@@ -354,24 +395,29 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
             final username = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const DialogLabel('用户名', fontSize: 14),
+                DialogLabel(context.localeText('用户名', 'Username'),
+                    fontSize: 14),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _usernameController,
-                  decoration: const InputDecoration(hintText: '可选'),
+                  decoration: InputDecoration(
+                      hintText: context.localeText('可选', 'Optional')),
                 ),
               ],
             );
             final password = Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const DialogLabel('密码', fontSize: 14),
+                DialogLabel(context.localeText('密码', 'Password'), fontSize: 14),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    hintText: _editing ? '不修改请留空' : '',
+                    hintText: _editing
+                        ? context.localeText(
+                            '不修改请留空', 'Leave blank to keep unchanged')
+                        : '',
                   ),
                 ),
               ],
@@ -390,7 +436,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
           },
         ),
         const SizedBox(height: 14),
-        const DialogLabel('根目录', fontSize: 14),
+        DialogLabel(context.localeText('根目录', 'Root Path'), fontSize: 14),
         const SizedBox(height: 8),
         TextFormField(
           controller: _rootPathController,
@@ -418,9 +464,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.wifi_rounded, size: 17),
-            label: const Text(
-              '测试连接',
-              style: TextStyle(fontWeight: FontWeight.w700),
+            label: Text(
+              context.localeText('测试连接', 'Test Connection'),
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
         ),
@@ -432,7 +478,10 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const DialogLabel('选择本地路径（相对 storage/ 目录）', fontSize: 14),
+        DialogLabel(
+            context.localeText('选择本地路径（相对 storage/ 目录）',
+                'Choose a local path (relative to storage/)'),
+            fontSize: 14),
         const SizedBox(height: 8),
         Row(
           children: [
@@ -440,18 +489,50 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
               child: TextFormField(
                 controller: _urlController,
                 validator: (value) => (value == null || value.trim().isEmpty)
-                    ? '请选择或输入本地路径'
+                    ? context.localeText(
+                        '请选择或输入本地路径', 'Choose or enter a local path')
                     : null,
-                decoration: const InputDecoration(hintText: '例如 audiobooks'),
+                decoration: InputDecoration(
+                    hintText: context.localeText(
+                        '例如 audiobooks', 'For example: audiobooks')),
               ),
             ),
             const SizedBox(width: 10),
             IconButton(
-              tooltip: '浏览目录',
+              tooltip: context.localeText('浏览目录', 'Browse folders'),
               onPressed: _pickFolder,
               icon: const Icon(Icons.folder_open_rounded),
             ),
           ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRssFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DialogLabel(context.localeText('RSS 订阅地址', 'RSS Feed URL'),
+            fontSize: 14),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _urlController,
+          validator: (value) {
+            final text = value?.trim() ?? '';
+            if (text.isEmpty) {
+              return context.localeText(
+                  '请输入 RSS 订阅地址', 'Enter an RSS feed URL');
+            }
+            if (!text.startsWith('http://') && !text.startsWith('https://')) {
+              return context.localeText('地址需要以 http:// 或 https:// 开头',
+                  'URL must start with http:// or https://');
+            }
+            return null;
+          },
+          decoration: const InputDecoration(
+            hintText: 'https://example.com/podcast/feed.xml',
+          ),
         ),
       ],
     );

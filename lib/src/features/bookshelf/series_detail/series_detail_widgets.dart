@@ -48,7 +48,7 @@ class _SeriesHeader extends StatelessWidget {
               link: filterMenuLink,
               child: _HeaderIconButton(
                 icon: Icons.filter_list_rounded,
-                tooltip: '筛选',
+                tooltip: context.localeText('筛选', 'Filter'),
                 active: showFilterMenu,
                 onPressed: onToggleFilter,
               ),
@@ -56,7 +56,7 @@ class _SeriesHeader extends StatelessWidget {
             const SizedBox(width: 10),
             _HeaderIconButton(
               icon: Icons.settings_outlined,
-              tooltip: '管理系列',
+              tooltip: context.localeText('管理系列', 'Manage Series'),
               onPressed: onSettings,
             ),
           ],

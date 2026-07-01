@@ -21,13 +21,13 @@ class CacheItem {
 
   factory CacheItem.fromJson(Map<String, dynamic> json) {
     return CacheItem(
-      chapterId: readString(json, 'chapter_id', 'chapterId') ?? '',
-      bookId: readString(json, 'book_id', 'bookId'),
-      bookTitle: readString(json, 'book_title', 'bookTitle'),
-      chapterTitle: readString(json, 'chapter_title', 'chapterTitle'),
-      fileSize: readInt(json, 'file_size', 'fileSize') ?? 0,
-      createdAt: readString(json, 'created_at', 'createdAt'),
-      coverUrl: readString(json, 'cover_url', 'coverUrl'),
+      chapterId: readString(json, 'chapter_id') ?? '',
+      bookId: readString(json, 'book_id'),
+      bookTitle: readString(json, 'book_title'),
+      chapterTitle: readString(json, 'chapter_title'),
+      fileSize: readInt(json, 'file_size') ?? 0,
+      createdAt: readString(json, 'created_at'),
+      coverUrl: readString(json, 'cover_url'),
     );
   }
 }

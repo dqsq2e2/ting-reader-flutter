@@ -44,7 +44,7 @@ class _PlaylistCard extends StatelessWidget {
           ),
           SizedBox(height: compactOnMobile ? 10 : 14),
           Text(
-            playlist.title,
+            localizedPlaylistTitle(context, playlist),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -64,7 +64,7 @@ class _PlaylistCard extends StatelessWidget {
             child: Text(
               playlist.description?.isNotEmpty == true
                   ? playlist.description!
-                  : '$bookCount 本书',
+                  : context.localeText('$bookCount 本书', '$bookCount books'),
               maxLines: (iconSize == IconSizeSetting.small || compactOnMobile)
                   ? 1
                   : 2,
@@ -78,7 +78,7 @@ class _PlaylistCard extends StatelessWidget {
           ),
           SizedBox(height: compactOnMobile ? 6 : 10),
           Text(
-            '$bookCount 本书',
+            context.localeText('$bookCount 本书', '$bookCount books'),
             style: TextStyle(
               color: context.mutedText,
               fontSize: 12,
@@ -161,7 +161,7 @@ class _PlaylistHero extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            playlist.title,
+                            localizedPlaylistTitle(context, playlist),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -174,7 +174,10 @@ class _PlaylistHero extends StatelessWidget {
                           Text(
                             playlist.description?.isNotEmpty == true
                                 ? playlist.description!
-                                : '$itemCount 项',
+                                : context.localeText(
+                                    '$itemCount 项',
+                                    '$itemCount items',
+                                  ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -195,29 +198,29 @@ class _PlaylistHero extends StatelessWidget {
                   children: managing
                       ? [
                           _SoftActionButton(
-                            label: '取消',
+                            label: context.localeText('取消', 'Cancel'),
                             icon: Icons.close_rounded,
                             onPressed: onCancelManage,
                           ),
                           PrimaryButton(
-                            label: '保存书单',
+                            label: context.localeText('保存书单', 'Save Playlist'),
                             icon: Icons.save_rounded,
                             onPressed: onSaveManage,
                           ),
                         ]
                       : [
                           _SoftActionButton(
-                            label: '编辑信息',
+                            label: context.localeText('编辑信息', 'Edit Info'),
                             icon: Icons.edit_rounded,
                             onPressed: onEdit,
                           ),
                           PrimaryButton(
-                            label: '管理内容',
+                            label: context.localeText('管理内容', 'Manage Content'),
                             icon: Icons.add_rounded,
                             onPressed: onManage,
                           ),
                           _SoftActionButton(
-                            label: '删除',
+                            label: context.localeText('删除', 'Delete'),
                             icon: Icons.delete_outline_rounded,
                             danger: true,
                             onPressed: onDelete,
@@ -288,7 +291,7 @@ class _PlaylistFilterButton extends StatelessWidget {
         ? AppColors.primary50
         : (context.isDark ? AppColors.slate900 : Colors.white);
     return Tooltip(
-      message: '显示设置',
+      message: context.localeText('显示设置', 'Display Settings'),
       child: Material(
         color: bg,
         borderRadius: BorderRadius.circular(12),
@@ -407,7 +410,15 @@ class _PlaylistManageSearchPanel extends StatelessWidget {
               final search = TextField(
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search_rounded),
-                  hintText: type == 'series' ? '搜索系列、作者或系列内书籍' : '搜索书名、作者、演播者',
+                  hintText: type == 'series'
+                      ? context.localeText(
+                          '搜索系列、作者或系列内书籍',
+                          'Search series, author, or series books',
+                        )
+                      : context.localeText(
+                          '搜索书名、作者、演播者',
+                          'Search title, author, or narrator',
+                        ),
                 ),
                 onChanged: onQueryChanged,
               );
@@ -432,7 +443,10 @@ class _PlaylistManageSearchPanel extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            '已选 $selectedCount 项',
+            context.localeText(
+              '已选 $selectedCount 项',
+              '$selectedCount selected',
+            ),
             style: TextStyle(
               color: context.secondaryText,
               fontSize: 13,
@@ -467,13 +481,13 @@ class _PlaylistSegmentedSwitch extends StatelessWidget {
           _PlaylistSegmentButton(
             selected: value == 'book',
             icon: Icons.playlist_play_rounded,
-            label: '书籍',
+            label: context.localeText('书籍', 'Books'),
             onTap: () => onChanged('book'),
           ),
           _PlaylistSegmentButton(
             selected: value == 'series',
             icon: Icons.layers_rounded,
-            label: '系列',
+            label: context.localeText('系列', 'Series'),
             onTap: () => onChanged('series'),
           ),
         ],

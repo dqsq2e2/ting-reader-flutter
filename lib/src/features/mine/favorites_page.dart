@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
+import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
@@ -41,18 +42,11 @@ class _FavoritesPageState extends State<FavoritesPage> {
         appState.api.get('/api/favorites'),
         appState.api.get('/api/settings'),
       ]);
-      final settings = asMap(asMap(results[1].data)['settings_json'] ??
-          asMap(results[1].data)['settingsJson']);
+      final settings = asMap(results[1].data);
       setState(() {
         _books = asMapList(results[0].data).map(Book.fromJson).toList();
-        _iconSize = iconSizeFromString(
-          (settings['bookshelf_icon_size'] ?? settings['bookshelfIconSize'])
-              ?.toString(),
-        );
-        _coverShape = coverShapeFromString(
-          (settings['bookshelf_cover_shape'] ?? settings['bookshelfCoverShape'])
-              ?.toString(),
-        );
+        _iconSize = iconSizeFromAppSettings(settings);
+        _coverShape = coverShapeFromAppSettings(settings);
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -71,17 +65,23 @@ class _FavoritesPageState extends State<FavoritesPage> {
         HeaderText(
           icon: Icons.favorite_rounded,
           iconColor: Colors.red.shade500,
-          title: '我的收藏',
-          subtitle: '您最喜爱的 ${_books.length} 部作品',
+          title: context.localeText('我的收藏', 'Favorites'),
+          subtitle: context.localeText(
+            '您最喜爱的 ${_books.length} 部作品',
+            '${_books.length} favorite books',
+          ),
         ),
         const SizedBox(height: 24),
         if (_books.isEmpty)
           EmptyState(
             icon: Icons.favorite_outline_rounded,
-            title: '您的收藏夹还是空的',
-            message: '点击书籍详情页的爱心图标，即可收藏您喜欢的作品',
+            title: context.localeText('您的收藏夹还是空的', 'No Favorites Yet'),
+            message: context.localeText(
+              '点击书籍详情页的爱心图标，即可收藏您喜欢的作品',
+              'Tap the heart on a book detail page to add it here.',
+            ),
             action: PrimaryButton(
-              label: '去书架看看',
+              label: context.localeText('去书架看看', 'Go to Bookshelf'),
               icon: Icons.library_books_rounded,
               onPressed: widget.openBookshelf,
             ),

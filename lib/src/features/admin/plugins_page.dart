@@ -14,7 +14,7 @@ class _PluginsPageState extends State<PluginsPage> {
   bool _storeLoading = false;
   List<PluginItem> _installed = [];
   List<PluginItem> _store = [];
-  _PluginTab _tab = _PluginTab.store;
+  _PluginTab _tab = _PluginTab.installed;
   String _category = 'all';
   String _query = '';
   String? _installingId;
@@ -25,8 +25,13 @@ class _PluginsPageState extends State<PluginsPage> {
   void initState() {
     super.initState();
     _loadInstalled();
-    _loadStore();
   }
+
+  bool get _hasPluginStoreProvider => _installed.any(
+        (item) => item.capabilities.any(
+          (capability) => capability.kind == 'plugin_store',
+        ),
+      );
 
   Future<void> _loadInstalled() async {
     setState(() => _installedLoading = true);
@@ -35,6 +40,10 @@ class _PluginsPageState extends State<PluginsPage> {
       if (!mounted) return;
       setState(() {
         _installed = asMapList(res.data).map(PluginItem.fromJson).toList();
+        if (!_hasPluginStoreProvider) {
+          _store = [];
+          if (_tab != _PluginTab.installed) _tab = _PluginTab.installed;
+        }
       });
     } finally {
       if (mounted) setState(() => _installedLoading = false);
@@ -42,11 +51,23 @@ class _PluginsPageState extends State<PluginsPage> {
   }
 
   Future<void> _loadStore({bool clearCache = false}) async {
+    if (!_hasPluginStoreProvider) {
+      if (!mounted) return;
+      setState(() {
+        _store = [];
+        if (_tab != _PluginTab.installed) _tab = _PluginTab.installed;
+      });
+      return;
+    }
+
     setState(() => _storeLoading = true);
     try {
       final api = AppScope.appOf(context).api;
       if (clearCache) await api.post('/api/v1/store/cache/clear');
-      final res = await api.get('/api/v1/store/plugins');
+      final res = await api.get(
+        '/api/v1/store/plugins',
+        params: clearCache ? {'refresh': 'true'} : null,
+      );
       if (!mounted) return;
       setState(() {
         _store = asMapList(res.data).map(PluginItem.fromJson).toList();
@@ -57,32 +78,96 @@ class _PluginsPageState extends State<PluginsPage> {
   }
 
   Future<void> _refresh() {
-    if (_tab == _PluginTab.installed) return _loadInstalled();
+    if (_tab == _PluginTab.installed || !_hasPluginStoreProvider) {
+      return _loadInstalled();
+    }
     return _loadStore(clearCache: true);
+  }
+
+  Future<void> _reloadPluginLists({bool refreshStore = false}) async {
+    await _loadInstalled();
+    if (_hasPluginStoreProvider) {
+      await _loadStore(clearCache: refreshStore);
+    }
   }
 
   Future<void> _reload(String id) async {
     await AppScope.appOf(context).api.post('/api/v1/plugins/$id/reload');
     if (!mounted) return;
-    _showSnack('Plugin reloaded successfully!');
+    _showSnack(context.l10n.pluginsReloaded);
     await _loadInstalled();
   }
 
   Future<void> _install(PluginItem item) async {
+    if (!await _ensureFlutterVersionSupported(item)) return;
+    if (!mounted) return;
+
+    final api = AppScope.appOf(context).api;
+    final installedMessage = context.l10n.pluginsInstalled;
+    final installFailedMessage = context.l10n.pluginsInstallFailed;
+
+    Future<void> install({required bool acceptUnverified}) async {
+      await api.post(
+        '/api/v1/store/install',
+        data: {
+          'plugin_id': item.id,
+          if (acceptUnverified) 'accept_unverified': true,
+        },
+      );
+    }
+
     setState(() => _installingId = item.id);
     try {
-      await AppScope.appOf(context).api.post(
-        '/api/v1/store/install',
-        data: {'plugin_id': item.id},
-      );
+      await install(acceptUnverified: false);
       if (!mounted) return;
-      _showSnack('Plugin installed successfully!');
-      await Future.wait([_loadInstalled(), _loadStore()]);
+      _showSnack(installedMessage);
+      await _reloadPluginLists();
+    } on DioException catch (error) {
+      final response = error.response;
+      final data = response?.data;
+      if (response?.statusCode == 428 &&
+          data is Map &&
+          data['requires_confirmation'] == true) {
+        final warning = data['warning']?.toString() ??
+            '${item.name}由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
+        if (!mounted) return;
+        final agreed = await _confirmUnverifiedPlugin(warning);
+        if (agreed == true && mounted) {
+          try {
+            await install(acceptUnverified: true);
+            if (!mounted) return;
+            _showSnack(installedMessage);
+            await _reloadPluginLists();
+          } catch (_) {
+            if (mounted) _showSnack(installFailedMessage);
+          }
+        }
+      } else if (mounted) {
+        _showSnack(installFailedMessage);
+      }
     } catch (_) {
-      if (mounted) _showSnack('安装插件失败');
+      if (mounted) _showSnack(installFailedMessage);
     } finally {
       if (mounted) setState(() => _installingId = null);
     }
+  }
+
+  Future<bool> _ensureFlutterVersionSupported(PluginItem item) async {
+    final required = item.minFlutterVersion?.trim();
+    if (required == null || required.isEmpty || !_usesClientExtension(item)) {
+      return true;
+    }
+
+    final useEnglish = context.isEnglishLocale;
+    final current = (await PackageInfo.fromPlatform()).version;
+    if (_comparePluginVersions(current, required) >= 0) return true;
+
+    if (mounted) {
+      _showSnack(useEnglish
+          ? '${item.name} requires Flutter client >= $required, current version is $current'
+          : '${item.name} 需要 Flutter 客户端 >= $required，当前版本 $current');
+    }
+    return false;
   }
 
   Future<void> _uploadPlugin() async {
@@ -90,7 +175,7 @@ class _PluginsPageState extends State<PluginsPage> {
     final api = AppScope.appOf(context).api;
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: const ['zip'],
+      allowedExtensions: const ['tr'],
       withData: true,
     );
     if (!mounted) return;
@@ -100,39 +185,88 @@ class _PluginsPageState extends State<PluginsPage> {
     if (file == null || (path == null && bytes == null)) return;
 
     setState(() => _uploadingPlugin = true);
-    try {
+
+    Future<void> upload({required bool acceptUnverified}) async {
       final uploadFile = path != null
           ? await MultipartFile.fromFile(path, filename: file.name)
           : MultipartFile.fromBytes(bytes!, filename: file.name);
       final formData = FormData.fromMap({
         'file': uploadFile,
+        if (acceptUnverified) 'accept_unverified': 'true',
       });
       await api.post('/api/v1/plugins/install', data: formData);
+    }
+
+    try {
+      await upload(acceptUnverified: false);
       if (!mounted) return;
-      _showSnack('Plugin installed successfully!');
-      await Future.wait([_loadInstalled(), _loadStore()]);
+      _showSnack(context.l10n.pluginsInstalled);
+      await _reloadPluginLists();
+    } on DioException catch (error) {
+      final response = error.response;
+      final data = response?.data;
+      if (response?.statusCode == 428 &&
+          data is Map &&
+          data['requires_confirmation'] == true) {
+        final warning = data['warning']?.toString() ??
+            '${file.name}由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
+        if (!mounted) return;
+        final agreed = await _confirmUnverifiedPlugin(warning);
+        if (agreed == true && mounted) {
+          try {
+            await upload(acceptUnverified: true);
+            if (!mounted) return;
+            _showSnack(context.l10n.pluginsInstalled);
+            await _reloadPluginLists();
+          } catch (_) {
+            if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
+          }
+        }
+      } else if (mounted) {
+        _showSnack(context.l10n.pluginsInstallFailed);
+      }
     } catch (_) {
-      if (mounted) _showSnack('安装插件失败');
+      if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
     } finally {
       if (mounted) setState(() => _uploadingPlugin = false);
     }
+  }
+
+  Future<bool?> _confirmUnverifiedPlugin(String warning) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.localeText('未经验证插件', 'Unverified plugin')),
+        content: Text(warning),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.localeText('同意', 'Agree')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _delete(PluginItem item) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('卸载插件？'),
-        content: Text('确定要卸载 ${item.name} 吗？'),
+        title: Text(context.l10n.pluginsUninstallTitle),
+        content: Text(context.l10n.pluginsUninstallMessage(item.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('卸载'),
+            child: Text(context.l10n.pluginsUninstallAction),
           ),
         ],
       ),
@@ -141,8 +275,8 @@ class _PluginsPageState extends State<PluginsPage> {
 
     await AppScope.appOf(context).api.delete('/api/v1/plugins/${item.id}');
     if (!mounted) return;
-    _showSnack('Plugin uninstalled successfully!');
-    await _loadInstalled();
+    _showSnack(context.l10n.pluginsUninstalled);
+    await _reloadPluginLists();
   }
 
   Future<void> _configure(PluginItem item) async {
@@ -150,7 +284,12 @@ class _PluginsPageState extends State<PluginsPage> {
       context: context,
       builder: (context) => _PluginConfigDialog(plugin: item),
     );
-    if (saved == true) await _loadInstalled();
+    if (saved == true) {
+      final refreshStore = item.capabilities.any(
+        (capability) => capability.kind == 'plugin_store',
+      );
+      await _reloadPluginLists(refreshStore: refreshStore);
+    }
   }
 
   void _showSnack(String text) {
@@ -188,25 +327,32 @@ class _PluginsPageState extends State<PluginsPage> {
     if (_query.trim().isEmpty) return true;
     final query = _query.trim().toLowerCase();
     final haystack = '${item.name} ${item.description ?? ''} '
-            '${item.longDescription ?? ''} ${item.author ?? ''}'
+            '${item.longDescription ?? ''} '
+            '${item.descriptionI18n.values.join(' ')} ${item.author ?? ''}'
         .toLowerCase();
     return haystack.contains(query);
   }
 
   @override
   Widget build(BuildContext context) {
-    final updateCount = _store.where(_hasUpdate).length;
+    final hasStoreProvider = _hasPluginStoreProvider;
+    final updateCount = hasStoreProvider ? _store.where(_hasUpdate).length : 0;
     final installedItems = _installed.where(_matches).toList();
-    final storeItems = _store
-        .where((item) {
-          if (_tab == _PluginTab.store && _installedVersion(item.id) != null) {
-            return false;
-          }
-          if (_tab == _PluginTab.updates && !_hasUpdate(item)) return false;
-          return true;
-        })
-        .where(_matches)
-        .toList();
+    final storeItems = hasStoreProvider
+        ? _store
+            .where((item) {
+              if (_tab == _PluginTab.store &&
+                  _installedVersion(item.id) != null) {
+                return false;
+              }
+              if (_tab == _PluginTab.updates && !_hasUpdate(item)) {
+                return false;
+              }
+              return true;
+            })
+            .where(_matches)
+            .toList()
+        : <PluginItem>[];
     final activeItems =
         _tab == _PluginTab.installed ? installedItems : storeItems;
     final activeLoading =
@@ -217,11 +363,13 @@ class _PluginsPageState extends State<PluginsPage> {
       children: [
         _PluginTopBar(
           tab: _tab,
+          hasStoreProvider: hasStoreProvider,
           installedCount: _installed.length,
           updateCount: updateCount,
           refreshing: activeLoading,
           uploading: _uploadingPlugin,
           onTabChanged: (tab) {
+            if (tab != _PluginTab.installed && !hasStoreProvider) return;
             setState(() => _tab = tab);
             if (tab != _PluginTab.installed && _store.isEmpty) _loadStore();
           },
@@ -237,7 +385,9 @@ class _PluginsPageState extends State<PluginsPage> {
         ),
         const SizedBox(height: 16),
         if (activeLoading)
-          const SizedBox(height: 220, child: LoadingView(label: '加载插件中...'))
+          SizedBox(
+              height: 220,
+              child: LoadingView(label: context.l10n.pluginsLoading))
         else if (activeItems.isEmpty)
           _PluginEmptyState(tab: _tab)
         else
@@ -263,6 +413,7 @@ class _PluginsPageState extends State<PluginsPage> {
 class _PluginTopBar extends StatelessWidget {
   const _PluginTopBar({
     required this.tab,
+    required this.hasStoreProvider,
     required this.installedCount,
     required this.updateCount,
     required this.refreshing,
@@ -273,6 +424,7 @@ class _PluginTopBar extends StatelessWidget {
   });
 
   final _PluginTab tab;
+  final bool hasStoreProvider;
   final int installedCount;
   final int updateCount;
   final bool refreshing;
@@ -295,23 +447,25 @@ class _PluginTopBar extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               _PluginTabButton(
-                label: '全部',
-                selected: tab == _PluginTab.store,
-                onTap: () => onTabChanged(_PluginTab.store),
-              ),
-              _PluginTabButton(
-                label: '已安装',
+                label: context.l10n.pluginsInstalledTab,
                 count: installedCount == 0 ? null : installedCount,
                 selected: tab == _PluginTab.installed,
                 onTap: () => onTabChanged(_PluginTab.installed),
               ),
-              _PluginTabButton(
-                label: '可升级',
-                count: updateCount == 0 ? null : updateCount,
-                alert: updateCount > 0,
-                selected: tab == _PluginTab.updates,
-                onTap: () => onTabChanged(_PluginTab.updates),
-              ),
+              if (hasStoreProvider) ...[
+                _PluginTabButton(
+                  label: context.localeText('插件商店', 'Plugin Store'),
+                  selected: tab == _PluginTab.store,
+                  onTap: () => onTabChanged(_PluginTab.store),
+                ),
+                _PluginTabButton(
+                  label: context.l10n.pluginsUpdatesTab,
+                  count: updateCount == 0 ? null : updateCount,
+                  alert: updateCount > 0,
+                  selected: tab == _PluginTab.updates,
+                  onTap: () => onTabChanged(_PluginTab.updates),
+                ),
+              ],
             ],
           ),
         );
@@ -334,7 +488,9 @@ class _PluginTopBar extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.refresh_rounded, size: 18),
-          label: Text(tab == _PluginTab.installed ? '刷新列表' : '更新插件列表'),
+          label: Text(tab == _PluginTab.installed
+              ? context.l10n.pluginsRefreshList
+              : context.l10n.pluginsUpdateList),
         );
 
         final manualInstall = OutlinedButton.icon(
@@ -355,7 +511,7 @@ class _PluginTopBar extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.upload_rounded, size: 18),
-          label: const Text('手动安装'),
+          label: Text(context.l10n.pluginsManualInstall),
         );
         final actions = Wrap(
           spacing: 10,
@@ -476,11 +632,11 @@ class _PluginFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const categories = [
-      ('all', '全部'),
-      ('scraper', '元数据'),
-      ('format', '格式'),
-      ('utility', '工具'),
+    final categories = [
+      ('all', context.l10n.pluginsAll),
+      ('scraper', context.l10n.pluginsCategoryMetadata),
+      ('format', context.l10n.pluginsCategoryFormat),
+      ('utility', context.l10n.pluginsCategoryUtility),
     ];
 
     return Container(
@@ -508,11 +664,11 @@ class _PluginFilterBar extends StatelessWidget {
             width: constraints.maxWidth < 760 ? double.infinity : 288,
             child: TextField(
               onChanged: onQueryChanged,
-              decoration: const InputDecoration(
-                hintText: '搜索插件',
-                prefixIcon: Icon(Icons.search_rounded, size: 20),
+              decoration: InputDecoration(
+                hintText: context.l10n.pluginsSearchHint,
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 contentPadding:
-                    EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               ),
             ),
           );
@@ -676,9 +832,19 @@ class _PluginCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final description = item.longDescription ?? item.description ?? '暂无描述';
+    final description = _localizedText(item.descriptionI18n, context) ??
+        item.longDescription ??
+        item.description ??
+        context.l10n.pluginsNoDescription;
     final typeStyle = _pluginTypeStyle(item.pluginType, context);
     final supports = item.supportedExtensions;
+    final supportLabels =
+        supports.map(_pluginSupportLabel).toList(growable: false);
+    final searchFieldCount =
+        _metadataCapabilityListCount(item.capabilities, 'search_fields');
+    final resultFieldCount =
+        _metadataCapabilityListCount(item.capabilities, 'result_fields');
+    final riskSignals = _pluginRiskSignals(context, item);
 
     return TingCard(
       radius: 8,
@@ -778,52 +944,61 @@ class _PluginCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               _PluginInfoChip(
-                label: _pluginTypeLabel(item.pluginType),
+                label: _pluginTypeLabel(context, item.pluginType),
                 icon: Icons.sell_rounded,
-                color: typeStyle.foreground,
-                background: typeStyle.background,
-                border: typeStyle.border,
               ),
               _PluginInfoChip(
                 label: _pluginRuntimeLabel(item.runtime),
                 icon: Icons.memory_rounded,
               ),
-              if (supports.isNotEmpty)
+              if (supportLabels.isNotEmpty)
                 _PluginInfoChip(
-                  label: supports.length > 4
-                      ? '${supports.take(4).join(', ')} +${supports.length - 4}'
-                      : supports.join(', '),
+                  label: supportLabels.length > 4
+                      ? '${supportLabels.take(4).join(', ')} +${supportLabels.length - 4}'
+                      : supportLabels.join(', '),
                   icon: Icons.description_rounded,
-                ),
-              if (item.dependencies.isNotEmpty)
-                _PluginInfoChip(
-                  label: '${item.dependencies.length} 依赖',
-                  icon: Icons.inventory_2_rounded,
                 ),
               if (item.permissions.isNotEmpty)
                 _PluginInfoChip(
-                  label: '${item.permissions.length} 权限',
-                  icon: Icons.shield_rounded,
+                  label: context.l10n.pluginsPermissionCount(
+                    item.permissions.length,
+                  ),
+                  icon: Icons.shield_outlined,
+                ),
+              if (searchFieldCount > 0)
+                _PluginInfoChip(
+                  label: context.l10n.pluginsSearchFieldCount(
+                    searchFieldCount,
+                  ),
+                  icon: Icons.search_rounded,
+                ),
+              if (resultFieldCount > 0)
+                _PluginInfoChip(
+                  label: context.l10n.pluginsResultFieldCount(
+                    resultFieldCount,
+                  ),
+                  icon: Icons.fact_check_rounded,
+                ),
+              if (riskSignals.isNotEmpty)
+                _PluginInfoChip(
+                  label: _previewChipLabels(riskSignals, limit: 3),
+                  icon: Icons.policy_rounded,
+                  color: const Color(0xffb45309),
+                  background: const Color(0xfffffbeb),
+                  border: const Color(0xfffde68a),
+                  tooltip: riskSignals.join(', '),
+                ),
+              if (item.dependencies.isNotEmpty)
+                _PluginInfoChip(
+                  label: context.l10n
+                      .pluginsDependencyCount(item.dependencies.length),
+                  icon: Icons.inventory_2_rounded,
                 ),
               if (item.license != null) _PluginInfoChip(label: item.license!),
               if (item.configSchema != null)
-                const _PluginInfoChip(
-                  label: '可配置',
+                _PluginInfoChip(
+                  label: context.l10n.pluginsConfigurable,
                   icon: Icons.settings_rounded,
-                ),
-              if (item.scraper?.autoScrape == true)
-                const _PluginInfoChip(label: '自动刮削'),
-              if ((item.scraper?.searchFields.length ?? 0) > 0)
-                _PluginInfoChip(
-                  label: '${item.scraper!.searchFields.length} 搜索项',
-                  icon: Icons.search_rounded,
-                  tooltip: item.scraper!.searchFields.join(', '),
-                ),
-              if ((item.scraper?.resultFields.length ?? 0) > 0)
-                _PluginInfoChip(
-                  label: '${item.scraper!.resultFields.length} 返回字段',
-                  icon: Icons.fact_check_outlined,
-                  tooltip: item.scraper!.resultFields.join(', '),
                 ),
             ],
           ),
@@ -834,26 +1009,26 @@ class _PluginCard extends StatelessWidget {
               if (item.repo != null && item.repo!.trim().isNotEmpty)
                 _PluginFooterButton(
                   icon: const _GitHubIcon(size: 17),
-                  label: '仓库',
+                  label: context.l10n.pluginsRepository,
                   onPressed: () => openRepositoryUrl(item.repo!),
                 ),
               const Spacer(),
               if (onConfigure != null)
                 _PluginIconAction(
                   icon: Icons.settings_rounded,
-                  tooltip: '配置',
+                  tooltip: context.l10n.pluginsConfigure,
                   onPressed: onConfigure!,
                 ),
               if (onReload != null)
                 _PluginIconAction(
                   icon: Icons.refresh_rounded,
-                  tooltip: '重新加载',
+                  tooltip: context.l10n.pluginsReload,
                   onPressed: onReload!,
                 ),
               if (onDelete != null)
                 _PluginIconAction(
                   icon: Icons.delete_outline_rounded,
-                  tooltip: '卸载',
+                  tooltip: context.l10n.pluginsUninstallAction,
                   danger: true,
                   onPressed: onDelete!,
                 ),
@@ -890,12 +1065,12 @@ class _PluginCard extends StatelessWidget {
                       : const Icon(Icons.download_rounded, size: 17),
                   label: Text(
                     installing
-                        ? '处理中'
+                        ? context.l10n.pluginsProcessing
                         : hasUpdate
-                            ? '更新'
+                            ? context.l10n.pluginsUpdate
                             : installed
-                                ? '已安装'
-                                : '安装',
+                                ? context.l10n.pluginsInstalledTab
+                                : context.l10n.pluginsInstall,
                   ),
                 ),
             ],
@@ -1034,7 +1209,9 @@ class _PluginStateBadge extends StatelessWidget {
         : active
             ? const Color(0xfff0fdf4)
             : AppColors.slate50;
-    final label = active ? '活跃' : (failed ? '失败' : state);
+    final label = active
+        ? context.l10n.pluginsStateActive
+        : (failed ? context.l10n.pluginsStateFailed : state);
     final icon = active
         ? Icons.check_circle_rounded
         : failed
@@ -1057,15 +1234,15 @@ class _StorePluginBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (hasUpdate) {
-      return const _Badge(
-        label: '可更新',
-        color: Color(0xff047857),
-        background: Color(0xffecfdf5),
+      return _Badge(
+        label: context.l10n.pluginsUpdateAvailable,
+        color: const Color(0xff047857),
+        background: const Color(0xffecfdf5),
       );
     }
     if (installed) {
-      return const _Badge(
-        label: '已安装',
+      return _Badge(
+        label: context.l10n.pluginsInstalledTab,
         color: AppColors.slate600,
         background: AppColors.slate50,
       );
@@ -1128,12 +1305,13 @@ class _PluginEmptyState extends StatelessWidget {
           ? Icons.extension_off_rounded
           : Icons.shopping_bag_outlined,
       title: tab == _PluginTab.updates
-          ? '暂无可用更新'
+          ? context.l10n.pluginsNoUpdates
           : tab == _PluginTab.installed
-              ? '暂无已安装的插件'
-              : '未找到符合条件的插件',
-      message:
-          tab == _PluginTab.installed ? '点击“全部”查看可安装插件。' : '调整筛选条件或刷新插件列表。',
+              ? context.l10n.pluginsNoInstalled
+              : context.l10n.pluginsNoMatches,
+      message: tab == _PluginTab.installed
+          ? context.l10n.pluginsInstalledEmptyHint
+          : context.l10n.pluginsFilterEmptyHint,
     );
   }
 }
@@ -1148,9 +1326,13 @@ class _PluginConfigDialog extends StatefulWidget {
 }
 
 class _PluginConfigDialogState extends State<_PluginConfigDialog> {
-  final _controller = TextEditingController(text: '{}');
+  final Map<String, TextEditingController> _controllers = {};
+  Map<String, dynamic> _config = {};
   bool _loading = true;
   bool _saving = false;
+  String? _error;
+
+  static const _secretPlaceholder = '__TING_READER_SECRET_UNCHANGED__';
 
   @override
   void initState() {
@@ -1160,8 +1342,24 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
 
   @override
   void dispose() {
-    _controller.dispose();
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
     super.dispose();
+  }
+
+  Map<String, Map<String, dynamic>> get _properties {
+    final schema = widget.plugin.configSchema;
+    final raw = schema == null ? null : schema['properties'];
+    if (raw is! Map) return const {};
+    return raw.map((key, value) {
+      return MapEntry(
+        key.toString(),
+        value is Map
+            ? value.map((k, v) => MapEntry(k.toString(), v))
+            : <String, dynamic>{},
+      );
+    });
   }
 
   Future<void> _load() async {
@@ -1170,20 +1368,32 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
           .api
           .get('/api/v1/plugins/${widget.plugin.id}/config');
       if (!mounted) return;
-      final config = asMap(res.data)['config'] ?? <String, dynamic>{};
-      _controller.text = _prettyLibraryJson(config);
+      final config = asMap(asMap(res.data)['config']);
+      setState(() {
+        _config = Map<String, dynamic>.from(config);
+        _syncControllers();
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _save() async {
-    Object? config;
+    Map<String, dynamic> config;
     try {
-      config = jsonDecode(_controller.text);
-    } catch (_) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('JSON 格式错误')));
+      config = _readFormConfig();
+    } catch (error) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(context.localeText(
+            '配置格式不正确: $error',
+            'Invalid config: $error',
+          )),
+        ),
+      );
       return;
     }
 
@@ -1194,17 +1404,164 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
         data: {'config': config},
       );
       if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  void _syncControllers() {
+    for (final entry in _properties.entries) {
+      final prop = entry.value;
+      if (_usesTextController(prop)) {
+        _controllerFor(entry.key, prop).text =
+            _editorTextForValue(_valueFor(entry.key, prop), prop);
+      }
+    }
+  }
+
+  TextEditingController _controllerFor(String key, Map<String, dynamic> prop) {
+    return _controllers.putIfAbsent(
+      key,
+      () => TextEditingController(
+        text: _editorTextForValue(_valueFor(key, prop), prop),
+      ),
+    );
+  }
+
+  Object? _valueFor(String key, Map<String, dynamic> prop) {
+    if (_config.containsKey(key)) return _config[key];
+    return prop['default'];
+  }
+
+  bool _usesTextController(Map<String, dynamic> prop) {
+    final type = _schemaType(prop);
+    return _isEncryptedField(prop) ||
+        type == 'string' ||
+        type == 'integer' ||
+        type == 'number' ||
+        type == 'array' ||
+        type == 'object';
+  }
+
+  Map<String, dynamic> _readFormConfig() {
+    final result = Map<String, dynamic>.from(_config);
+    for (final entry in _properties.entries) {
+      final key = entry.key;
+      final prop = entry.value;
+      final type = _schemaType(prop);
+      final enumValues = _schemaEnum(prop);
+
+      if (enumValues.isNotEmpty || type == 'boolean') {
+        result[key] = _config.containsKey(key) ? _config[key] : prop['default'];
+        continue;
+      }
+
+      final controller = _controllerFor(key, prop);
+      final text = controller.text.trim();
+      if (_isEncryptedField(prop) && text.isEmpty) {
+        result[key] = _secretPlaceholder;
+      } else if (type == 'integer') {
+        result[key] = text.isEmpty ? null : int.parse(text);
+      } else if (type == 'number') {
+        result[key] = text.isEmpty ? null : num.parse(text);
+      } else if (type == 'array' || type == 'object') {
+        result[key] = text.isEmpty
+            ? (type == 'array' ? <dynamic>[] : {})
+            : jsonDecode(text);
+      } else {
+        result[key] = text;
+      }
+    }
+    return result;
+  }
+
+  void _setConfigValue(String key, Object? value) {
+    setState(() {
+      _config = {..._config, key: value};
+    });
+  }
+
+  Widget _field(String key, Map<String, dynamic> prop) {
+    final label = _schemaLabel(context, key, prop);
+    final description = _schemaDescription(context, prop);
+    final type = _schemaType(prop);
+    final enumValues = _schemaEnum(prop);
+    final encrypted = _isEncryptedField(prop);
+
+    if (enumValues.isNotEmpty) {
+      final current = (_valueFor(key, prop) ?? enumValues.first).toString();
+      return _PluginConfigFieldFrame(
+        label: label,
+        description: description,
+        child: DropdownButtonFormField<String>(
+          initialValue:
+              enumValues.contains(current) ? current : enumValues.first,
+          decoration: const InputDecoration(
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+          items: [
+            for (final value in enumValues)
+              DropdownMenuItem(value: value, child: Text(value)),
+          ],
+          onChanged: _saving ? null : (value) => _setConfigValue(key, value),
+        ),
+      );
+    }
+
+    if (type == 'boolean') {
+      return SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: description == null ? null : Text(description),
+        value: _valueFor(key, prop) == true,
+        onChanged: _saving ? null : (value) => _setConfigValue(key, value),
+      );
+    }
+
+    final controller = _controllerFor(key, prop);
+    final multiline = type == 'array' ||
+        type == 'object' ||
+        prop['format'] == 'textarea' ||
+        prop['x-display'] == 'textarea';
+    return _PluginConfigFieldFrame(
+      label: label,
+      description: description,
+      encrypted: encrypted,
+      child: TextField(
+        controller: controller,
+        enabled: !_saving,
+        obscureText: encrypted,
+        maxLines: encrypted ? 1 : (multiline ? 5 : 1),
+        keyboardType: type == 'integer' || type == 'number'
+            ? const TextInputType.numberWithOptions(decimal: true)
+            : (multiline ? TextInputType.multiline : TextInputType.text),
+        style: TextStyle(
+          fontFamily: type == 'array' || type == 'object' ? 'monospace' : null,
+        ),
+        decoration: InputDecoration(
+          hintText: encrypted
+              ? context.localeText(
+                  '留空则保持原值', 'Leave blank to keep current value')
+              : _schemaPlaceholder(context, prop),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final properties = _properties;
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560),
+        constraints: BoxConstraints(
+          maxWidth: 560,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -1212,7 +1569,7 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                '${widget.plugin.name} 配置',
+                context.l10n.pluginsConfigTitle(widget.plugin.name),
                 style:
                     const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
               ),
@@ -1220,13 +1577,41 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
               if (_loading)
                 const SizedBox(height: 180, child: LoadingView())
               else
-                TextField(
-                  controller: _controller,
-                  minLines: 8,
-                  maxLines: 12,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                  decoration: const InputDecoration(hintText: '{}'),
+                Flexible(
+                  child: properties.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 40),
+                            child: Text(
+                              context.localeText(
+                                  '该插件没有配置项', 'No configurable options'),
+                              style: TextStyle(color: context.mutedText),
+                            ),
+                          ),
+                        )
+                      : SingleChildScrollView(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final entry in properties.entries)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 16),
+                                  child: _field(entry.key, entry.value),
+                                ),
+                            ],
+                          ),
+                        ),
                 ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(color: Color(0xffdc2626), fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -1234,13 +1619,13 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
                     child: TextButton(
                       onPressed:
                           _saving ? null : () => Navigator.pop(context, false),
-                      child: const Text('取消'),
+                      child: Text(context.l10n.commonCancel),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: PrimaryButton(
-                      label: '保存',
+                      label: context.l10n.commonSave,
                       loading: _saving,
                       onPressed: _saving ? null : () => _save(),
                     ),
@@ -1253,6 +1638,136 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
       ),
     );
   }
+}
+
+class _PluginConfigFieldFrame extends StatelessWidget {
+  const _PluginConfigFieldFrame({
+    required this.label,
+    required this.child,
+    this.description,
+    this.encrypted = false,
+  });
+
+  final String label;
+  final String? description;
+  final bool encrypted;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            if (encrypted)
+              Tooltip(
+                message: context.localeText('本字段会加密保存', 'Stored encrypted'),
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  size: 16,
+                  color: context.mutedText,
+                ),
+              ),
+          ],
+        ),
+        if (description != null) ...[
+          const SizedBox(height: 4),
+          Text(description!,
+              style: TextStyle(color: context.mutedText, fontSize: 12)),
+        ],
+        const SizedBox(height: 8),
+        child,
+      ],
+    );
+  }
+}
+
+String _schemaType(Map<String, dynamic> prop) {
+  final type = prop['type'];
+  if (type is String && type.trim().isNotEmpty) return type.trim();
+  return 'string';
+}
+
+List<String> _schemaEnum(Map<String, dynamic> prop) {
+  final values = prop['enum'];
+  if (values is! List) return const [];
+  return values.map((value) => value.toString()).toList();
+}
+
+bool _isEncryptedField(Map<String, dynamic> prop) {
+  return prop['x-encrypted'] == true ||
+      prop['encrypted'] == true ||
+      prop['format'] == 'password' ||
+      prop['format'] == 'secret';
+}
+
+String _editorTextForValue(Object? value, Map<String, dynamic> prop) {
+  if (_isEncryptedField(prop) &&
+      value == _PluginConfigDialogState._secretPlaceholder) {
+    return '';
+  }
+  if (value == null) return '';
+  final type = _schemaType(prop);
+  if (type == 'array' || type == 'object') {
+    return _prettyLibraryJson(value);
+  }
+  return value.toString();
+}
+
+String _schemaLabel(
+    BuildContext context, String key, Map<String, dynamic> prop) {
+  return _schemaText(context, prop['title_i18n']) ??
+      _schemaText(context, prop['label_i18n']) ??
+      _schemaText(context, prop['title']) ??
+      _schemaText(context, prop['label']) ??
+      _humanizePluginField(key);
+}
+
+String? _schemaDescription(BuildContext context, Map<String, dynamic> prop) {
+  return _schemaText(context, prop['description_i18n']) ??
+      _schemaText(context, prop['description']);
+}
+
+String? _schemaPlaceholder(BuildContext context, Map<String, dynamic> prop) {
+  return _schemaText(context, prop['placeholder_i18n']) ??
+      _schemaText(context, prop['placeholder']);
+}
+
+String? _schemaText(BuildContext context, Object? value) {
+  if (value is String && value.trim().isNotEmpty) return value.trim();
+  if (value is! Map) return null;
+  final language = Localizations.localeOf(context).languageCode.toLowerCase();
+  final preferred = language.startsWith('en')
+      ? const ['en', 'en-US', 'en_US']
+      : const ['zh', 'zh-CN', 'zh_CN', 'zh-Hans', 'zh_Hans'];
+  final fallback = language.startsWith('en')
+      ? const ['zh', 'zh-CN', 'zh_CN', 'zh-Hans', 'zh_Hans']
+      : const ['en', 'en-US', 'en_US'];
+  for (final key in [...preferred, ...fallback]) {
+    final text = value[key]?.toString().trim();
+    if (text != null && text.isNotEmpty) return text;
+  }
+  for (final item in value.values) {
+    final text = item?.toString().trim();
+    if (text != null && text.isNotEmpty) return text;
+  }
+  return null;
+}
+
+String _humanizePluginField(String key) {
+  return key
+      .replaceAll('_', ' ')
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .map((part) => part[0].toUpperCase() + part.substring(1))
+      .join(' ');
 }
 
 class _PluginTypeStyle {
@@ -1302,17 +1817,35 @@ IconData _pluginTypeIcon(String type) {
   return Icons.extension_rounded;
 }
 
-String _pluginTypeLabel(String type) {
+String _pluginTypeLabel(BuildContext context, String type) {
   switch (type) {
     case 'scraper':
-      return '元数据';
+      return context.l10n.pluginsCategoryMetadata;
     case 'format':
-      return '格式';
+      return context.l10n.pluginsCategoryFormat;
     case 'utility':
-      return '工具';
+      return context.l10n.pluginsCategoryUtility;
     default:
-      return type.isEmpty ? '未知' : type;
+      return type.isNotEmpty ? type : context.localeText('未知', 'Unknown');
   }
+}
+
+String _pluginSupportLabel(String support) {
+  return support;
+}
+
+int _metadataCapabilityListCount(
+    List<PluginCapability> capabilities, String key) {
+  var count = 0;
+  for (final capability in capabilities) {
+    if (capability.kind != 'metadata_provider') continue;
+    final direct = capability.extra[key];
+    final metadata = capability.extra['metadata'];
+    final nested = metadata is Map ? metadata[key] : null;
+    final value = direct is List ? direct : nested;
+    if (value is List) count += value.length;
+  }
+  return count;
 }
 
 String _pluginRuntimeLabel(String? runtime) {
@@ -1328,8 +1861,145 @@ String _pluginRuntimeLabel(String? runtime) {
   }
 }
 
+bool _usesClientExtension(PluginItem item) {
+  return item.capabilities.any(
+    (capability) =>
+        capability.kind == 'ui_extension' ||
+        capability.kind == 'client_extension',
+  );
+}
+
+List<String> _pluginRiskSignals(BuildContext context, PluginItem item) {
+  final signals = <String>{};
+
+  for (final permission in item.permissions.map(_normalizePluginPermission)) {
+    if (permission.contains('network')) {
+      signals.add(context.localeText('网络访问', 'Network'));
+    }
+    if (permission == 'database_read' ||
+        permission == 'books_read' ||
+        permission == 'chapters_read' ||
+        permission == 'media_read' ||
+        permission == 'media_read_url') {
+      signals.add(context.localeText('书库读取', 'Library read'));
+    }
+    if (permission.endsWith('_write') ||
+        permission == 'metadata_write' ||
+        permission == 'cache_write') {
+      signals.add(context.localeText('写入能力', 'Write access'));
+    }
+    if (permission == 'cache_read' || permission == 'cache_write') {
+      signals.add(context.localeText('缓存访问', 'Cache access'));
+    }
+    if (permission == 'task_create') {
+      signals.add(context.localeText('创建任务', 'Task create'));
+    }
+    if (permission == 'progress_read') {
+      signals.add(context.localeText('播放进度', 'Playback progress'));
+    }
+  }
+
+  for (final capability in item.capabilities) {
+    switch (capability.kind) {
+      case 'http_route':
+        final auth = _capabilityRouteAuth(capability);
+        if (auth == 'public') {
+          signals.add(context.localeText('公开 HTTP', 'Public HTTP'));
+        } else if (auth == 'signed' || auth == 'public_or_signed') {
+          signals.add(context.localeText('签名 HTTP', 'Signed HTTP'));
+        } else {
+          signals.add(context.localeText('HTTP 路由', 'HTTP route'));
+        }
+        break;
+      case 'ui_extension':
+      case 'client_extension':
+        final mode = _capabilityRenderMode(capability);
+        if (mode.contains('floating')) {
+          signals.add(context.localeText('悬浮 UI', 'Floating UI'));
+        } else if (mode == 'web_container') {
+          signals.add(context.localeText('Web UI', 'Web UI'));
+        } else {
+          signals.add(context.localeText('前端 UI', 'Client UI'));
+        }
+        break;
+      case 'tool_provider':
+        signals.add(context.localeText('AI 工具', 'AI tools'));
+        break;
+      case 'content_processor':
+        signals.add(context.localeText('文档处理', 'Document reader'));
+        break;
+      case 'task_handler':
+        signals.add(context.localeText('后台任务', 'Background task'));
+        break;
+      case 'event_handler':
+        signals.add(context.localeText('事件订阅', 'Event hook'));
+        break;
+    }
+  }
+
+  return signals.toList();
+}
+
+String _previewChipLabels(List<String> values, {required int limit}) {
+  if (values.length <= limit) return values.join(', ');
+  return '${values.take(limit).join(', ')} +${values.length - limit}';
+}
+
+String _normalizePluginPermission(String value) {
+  return value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+      .replaceAll(RegExp(r'_+'), '_')
+      .replaceAll(RegExp(r'^_|_$'), '');
+}
+
+String _capabilityRenderMode(PluginCapability capability) {
+  final render = capability.extra['render'];
+  final value = render is Map
+      ? render['mode']
+      : capability.extra['render_mode'] ?? capability.extra['mode'];
+  return value?.toString().trim().toLowerCase() ?? '';
+}
+
+String _capabilityRouteAuth(PluginCapability capability) {
+  final route = capability.extra['route'];
+  final value = route is Map ? route['auth'] : capability.extra['auth'];
+  return value?.toString().trim().toLowerCase() ?? '';
+}
+
+String? _localizedText(Map<String, String> values, BuildContext context) {
+  if (values.isEmpty) return null;
+  final locale = Localizations.localeOf(context);
+  final language = locale.languageCode.toLowerCase();
+  final country = locale.countryCode?.toLowerCase();
+  final candidates = <String>[
+    if (country != null && country.isNotEmpty) '$language-$country',
+    language,
+    language.startsWith('en') ? 'en' : 'zh',
+    language.startsWith('en') ? 'zh' : 'en',
+  ];
+
+  for (final key in candidates) {
+    final direct = values[key]?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+    for (final entry in values.entries) {
+      if (entry.key.replaceAll('_', '-').toLowerCase() == key) {
+        final value = entry.value.trim();
+        if (value.isNotEmpty) return value;
+      }
+    }
+  }
+
+  for (final value in values.values) {
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty) return trimmed;
+  }
+  return null;
+}
+
 String _formatPluginVersion(String? version) {
-  if (version == null || version.isEmpty) return '未知版本';
+  if (version == null || version.isEmpty) return 'v?';
   return version.startsWith('v') ? version : 'v$version';
 }
 

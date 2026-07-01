@@ -23,7 +23,8 @@ class _UsersPanel extends StatelessWidget {
         border: Border.all(color: context.faintBorder),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
+            color:
+                Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -62,11 +63,14 @@ class _UsersPanel extends StatelessWidget {
                       ? AppColors.slate800.withValues(alpha: 0.5)
                       : AppColors.slate50,
                 ),
-                children: const [
-                  _UserHeaderCell('用户信息'),
-                  _UserHeaderCell('角色'),
-                  _UserHeaderCell('创建时间'),
-                  _UserHeaderCell('操作', alignRight: true),
+                children: [
+                  _UserHeaderCell(context.localeText('用户信息', 'User')),
+                  _UserHeaderCell(context.localeText('角色', 'Role')),
+                  _UserHeaderCell(context.localeText('创建时间', 'Created')),
+                  _UserHeaderCell(
+                    context.localeText('操作', 'Actions'),
+                    alignRight: true,
+                  ),
                 ],
               ),
               for (final user in users)
@@ -205,7 +209,7 @@ class _UserDateCell extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _formatUserDate(date),
+              _formatUserDate(context, date),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -340,7 +344,7 @@ class _UserMobileCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    _formatUserDate(user.createdAt),
+                    _formatUserDate(context, user.createdAt),
                     style: TextStyle(
                       color: context.tertiaryText,
                       fontSize: 12,
@@ -383,7 +387,8 @@ class _UserRoleBadge extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            admin ? '管理员' : '普通用户',
+            context.localeText(
+                admin ? '管理员' : '普通用户', admin ? 'Admin' : 'User'),
             style: TextStyle(
               color: color,
               fontSize: 12,
@@ -454,9 +459,9 @@ class _CreateUserButton extends StatelessWidget {
           ),
         ),
         icon: const Icon(Icons.add_rounded, size: 20),
-        label: const Text(
-          '创建用户',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        label: Text(
+          context.localeText('创建用户', 'Create'),
+          style: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -487,7 +492,8 @@ class _UserRoleChoice extends StatelessWidget {
           color: selected ? color.withValues(alpha: 0.08) : context.cardColor,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: selected ? color.withValues(alpha: 0.3) : context.faintBorder,
+            color:
+                selected ? color.withValues(alpha: 0.3) : context.faintBorder,
           ),
         ),
         alignment: Alignment.center,

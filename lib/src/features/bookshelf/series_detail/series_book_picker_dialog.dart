@@ -66,7 +66,7 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
                   children: [
                     Expanded(
                       child: Text(
-                        '添加系列条目',
+                        context.localeText('添加系列条目', 'Add Series Item'),
                         style: TextStyle(
                           fontSize: context.adaptiveFont(21, 18),
                           fontWeight: FontWeight.w700,
@@ -86,7 +86,8 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
                   controller: _searchController,
                   onChanged: (value) => setState(() => _query = value),
                   decoration: InputDecoration(
-                    hintText: '搜索书名、作者、演播者',
+                    hintText: context.localeText(
+                        '搜索书名、作者、演播者', 'Search title, author, narrator'),
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
                     fillColor: context.subtleFill,
@@ -104,10 +105,11 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
               Divider(height: 1, color: context.faintBorder),
               Expanded(
                 child: filtered.isEmpty
-                    ? const EmptyState(
+                    ? EmptyState(
                         icon: Icons.search_off_rounded,
-                        title: '没有找到书籍',
-                        message: '换个关键词再试试。',
+                        title: context.localeText('没有找到书籍', 'No Books Found'),
+                        message: context.localeText(
+                            '换个关键词再试试。', 'Try another keyword.'),
                       )
                     : ListView.separated(
                         padding: const EdgeInsets.all(12),
@@ -179,7 +181,7 @@ class _SeriesPickerBookRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      book.title,
+                      localizedBookTitle(context, book),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -190,7 +192,9 @@ class _SeriesPickerBookRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      book.author?.isNotEmpty == true ? book.author! : '未知作者',
+                      book.author?.isNotEmpty == true
+                          ? book.author!
+                          : context.localeText('未知作者', 'Unknown Author'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -211,7 +215,7 @@ class _SeriesPickerBookRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    '已添加',
+                    context.localeText('已添加', 'Added'),
                     style: TextStyle(
                       color: context.mutedText,
                       fontSize: context.adaptiveFont(12, 11),

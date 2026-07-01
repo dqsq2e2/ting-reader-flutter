@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/plugin_extensions/types.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/home_layout.dart';
+import '../../../core/utils/locale.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
+import '../../../shared/plugin_extensions/plugin_extension_host.dart';
 
 part 'settings_sections.dart';
 part 'settings_components.dart';
@@ -37,6 +40,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   bool _accountSaved = false;
 
   String _theme = 'system';
+  String _language = 'zh';
   HomeLayoutSettings _homeLayout = const HomeLayoutSettings();
   double _playbackSpeed = 1.0;
   bool _autoPreload = true;
@@ -71,38 +75,37 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   }
 
   void _applySettings(Map<String, dynamic> data) {
-    final nested = asMap(data['settings_json'] ?? data['settingsJson']);
+    final nested = asMap(data['settings_json']);
     _homeLayout = HomeLayoutSettings.fromSettings(data);
     final theme = _stringValue(data, 'theme', fallback: 'system');
     _theme = theme == 'auto' ? 'system' : theme;
+    _language = normalizeLanguage(
+      _stringValue(data, 'language',
+          nested: nested, fallback: appStateLanguage),
+    );
     _playbackSpeed =
-        _numValue(data, 'playback_speed', 'playbackSpeed', fallback: 1.0)
-            .toDouble();
+        _numValue(data, 'playback_speed', fallback: 1.0).toDouble();
     _autoPreload = _boolValue(
       data,
       'auto_preload',
-      'autoPreload',
       nested: nested,
       fallback: true,
     );
     _autoCache = _boolValue(
       data,
       'auto_cache',
-      'autoCache',
       nested: nested,
       fallback: false,
     );
     _ignoreAudioFocus = _boolValue(
       data,
       'ignore_audio_focus',
-      'ignoreAudioFocus',
       nested: nested,
       fallback: false,
     );
     final widgetCss = _stringValue(
       data,
       'widget_css',
-      camel: 'widgetCss',
       nested: nested,
       fallback: '',
     );
@@ -110,6 +113,8 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       _widgetCssController.text = widgetCss;
     }
   }
+
+  String get appStateLanguage => AppScope.appOf(context).languageCode;
 
   Future<void> _saveSettings(Map<String, dynamic> patch) async {
     if (_saving) return;
@@ -123,11 +128,13 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     try {
       await appState.updateSettings(patch);
       _applySettings(appState.settings);
+      if (patch.containsKey('language')) {
+        await appState.setLanguage(_language, syncRemote: false);
+      }
       if (patch.containsKey('playback_speed')) {
         await playerState.setSpeed(_playbackSpeed);
       }
-      if (patch.containsKey('ignore_audio_focus') ||
-          patch.containsKey('ignoreAudioFocus')) {
+      if (patch.containsKey('ignore_audio_focus')) {
         await playerState.setIgnoreAudioFocus(_ignoreAudioFocus);
       }
       if (!mounted) return;
@@ -137,7 +144,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      _showSnack('保存失败: $error');
+      _showSnack(context.l10n.commonSaveFailed(error.toString()));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -157,7 +164,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     final playerState = AppScope.playerOf(context);
     try {
       await appState.updateLocalSettings({
-        'ignoreAudioFocus': ignoreAudioFocus,
+        'ignore_audio_focus': ignoreAudioFocus,
       });
       _applySettings(appState.settings);
       await playerState.setIgnoreAudioFocus(_ignoreAudioFocus);
@@ -168,7 +175,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      _showSnack('保存失败: $error');
+      _showSnack(context.l10n.commonSaveFailed(error.toString()));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -176,7 +183,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
 
   Future<void> _saveHomeLayout(HomeLayoutSettings next) async {
     setState(() => _homeLayout = next);
-    await _saveSettings({'homeLayout': next.toJson()});
+    await _saveSettings({'home_layout': next.toJson()});
   }
 
   Future<void> _saveAccount() async {
@@ -215,7 +222,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      _showSnack('账号更新失败: $error');
+      _showSnack(context.l10n.settingsAccountUpdateFailed(error.toString()));
     } finally {
       if (mounted) setState(() => _accountSaving = false);
     }
@@ -243,7 +250,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   Future<void> _copy(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    _showSnack('已复制');
+    _showSnack(context.l10n.settingsCopied);
   }
 
   String get _clientOrigin {
@@ -284,6 +291,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
     final appState = AppScope.appOf(context);
+    final l10n = context.l10n;
     final platform = Theme.of(context).platform;
     final isMobilePlatform =
         platform == TargetPlatform.android || platform == TargetPlatform.iOS;
@@ -298,14 +306,14 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 720;
-                const header = HeaderText(
+                final header = HeaderText(
                   icon: Icons.settings_rounded,
-                  title: '个性化设置',
-                  subtitle: '定制您的听书体验',
+                  title: l10n.settingsTitle,
+                  subtitle: l10n.settingsSubtitle,
                 );
                 final saved = _SavedBadge(
                   visible: _saved,
-                  label: '已保存',
+                  label: l10n.commonSaved,
                 );
                 if (compact) {
                   return Column(
@@ -321,11 +329,24 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
                 }
                 return Row(
                   children: [
-                    const Expanded(child: header),
+                    Expanded(child: header),
                     saved,
                   ],
                 );
               },
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: PluginExtensionSlot(
+                slot: ClientExtensionSlot.settingsSection,
+                extensionContext: {
+                  'page': 'settings',
+                  'user_id': appState.user?.id,
+                  'role': appState.user?.role,
+                  'language': _language,
+                  'theme': _theme,
+                },
+              ),
             ),
             const SizedBox(height: 24),
             _AccountSection(
@@ -341,6 +362,14 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
               onTheme: (value) {
                 setState(() => _theme = value);
                 _saveSettings({'theme': value});
+              },
+            ),
+            const SizedBox(height: 24),
+            _LanguageSection(
+              language: _language,
+              onLanguage: (value) {
+                setState(() => _language = value);
+                _saveSettings({'language': value});
               },
             ),
             const SizedBox(height: 24),

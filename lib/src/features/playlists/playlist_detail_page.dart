@@ -100,16 +100,22 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除书单'),
-        content: Text('确定删除「${playlist.title}」吗？'),
+        title: Text(context.localeText('删除书单', 'Delete Playlist')),
+        content: Text(context.localeText(
+          '确定删除「${playlist.title}」吗？',
+          'Delete "${playlist.title}"?',
+        )),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.localeText('取消', 'Cancel')),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除', style: TextStyle(color: Colors.red)),
+            child: Text(
+              context.localeText('删除', 'Delete'),
+              style: const TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -257,10 +263,13 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         children: [
           AppBackButton(onPressed: widget.onBack),
           const SizedBox(height: 24),
-          const EmptyState(
+          EmptyState(
             icon: Icons.playlist_remove_rounded,
-            title: '未找到书单',
-            message: '这个书单可能已经被删除。',
+            title: context.localeText('未找到书单', 'Playlist Not Found'),
+            message: context.localeText(
+              '这个书单可能已经被删除。',
+              'This playlist may have been deleted.',
+            ),
           ),
         ],
       );
@@ -292,27 +301,36 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         else ...[
           _PlaylistSearchPanel(
             query: _detailQuery,
-            hint: '搜索书单内作品',
-            countText: '${visibleItems.length} / ${items.length} 项',
+            hint: context.localeText(
+              '搜索书单内作品',
+              'Search items in this playlist',
+            ),
+            countText: context.localeText(
+              '${visibleItems.length} / ${items.length} 项',
+              '${visibleItems.length} / ${items.length} items',
+            ),
             onChanged: (value) => setState(() => _detailQuery = value),
           ),
           const SizedBox(height: 22),
           if (items.isEmpty)
             EmptyState(
               icon: Icons.playlist_add_rounded,
-              title: '书单是空的',
-              message: '点击“管理内容”加入作品或系列。',
+              title: context.localeText('书单是空的', 'Playlist Is Empty'),
+              message: context.localeText(
+                '点击“管理内容”加入作品或系列。',
+                'Use Manage Content to add books or series.',
+              ),
               action: PrimaryButton(
-                label: '管理内容',
+                label: context.localeText('管理内容', 'Manage Content'),
                 icon: Icons.add_rounded,
                 onPressed: _startManaging,
               ),
             )
           else if (visibleItems.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.search_off_rounded,
-              title: '没有匹配的作品',
-              message: '换个关键词试试。',
+              title: context.localeText('没有匹配的作品', 'No Matching Items'),
+              message: context.localeText('换个关键词试试。', 'Try another keyword.'),
             )
           else
             _PlaylistContentGrid(
@@ -354,10 +372,10 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
       const SizedBox(height: 20),
       if (_manageType == 'series')
         visibleSeries.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.layers_rounded,
-                title: '没有匹配的系列',
-                message: '换个关键词试试。',
+                title: context.localeText('没有匹配的系列', 'No Matching Series'),
+                message: context.localeText('换个关键词试试。', 'Try another keyword.'),
               )
             : _PlaylistSeriesSelectGrid(
                 series: visibleSeries,
@@ -366,10 +384,10 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
               )
       else
         visibleBooks.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.menu_book_rounded,
-                title: '没有匹配的书籍',
-                message: '换个关键词试试。',
+                title: context.localeText('没有匹配的书籍', 'No Matching Books'),
+                message: context.localeText('换个关键词试试。', 'Try another keyword.'),
               )
             : _PlaylistBookSelectGrid(
                 books: visibleBooks,

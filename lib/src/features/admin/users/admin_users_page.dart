@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/locale.dart';
 import '../../../shared/app_scope.dart';
+import '../../../shared/cards/book_card.dart';
 import '../../../shared/common/common_widgets.dart';
 import '../../../shared/dialogs/dialog_label.dart';
 
@@ -66,9 +68,10 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => _ConfirmActionDialog(
-        title: '删除用户？',
-        message: '确定要删除用户 ${user.username} 吗？',
-        confirmLabel: '删除',
+        title: context.localeText('删除用户？', 'Delete User?'),
+        message: context.localeText(
+            '确定要删除用户 ${user.username} 吗？', 'Delete user ${user.username}?'),
+        confirmLabel: context.localeText('删除', 'Delete'),
         confirmColor: const Color(0xffef4444),
       ),
     );
@@ -88,10 +91,11 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 720;
-              const header = HeaderText(
+              final header = HeaderText(
                 icon: Icons.group_rounded,
-                title: '用户管理',
-                subtitle: '管理系统访问权限与账号',
+                title: context.localeText('用户管理', 'User Management'),
+                subtitle: context.localeText(
+                    '管理系统访问权限与账号', 'Manage access permissions and accounts'),
               );
               final button =
                   _CreateUserButton(onPressed: () => _openUserDialog());
@@ -99,7 +103,7 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Center(child: header),
+                    Center(child: header),
                     const SizedBox(height: 20),
                     button,
                   ],
@@ -108,7 +112,7 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Expanded(child: header),
+                  Expanded(child: header),
                   button,
                 ],
               );

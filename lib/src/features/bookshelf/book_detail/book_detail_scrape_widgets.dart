@@ -18,9 +18,9 @@ class _ScrapeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = [
-      ('search', '搜索条件'),
-      ('results', '选择字段'),
-      ('review', '确认应用'),
+      ('search', context.localeText('搜索条件', 'Search Conditions')),
+      ('results', context.localeText('选择字段', 'Select Fields')),
+      ('review', context.localeText('确认应用', 'Review & Apply')),
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 14, 14, 12),
@@ -34,10 +34,11 @@ class _ScrapeHeader extends StatelessWidget {
             children: [
               const Icon(Icons.refresh_rounded, color: AppColors.primary600),
               const SizedBox(width: 9),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  '手动刮削',
-                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+                  context.localeText('手动刮削', 'Manual Scrape'),
+                  style: const TextStyle(
+                      fontSize: 20, fontWeight: FontWeight.w700),
                 ),
               ),
               IconButton(
@@ -242,6 +243,18 @@ class _ScrapeSearchAside extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final fields = source?.resultFields ?? const <String>[];
+    final authorText = _formatScrapeValueForLocale(
+      context,
+      _draftField('author'),
+      '未填写',
+      'Not set',
+    );
+    final narratorText = _formatScrapeValueForLocale(
+      context,
+      _draftField('narrator'),
+      '未填写',
+      'Not set',
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -262,7 +275,8 @@ class _ScrapeSearchAside extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const _ScrapeSectionLabel('当前书籍'),
+                    _ScrapeSectionLabel(
+                        context.localeText('当前书籍', 'Current Book')),
                     const SizedBox(height: 8),
                     Text(
                       _formatScrapeValue(_draftField('title'), book.title),
@@ -276,14 +290,16 @@ class _ScrapeSearchAside extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      '作者：${_formatScrapeValue(_draftField('author'), '未填写')}',
+                      context.localeText(
+                          '作者：$authorText', 'Author: $authorText'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: context.mutedText, fontSize: 12),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '演播：${_formatScrapeValue(_draftField('narrator'), '未填写')}',
+                      context.localeText(
+                          '演播：$narratorText', 'Narrator: $narratorText'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: context.mutedText, fontSize: 12),
@@ -299,11 +315,12 @@ class _ScrapeSearchAside extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _ScrapeSectionLabel('当前插件返回字段'),
+              _ScrapeSectionLabel(
+                  context.localeText('当前插件返回字段', 'Plugin Fields')),
               const SizedBox(height: 12),
               if (fields.isEmpty)
                 Text(
-                  '未声明返回字段',
+                  context.localeText('未声明返回字段', 'No declared fields'),
                   style: TextStyle(color: context.mutedText, fontSize: 13),
                 )
               else
@@ -312,7 +329,7 @@ class _ScrapeSearchAside extends StatelessWidget {
                   runSpacing: 8,
                   children: [
                     for (final key in fields)
-                      _ScrapeReturnFieldPill(keyName: key),
+                      _ScrapeReturnFieldPill(source: source!, keyName: key),
                   ],
                 ),
             ],
@@ -324,8 +341,12 @@ class _ScrapeSearchAside extends StatelessWidget {
 }
 
 class _ScrapeReturnFieldPill extends StatelessWidget {
-  const _ScrapeReturnFieldPill({required this.keyName});
+  const _ScrapeReturnFieldPill({
+    required this.source,
+    required this.keyName,
+  });
 
+  final _ScrapeSource source;
   final String keyName;
 
   @override
@@ -347,7 +368,7 @@ class _ScrapeReturnFieldPill extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            definition?.label ?? keyName,
+            _localizedScrapeResultFieldLabel(context, source, keyName),
             style: TextStyle(
               color: context.isDark ? AppColors.slate300 : AppColors.slate600,
               fontSize: 12,
@@ -429,7 +450,10 @@ class _ScrapeSourceTile extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    source.searchFields.map((field) => field.label).join(' / '),
+                    source.searchFields
+                        .map((field) =>
+                            _localizedScrapeSearchFieldLabel(context, field))
+                        .join(' / '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -469,11 +493,12 @@ class _ScrapeSearchForm extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _ScrapeSectionLabel('搜索参数'),
+                  _ScrapeSectionLabel(
+                      context.localeText('搜索参数', 'Search Parameters')),
                 ],
               ),
             ),
@@ -489,7 +514,9 @@ class _ScrapeSearchForm extends StatelessWidget {
                   borderRadius: BorderRadius.circular(9),
                 ),
               ),
-              child: Text(enabled ? '已启用' : '未启用'),
+              child: Text(enabled
+                  ? context.localeText('已启用', 'Enabled')
+                  : context.localeText('未启用', 'Disabled')),
             ),
           ],
         ),
@@ -501,7 +528,7 @@ class _ScrapeSearchForm extends StatelessWidget {
         const SizedBox(height: 16),
         for (final field in source.searchFields) ...[
           Text(
-            '${field.label}${field.required ? ' *' : ''}',
+            '${_localizedScrapeSearchFieldLabel(context, field)}${field.required ? ' *' : ''}',
             style: TextStyle(
               color: context.mutedText,
               fontSize: 12,
@@ -711,7 +738,7 @@ class _ScrapeResultCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          result.title,
+                          _scrapeResultTitleForLocale(context, result),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -723,9 +750,11 @@ class _ScrapeResultCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          result.subtitle.isEmpty
-                              ? '未返回作者/演播'
-                              : result.subtitle,
+                          _scrapeResultSubtitleForLocale(context, result)
+                                  .isEmpty
+                              ? context.localeText(
+                                  '未返回作者/演播', 'No author/narrator')
+                              : _scrapeResultSubtitleForLocale(context, result),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -743,7 +772,8 @@ class _ScrapeResultCard extends StatelessWidget {
                 children: [
                   for (final key in fields.take(4))
                     _ScrapeTinyBadge(
-                      label: _scrapeFieldDefinitions[key]?.label ?? key,
+                      label: _localizedScrapeResultFieldLabel(
+                          context, result.source, key),
                     ),
                   if (fields.length > 4)
                     _ScrapeTinyBadge(label: '+${fields.length - 4}'),
@@ -834,7 +864,8 @@ class _ScrapeResultFieldTile extends StatelessWidget {
     final value = _scrapeItemValue(result.item, keyName);
     final hasValue = _hasScrapeValue(value);
     final currentValue = _draftScrapeFieldValue(book, selectedFields, keyName);
-    final label = definition?.label ?? keyName;
+    final label =
+        _localizedScrapeResultFieldLabel(context, result.source, keyName);
     final isCover = keyName == 'cover_url';
     final isDescription = keyName == 'description';
     return Container(
@@ -887,10 +918,10 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                 ),
                 label: Text(
                   selected
-                      ? '已采用'
+                      ? context.localeText('已采用', 'Used')
                       : selectedFromOther
-                          ? '替换'
-                          : '采用',
+                          ? context.localeText('替换', 'Replace')
+                          : context.localeText('采用', 'Use'),
                 ),
                 style: TextButton.styleFrom(
                   backgroundColor: selected
@@ -928,13 +959,13 @@ class _ScrapeResultFieldTile extends StatelessWidget {
               builder: (context, constraints) {
                 final stack = constraints.maxWidth < 420;
                 final current = _ScrapeCoverCompare(
-                  label: '当前',
+                  label: context.localeText('当前', 'Current'),
                   value: currentValue,
                   color: AppColors.slate400,
                   book: book,
                 );
                 final next = _ScrapeCoverCompare(
-                  label: '应用',
+                  label: context.localeText('应用', 'Apply'),
                   value: value,
                   color: AppColors.primary500,
                 );
@@ -963,8 +994,9 @@ class _ScrapeResultFieldTile extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _ScrapeValueCompare(
-                  label: '当前',
-                  value: _formatScrapeValue(currentValue, '未知'),
+                  label: context.localeText('当前', 'Current'),
+                  value: _formatScrapeValueForLocale(
+                      context, currentValue, '未知', 'Unknown'),
                   color: AppColors.slate400,
                   backgroundColor:
                       context.isDark ? AppColors.slate950 : AppColors.slate50,
@@ -973,8 +1005,8 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 _ScrapeValueCompare(
-                  label: '应用',
-                  value: _formatScrapeValue(value),
+                  label: context.localeText('应用', 'Apply'),
+                  value: _formatScrapeValueForLocale(context, value),
                   color: AppColors.primary500,
                   backgroundColor: context.isDark
                       ? AppColors.primary950.withValues(alpha: 0.25)
@@ -1001,7 +1033,9 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: Text(expanded ? '收起' : '展开'),
+                child: Text(expanded
+                    ? context.localeText('收起', 'Collapse')
+                    : context.localeText('展开', 'Expand')),
               ),
             ),
           ],

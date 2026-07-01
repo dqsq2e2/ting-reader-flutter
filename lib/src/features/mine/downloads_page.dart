@@ -6,6 +6,7 @@ import '../../core/state/download_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/chapter_sort.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
@@ -35,8 +36,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
           groups.putIfAbsent(item.bookGroupKey, () => []).add(item);
         }
         final entries = groups.entries.toList()
-          ..sort((a, b) =>
-              a.value.first.bookTitle.compareTo(b.value.first.bookTitle));
+          ..sort((a, b) => _downloadBookTitle(context, a.value.first.bookTitle)
+              .compareTo(_downloadBookTitle(context, b.value.first.bookTitle)));
         final hasAnything =
             downloads.downloads.isNotEmpty || downloads.activeTasks.isNotEmpty;
 
@@ -51,7 +52,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
                     await _deleteBook(
                       context,
                       selectedItems.first.bookGroupKey,
-                      selectedItems.first.bookTitle,
+                      _downloadBookTitle(
+                          context, selectedItems.first.bookTitle),
                     );
                     if (mounted) setState(() => _selectedGroupKey = null);
                   },
@@ -98,10 +100,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
               ),
             ] else if (!hasAnything) ...[
               const SizedBox(height: 24),
-              const EmptyState(
+              EmptyState(
                 icon: Icons.download_done_rounded,
-                title: '暂无下载任务',
-                message: '播放界面或书籍详情中加入下载后，会在这里管理本地离线文件。',
+                title: context.l10n.downloadsNoTasksTitle,
+                message: context.l10n.downloadsNoTasksMessage,
               ),
             ],
             const SafeBottomSpacer(),
@@ -119,7 +121,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setState) => AlertDialog(
-          title: const Text('下载设置'),
+          title: Text(context.l10n.downloadsSettingsTitle),
           content: SizedBox(
             width: 460,
             child: Column(
@@ -128,12 +130,14 @@ class _DownloadsPageState extends State<DownloadsPage> {
               children: [
                 DropdownButtonFormField<int>(
                   initialValue: maxConcurrentDownloads,
-                  decoration: const InputDecoration(labelText: '同时下载'),
+                  decoration: InputDecoration(
+                    labelText: context.l10n.downloadsConcurrent,
+                  ),
                   items: [
                     for (var i = 1; i <= 6; i++)
                       DropdownMenuItem(
                         value: i,
-                        child: Text('$i 个任务'),
+                        child: Text(context.l10n.downloadsTaskCount(i)),
                       ),
                   ],
                   onChanged: (next) {
@@ -144,7 +148,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                 ),
                 const SizedBox(height: 18),
                 Text(
-                  '缓存位置',
+                  context.l10n.downloadsCacheLocation,
                   style: TextStyle(
                     color: context.mutedText,
                     fontSize: 13,
@@ -191,7 +195,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       onPressed: () async {
                         final picked =
                             await FilePicker.platform.getDirectoryPath(
-                          dialogTitle: '选择下载缓存位置',
+                          dialogTitle:
+                              context.l10n.downloadsChooseCacheLocation,
                           initialDirectory:
                               cacheDirectory ?? downloads.cacheDirectoryPath,
                         );
@@ -199,20 +204,20 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         setState(() => cacheDirectory = picked);
                       },
                       icon: const Icon(Icons.folder_open_rounded, size: 18),
-                      label: const Text('选择文件夹'),
+                      label: Text(context.l10n.downloadsChooseFolder),
                     ),
                     TextButton.icon(
                       onPressed: cacheDirectory == null
                           ? null
                           : () => setState(() => cacheDirectory = null),
                       icon: const Icon(Icons.restore_rounded, size: 18),
-                      label: const Text('使用默认位置'),
+                      label: Text(context.l10n.downloadsUseDefaultLocation),
                     ),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '新下载的音频、封面和元数据会写入该位置；已下载章节仍保留原文件路径，可继续播放或删除。',
+                  context.l10n.downloadsCacheHint,
                   style: TextStyle(
                     color: context.tertiaryText,
                     fontSize: 12,
@@ -225,7 +230,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
+              child: Text(context.l10n.commonCancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(
@@ -235,7 +240,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                   cacheDirectory: cacheDirectory,
                 ),
               ),
-              child: const Text('保存'),
+              child: Text(context.l10n.mineSave),
             ),
           ],
         ),
@@ -248,7 +253,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
     } catch (error) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保存下载设置失败：$error')),
+        SnackBar(
+          content: Text(context.l10n.downloadsSaveSettingsFailed('$error')),
+        ),
       );
     }
   }
@@ -256,9 +263,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
   Future<void> _clearAll(BuildContext context) async {
     final ok = await _confirm(
       context,
-      title: '清空下载管理',
-      message: '确定要删除所有下载任务和本地离线文件吗？不会影响服务端文件。',
-      action: '清空',
+      title: context.l10n.downloadsClearTitle,
+      message: context.l10n.downloadsClearMessage,
+      action: context.l10n.downloadsClearAction,
     );
     if (!ok || !context.mounted) return;
     await AppScope.downloadOf(context).clearAll();
@@ -267,9 +274,11 @@ class _DownloadsPageState extends State<DownloadsPage> {
   Future<void> _deleteTask(BuildContext context, DownloadTask task) async {
     final ok = await _confirm(
       context,
-      title: '删除下载任务',
-      message: '确定要删除“${task.chapterTitle}”的下载任务吗？未完成的临时文件也会删除。',
-      action: '删除',
+      title: context.l10n.downloadsDeleteTaskTitle,
+      message: context.l10n.downloadsDeleteTaskMessage(
+        _downloadChapterTitle(context, task.chapterTitle),
+      ),
+      action: context.l10n.downloadsDeleteAction,
     );
     if (!ok || !context.mounted) return;
     await AppScope.downloadOf(context).deleteTask(task.storageKey);
@@ -282,9 +291,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
   ) async {
     final ok = await _confirm(
       context,
-      title: '删除整本下载',
-      message: '确定要删除《$title》的本地离线文件吗？',
-      action: '删除',
+      title: context.l10n.downloadsDeleteBookTitle,
+      message: context.l10n.downloadsDeleteBookMessage(title),
+      action: context.l10n.downloadsDeleteAction,
     );
     if (!ok || !context.mounted) return;
     await AppScope.downloadOf(context).deleteBook(bookId);
@@ -293,9 +302,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
   Future<void> _deleteChapter(BuildContext context, String chapterId) async {
     final ok = await _confirm(
       context,
-      title: '删除下载章节',
-      message: '确定要删除这个本地离线文件吗？',
-      action: '删除',
+      title: context.l10n.downloadsDeleteChapterTitle,
+      message: context.l10n.downloadsDeleteChapterMessage,
+      action: context.l10n.downloadsDeleteAction,
     );
     if (!ok || !context.mounted) return;
     await AppScope.downloadOf(context).deleteChapter(chapterId);
@@ -309,9 +318,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
     if (ids.isEmpty) return;
     final ok = await _confirm(
       context,
-      title: '批量删除章节',
-      message: '确定要删除选中的 ${ids.length} 个本地离线文件吗？不会影响服务端文件。',
-      action: '删除',
+      title: context.l10n.downloadsDeleteChaptersTitle,
+      message: context.l10n.downloadsDeleteChaptersMessage(ids.length),
+      action: context.l10n.downloadsDeleteAction,
     );
     if (!ok || !context.mounted) return;
     final downloads = AppScope.downloadOf(context);
@@ -394,7 +403,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(context.l10n.commonCancel),
           ),
           TextButton(
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -406,6 +415,20 @@ class _DownloadsPageState extends State<DownloadsPage> {
     );
     return result ?? false;
   }
+}
+
+String _downloadBookTitle(BuildContext context, String? title) {
+  final trimmed = title?.trim() ?? '';
+  return trimmed.isNotEmpty
+      ? trimmed
+      : context.localeText('未知书籍', 'Unknown Book');
+}
+
+String _downloadChapterTitle(BuildContext context, String? title) {
+  final trimmed = title?.trim() ?? '';
+  return trimmed.isNotEmpty
+      ? trimmed
+      : context.localeText('未知章节', 'Unknown Chapter');
 }
 
 class _DownloadsHeader extends StatelessWidget {
@@ -439,12 +462,17 @@ class _DownloadsHeader extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 640;
+        final l10n = context.l10n;
         final title = HeaderText(
           icon: Icons.download_rounded,
-          title: '我的下载',
+          title: l10n.downloadsTitle,
           subtitle: downloadedCount == 0 && activeCount == 0
-              ? '管理此设备上的下载任务和本地离线文件'
-              : '已下载 $downloadedCount 章 · ${formatBytes(totalSize)} · 并发 $maxConcurrentDownloads',
+              ? l10n.downloadsSubtitleEmpty
+              : l10n.downloadsSubtitle(
+                  downloadedCount,
+                  formatBytes(totalSize),
+                  maxConcurrentDownloads,
+                ),
         );
         final actions = Wrap(
           spacing: 8,
@@ -454,12 +482,12 @@ class _DownloadsHeader extends StatelessWidget {
             OutlinedButton.icon(
               onPressed: onOpenSettings,
               icon: const Icon(Icons.tune_rounded, size: 18),
-              label: const Text('设置'),
+              label: Text(l10n.downloadsSettingsAction),
             ),
             TextButton.icon(
               onPressed: hasItems ? onClearAll : null,
               icon: const Icon(Icons.delete_sweep_rounded, size: 18),
-              label: const Text('清空'),
+              label: Text(l10n.downloadsClearAction),
             ),
           ],
         );
@@ -467,35 +495,35 @@ class _DownloadsHeader extends StatelessWidget {
           if (downloadedCount > 0)
             _StatPill(
               icon: Icons.download_done_rounded,
-              label: '已下载',
+              label: l10n.downloadsDownloadedStatus,
               value: downloadedCount,
               color: AppColors.primary600,
             ),
           if (runningCount > 0)
             _StatPill(
               icon: Icons.downloading_rounded,
-              label: '下载中',
+              label: l10n.downloadsRunningStatus,
               value: runningCount,
               color: AppColors.primary600,
             ),
           if (queuedCount > 0)
             _StatPill(
               icon: Icons.schedule_rounded,
-              label: '排队',
+              label: l10n.downloadsQueuedStatus,
               value: queuedCount,
               color: AppColors.slate600,
             ),
           if (pausedCount > 0)
             _StatPill(
               icon: Icons.pause_circle_outline_rounded,
-              label: '暂停',
+              label: l10n.downloadsPausedStatus,
               value: pausedCount,
               color: Colors.orange,
             ),
           if (failedCount > 0)
             _StatPill(
               icon: Icons.error_outline_rounded,
-              label: '失败',
+              label: l10n.downloadsFailedStatus,
               value: failedCount,
               color: Colors.red,
             ),
@@ -618,14 +646,14 @@ class _ActiveTasks extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  '下载任务',
-                  style: TextStyle(fontSize: 16),
+                  context.l10n.downloadsTasksTitle,
+                  style: const TextStyle(fontSize: 16),
                 ),
               ),
               Text(
-                '${tasks.length} 个任务',
+                context.l10n.downloadsTaskCount(tasks.length),
                 style: TextStyle(
                   color: context.mutedText,
                   fontSize: 12,
@@ -706,13 +734,13 @@ class _ActiveTaskRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      task.bookTitle,
+                      _downloadBookTitle(context, task.bookTitle),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      task.chapterTitle,
+                      _downloadChapterTitle(context, task.chapterTitle),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -767,27 +795,27 @@ class _ActiveTaskRow extends StatelessWidget {
                   if (task.status == DownloadStatus.downloading ||
                       task.status == DownloadStatus.queued)
                     IconButton(
-                      tooltip: '暂停',
+                      tooltip: context.l10n.downloadsPause,
                       visualDensity: VisualDensity.compact,
                       onPressed: onPause,
                       icon: const Icon(Icons.pause_circle_outline_rounded),
                     ),
                   if (task.status == DownloadStatus.paused)
                     IconButton(
-                      tooltip: '继续',
+                      tooltip: context.l10n.downloadsResume,
                       visualDensity: VisualDensity.compact,
                       onPressed: onResume,
                       icon: const Icon(Icons.play_arrow_rounded),
                     ),
                   if (task.status == DownloadStatus.failed)
                     IconButton(
-                      tooltip: '重试',
+                      tooltip: context.l10n.downloadsRetry,
                       visualDensity: VisualDensity.compact,
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh_rounded),
                     ),
                   IconButton(
-                    tooltip: '删除任务',
+                    tooltip: context.l10n.downloadsDeleteTaskTitle,
                     visualDensity: VisualDensity.compact,
                     onPressed: onDelete,
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -811,8 +839,9 @@ class _StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = _statusColor(status);
-    final text =
-        status == DownloadStatus.downloading ? '$percent%' : status.label;
+    final text = status == DownloadStatus.downloading
+        ? '$percent%'
+        : _downloadStatusLabel(context, status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
@@ -916,14 +945,17 @@ class _DownloadedBookCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    first.bookTitle,
+                    _downloadBookTitle(context, first.bookTitle),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: compact ? 16 : 17),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '${sorted.length} 章 · ${formatBytes(size)}',
+                    context.l10n.downloadsDownloadedChapterSize(
+                      sorted.length,
+                      formatBytes(size),
+                    ),
                     style: TextStyle(
                       color: context.mutedText,
                       fontSize: compact ? 13 : 14,
@@ -1014,10 +1046,10 @@ class _DownloadedBookChaptersViewState
         children: [
           AppBackButton(onPressed: widget.onBack),
           const SizedBox(height: 24),
-          const EmptyState(
+          EmptyState(
             icon: Icons.download_done_rounded,
-            title: '暂无下载章节',
-            message: '这本书的本地章节已经被删除。',
+            title: context.l10n.downloadsNoChaptersTitle,
+            message: context.l10n.downloadsNoChaptersMessage,
           ),
           const SafeBottomSpacer(),
         ],
@@ -1039,8 +1071,8 @@ class _DownloadedBookChaptersViewState
         const SizedBox(height: 20),
         HeaderText(
           icon: Icons.download_done_rounded,
-          title: first.bookTitle,
-          subtitle: '已下载 ${allItems.length} 个音频',
+          title: _downloadBookTitle(context, first.bookTitle),
+          subtitle: context.l10n.downloadsDownloadedAudioCount(allItems.length),
         ),
         const SizedBox(height: 18),
         Wrap(
@@ -1059,7 +1091,11 @@ class _DownloadedBookChaptersViewState
                     : Icons.playlist_add_check_rounded,
                 size: 18,
               ),
-              label: Text(_selecting ? '完成' : '批量删除'),
+              label: Text(
+                _selecting
+                    ? context.l10n.downloadsDone
+                    : context.l10n.downloadsBatchDelete,
+              ),
             ),
             OutlinedButton.icon(
               onPressed: () => setState(() {
@@ -1072,13 +1108,17 @@ class _DownloadedBookChaptersViewState
                     : Icons.arrow_upward_rounded,
                 size: 18,
               ),
-              label: Text(_ascending ? '正序' : '逆序'),
+              label: Text(
+                _ascending
+                    ? context.l10n.downloadsAscending
+                    : context.l10n.downloadsDescending,
+              ),
             ),
             if (widget.onDeleteBook != null)
               TextButton.icon(
                 onPressed: widget.onDeleteBook,
                 icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                label: const Text('删除整本'),
+                label: Text(context.l10n.downloadsDeleteWholeBook),
               ),
           ],
         ),
@@ -1148,8 +1188,10 @@ class _DownloadedBookChaptersViewState
     final mainItems = items.where((item) => !item.isExtra).toList();
     final extraItems = items.where((item) => item.isExtra).toList();
     final sections = <MapEntry<String, List<LocalDownload>>>[
-      if (mainItems.isNotEmpty) MapEntry('正文', mainItems),
-      if (extraItems.isNotEmpty) MapEntry('番外', extraItems),
+      if (mainItems.isNotEmpty)
+        MapEntry(context.l10n.downloadsMainChapters, mainItems),
+      if (extraItems.isNotEmpty)
+        MapEntry(context.l10n.downloadsExtraChapters, extraItems),
     ];
     final showSectionLabel = sections.length > 1 || extraItems.isNotEmpty;
     final widgets = <Widget>[];
@@ -1220,7 +1262,7 @@ class _DownloadChapterGroups extends StatelessWidget {
         children: [
           for (var index = 0; index < groups.length; index++) ...[
             _DownloadChapterGroupChip(
-              label: _labelFor(groups[index]),
+              label: _labelFor(context, groups[index]),
               selected: groupIndex == index,
               onTap: () => onChanged(index),
             ),
@@ -1231,12 +1273,12 @@ class _DownloadChapterGroups extends StatelessWidget {
     );
   }
 
-  String _labelFor(List<LocalDownload> items) {
+  String _labelFor(BuildContext context, List<LocalDownload> items) {
     if (items.isEmpty) return '0';
     final start = items.first.chapterIndex;
     final end = items.last.chapterIndex;
-    if (start == end) return '第 $start 章';
-    return '第 $start-$end 章';
+    if (start == end) return context.l10n.downloadsChapterSingle(start);
+    return context.l10n.downloadsChapterRange(start, end);
   }
 }
 
@@ -1366,7 +1408,9 @@ class _DownloadChapterRow extends StatelessWidget {
                   BatchCheckbox(
                     checked: selected,
                     compact: compact,
-                    tooltip: selected ? '取消选择' : '选择章节',
+                    tooltip: selected
+                        ? context.l10n.downloadsCancelSelect
+                        : context.l10n.downloadsSelectChapter,
                     onChanged: () => onSelected(!selected),
                   ),
                   SizedBox(width: compact ? 2 : 6),
@@ -1376,7 +1420,7 @@ class _DownloadChapterRow extends StatelessWidget {
             )
           : _DownloadChapterIndex(item: item, compact: compact),
       title: Text(
-        item.chapterTitle,
+        _downloadChapterTitle(context, item.chapterTitle),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1388,7 +1432,7 @@ class _DownloadChapterRow extends StatelessWidget {
       trailing: selectionMode
           ? null
           : IconButton(
-              tooltip: '删除下载',
+              tooltip: context.l10n.downloadsDeleteDownload,
               onPressed: onDelete,
               icon: const Icon(Icons.delete_outline_rounded),
             ),
@@ -1445,7 +1489,9 @@ class _DownloadSelectionBar extends StatelessWidget {
         final compact = constraints.maxWidth < 520;
         final selectButton = BatchSelectButton(
           checked: allSelected,
-          label: allSelected ? '取消全选' : '全选本页',
+          label: allSelected
+              ? context.l10n.downloadsUnselectAll
+              : context.l10n.downloadsSelectPage,
           compact: compact,
           onPressed: onSelectPage,
         );
@@ -1455,10 +1501,15 @@ class _DownloadSelectionBar extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           alignment: WrapAlignment.end,
           children: [
-            BatchCountBadge(label: '已选 $selectedCount 章', compact: compact),
+            BatchCountBadge(
+              label: context.l10n.downloadsSelectedChapters(selectedCount),
+              compact: compact,
+            ),
             BatchActionButton(
               icon: Icons.delete_outline_rounded,
-              label: compact ? '删除' : '删除选中',
+              label: compact
+                  ? context.l10n.downloadsDeleteAction
+                  : context.l10n.downloadsDeleteSelected,
               danger: true,
               compact: compact,
               onPressed: onDelete == null ? null : () => onDelete!(),
@@ -1473,12 +1524,13 @@ class _DownloadSelectionBar extends StatelessWidget {
                 children: [
                   selectButton,
                   BatchCountBadge(
-                    label: '已选 $selectedCount 章',
+                    label:
+                        context.l10n.downloadsSelectedChapters(selectedCount),
                     compact: compact,
                   ),
                   BatchActionButton(
                     icon: Icons.delete_outline_rounded,
-                    label: '删除',
+                    label: context.l10n.downloadsDeleteAction,
                     danger: true,
                     compact: compact,
                     onPressed: onDelete == null ? null : () => onDelete!(),
@@ -1525,6 +1577,16 @@ Color _statusColor(DownloadStatus status) {
     DownloadStatus.paused => Colors.orange,
     DownloadStatus.completed => AppColors.primary600,
     DownloadStatus.failed => Colors.red,
+  };
+}
+
+String _downloadStatusLabel(BuildContext context, DownloadStatus status) {
+  return switch (status) {
+    DownloadStatus.queued => context.l10n.downloadsStatusQueued,
+    DownloadStatus.downloading => context.l10n.downloadsStatusDownloading,
+    DownloadStatus.paused => context.l10n.downloadsStatusPaused,
+    DownloadStatus.completed => context.l10n.downloadsStatusCompleted,
+    DownloadStatus.failed => context.l10n.downloadsStatusFailed,
   };
 }
 

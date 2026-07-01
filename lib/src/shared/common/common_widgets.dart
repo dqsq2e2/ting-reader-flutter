@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
+import '../../core/utils/locale.dart';
 import '../app_scope.dart';
 
 class TingCard extends StatelessWidget {
@@ -336,9 +337,9 @@ class PageListView extends StatelessWidget {
 }
 
 class LoadingView extends StatelessWidget {
-  const LoadingView({super.key, this.label = '加载中...'});
+  const LoadingView({super.key, this.label});
 
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -355,7 +356,10 @@ class LoadingView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text(label, style: TextStyle(color: context.mutedText)),
+          Text(
+            label ?? context.localeText('加载中...', 'Loading...'),
+            style: TextStyle(color: context.mutedText),
+          ),
         ],
       ),
     );
@@ -366,11 +370,11 @@ class AppBackButton extends StatelessWidget {
   const AppBackButton({
     super.key,
     required this.onPressed,
-    this.label = '返回',
+    this.label,
   });
 
   final VoidCallback onPressed;
-  final String label;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
@@ -397,7 +401,7 @@ class AppBackButton extends StatelessWidget {
                 Icon(Icons.arrow_back_rounded, size: 18, color: foreground),
                 const SizedBox(width: 8),
                 Text(
-                  label,
+                  label ?? context.localeText('返回', 'Back'),
                   style: TextStyle(
                     color: foreground,
                     fontSize: 14,
@@ -782,7 +786,7 @@ class PrimaryButton extends StatelessWidget {
             )
           : Icon(icon ?? Icons.check_rounded, size: 18),
       label: Text(
-        loading ? '处理中...' : label,
+        loading ? context.localeText('处理中...', 'Processing...') : label,
       ),
     );
   }

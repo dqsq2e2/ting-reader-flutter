@@ -45,7 +45,8 @@ class _CollapsedMiniPlayer extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
+                color: Colors.black
+                    .withValues(alpha: context.isDark ? 0.36 : 0.16),
                 blurRadius: 22,
                 offset: const Offset(0, 10),
               ),
@@ -61,5 +62,3 @@ class _CollapsedMiniPlayer extends StatelessWidget {
     );
   }
 }
-
-

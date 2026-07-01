@@ -4,9 +4,7 @@ double _playerThemeLuminance(Color color) {
   return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
 }
 
-
 bool _isPlayerThemeLight(Color color) => _playerThemeLuminance(color) > 0.65;
-
 
 String _formatPlaybackSpeed(double speed) {
   if ((speed - speed.roundToDouble()).abs() < 0.001) {
@@ -17,5 +15,3 @@ String _formatPlaybackSpeed(double speed) {
   text = text.replaceFirst(RegExp(r'\.$'), '');
   return '${text}x';
 }
-
-

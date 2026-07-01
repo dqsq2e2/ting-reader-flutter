@@ -128,9 +128,10 @@ class _ThemeChoiceCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
+          constraints: BoxConstraints(minHeight: compact ? 74 : 82),
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 6 : 14,
-            vertical: compact ? 10 : 14,
+            horizontal: compact ? 6 : 10,
+            vertical: compact ? 8 : 10,
           ),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
@@ -145,9 +146,9 @@ class _ThemeChoiceCard extends StatelessWidget {
               Icon(
                 option.icon,
                 color: selected ? AppColors.primary600 : context.mutedText,
-                size: compact ? 22 : 24,
+                size: compact ? 20 : 22,
               ),
-              SizedBox(height: compact ? 6 : 9),
+              SizedBox(height: compact ? 5 : 7),
               Text(
                 option.label,
                 textAlign: TextAlign.center,
@@ -161,6 +162,51 @@ class _ThemeChoiceCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LanguageDropdown extends StatelessWidget {
+  const _LanguageDropdown({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return DropdownButtonFormField<String>(
+      initialValue: normalizeLanguage(value),
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.translate_rounded, size: 19),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: context.faintBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: context.faintBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.primary600, width: 1.5),
+        ),
+      ),
+      items: [
+        DropdownMenuItem(value: 'zh', child: Text(l10n.settingsLanguageZh)),
+        DropdownMenuItem(value: 'en', child: Text(l10n.settingsLanguageEn)),
+      ],
+      onChanged: (next) {
+        if (next == null) return;
+        onChanged(next);
+      },
     );
   }
 }
@@ -359,12 +405,12 @@ class _EmbedTypeToggle extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _EmbedButton(
-            label: '免登录 (带 Token)',
+            label: context.l10n.settingsPrivateEmbed,
             selected: value == 'private',
             onTap: () => onChanged('private'),
           ),
           _EmbedButton(
-            label: '需登录 (公开)',
+            label: context.l10n.settingsPublicEmbed,
             selected: value == 'public',
             onTap: () => onChanged('public'),
           ),
@@ -448,7 +494,7 @@ class _CodeBlock extends StatelessWidget {
           top: 6,
           right: 6,
           child: IconButton(
-            tooltip: '复制',
+            tooltip: context.l10n.commonCopy,
             onPressed: onCopy,
             icon: const Icon(Icons.copy_rounded, size: 16),
           ),
@@ -466,6 +512,7 @@ class _WidgetSecurityHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final private = embedType == 'private';
+    final l10n = context.l10n;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -485,7 +532,9 @@ class _WidgetSecurityHint extends StatelessWidget {
               ),
               children: [
                 TextSpan(
-                  text: private ? '注意安全：' : '公开模式：',
+                  text: private
+                      ? l10n.settingsPrivateEmbedWarningTitle
+                      : l10n.settingsPublicEmbedWarningTitle,
                   style: TextStyle(
                     color: private ? Colors.orange : Colors.blue,
                     fontWeight: FontWeight.w700,
@@ -493,8 +542,8 @@ class _WidgetSecurityHint extends StatelessWidget {
                 ),
                 TextSpan(
                   text: private
-                      ? '此代码包含您的访问凭证。请仅嵌入到您信任的私有页面。'
-                      : '此代码不包含凭证，适合嵌入博客或公开网站，访客首次使用时需要登录。',
+                      ? l10n.settingsPrivateEmbedWarning
+                      : l10n.settingsPublicEmbedWarning,
                 ),
               ],
             ),
@@ -541,7 +590,7 @@ class _LayoutCodePanel extends StatelessWidget {
                 ),
               ),
               IconButton(
-                tooltip: '复制',
+                tooltip: context.l10n.commonCopy,
                 onPressed: onCopy,
                 icon: const Icon(Icons.copy_rounded, size: 14),
               ),

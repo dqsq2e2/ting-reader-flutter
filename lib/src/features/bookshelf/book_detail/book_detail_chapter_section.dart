@@ -7,6 +7,7 @@ class _ChapterSection extends StatefulWidget {
     required this.groupCount,
     required this.activeTotal,
     required this.groupIndex,
+    required this.groupDescending,
     required this.activeTab,
     required this.mainCount,
     required this.extraCount,
@@ -31,6 +32,7 @@ class _ChapterSection extends StatefulWidget {
   final int groupCount;
   final int activeTotal;
   final int groupIndex;
+  final bool groupDescending;
   final String activeTab;
   final int mainCount;
   final int extraCount;
@@ -133,25 +135,32 @@ class _ChapterSectionState extends State<_ChapterSection> {
   Future<void> _downloadChapter(Chapter chapter) async {
     final downloadState = AppScope.downloadOf(context);
     if (downloadState.hasChapter(chapter.id)) {
-      _showDownloadMessage('章节已下载');
+      _showDownloadMessage(
+          context.localeText('章节已下载', 'Chapter already downloaded'));
       return;
     }
     final task = downloadState.taskForChapter(chapter.id);
     if (task != null) {
       if (task.status == DownloadStatus.paused ||
           task.status == DownloadStatus.failed) {
+        final resumedMessage = context.localeText(
+            '已恢复下载：${chapter.title}', 'Resumed download: ${chapter.title}');
         await downloadState.resumeTask(chapter.id);
-        _showDownloadMessage('已恢复下载：${chapter.title}');
+        _showDownloadMessage(resumedMessage);
       } else {
-        _showDownloadMessage('下载任务已存在：${task.status.label}');
+        final status = task.status.labelForLocale(context.isEnglishLocale);
+        _showDownloadMessage(context.localeText(
+            '下载任务已存在：$status', 'Download task already exists: $status'));
       }
       return;
     }
     try {
       downloadState.queueChapter(widget.book, chapter);
-      _showDownloadMessage('已加入下载队列：${chapter.title}');
+      _showDownloadMessage(context.localeText('已加入下载队列：${chapter.title}',
+          'Added to download queue: ${chapter.title}'));
     } catch (err) {
-      _showDownloadMessage('加入下载失败：$err');
+      _showDownloadMessage(
+          context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
     }
   }
 
@@ -165,7 +174,8 @@ class _ChapterSectionState extends State<_ChapterSection> {
         .toList()
       ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
     if (targets.isEmpty) {
-      _showDownloadMessage('没有可加入队列的章节');
+      _showDownloadMessage(
+          context.localeText('没有可加入队列的章节', 'No chapters can be queued'));
       return;
     }
     var queued = 0;
@@ -174,7 +184,8 @@ class _ChapterSectionState extends State<_ChapterSection> {
         downloadState.queueChapter(widget.book, chapter);
         queued++;
       } catch (err) {
-        _showDownloadMessage('加入下载失败：$err');
+        _showDownloadMessage(
+            context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
         break;
       }
     }
@@ -183,7 +194,10 @@ class _ChapterSectionState extends State<_ChapterSection> {
       _selectionMode = false;
       _selectedIds.clear();
     });
-    if (queued > 0) _showDownloadMessage('已加入 $queued 个章节到下载队列');
+    if (queued > 0) {
+      _showDownloadMessage(context.localeText(
+          '已加入 $queued 个章节到下载队列', 'Queued $queued chapters'));
+    }
   }
 
   void _showDownloadMessage(String message) {
@@ -248,7 +262,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
                   ),
                   SizedBox(width: compact ? 6 : 8),
                   Text(
-                    '章节列表',
+                    context.localeText('章节列表', 'Chapters'),
                     style: TextStyle(
                       fontSize: headerFontSize,
                       fontWeight: FontWeight.w700,
@@ -264,7 +278,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
                 onChanged: widget.onTabChanged,
               );
               final manageButton = IconButton(
-                tooltip: '管理章节',
+                tooltip: context.localeText('管理章节', 'Manage chapters'),
                 onPressed: widget.onManage,
                 style: IconButton.styleFrom(
                   foregroundColor: context.tertiaryText,
@@ -288,7 +302,9 @@ class _ChapterSectionState extends State<_ChapterSection> {
                   size: actionIconSize,
                 ),
                 label: Text(
-                  _selectionMode ? '取消' : '批量下载',
+                  _selectionMode
+                      ? context.l10n.commonCancel
+                      : context.localeText('批量下载', 'Batch Download'),
                   style: actionTextStyle,
                 ),
                 style: TextButton.styleFrom(
@@ -321,7 +337,9 @@ class _ChapterSectionState extends State<_ChapterSection> {
                   size: actionIconSize,
                 ),
                 label: Text(
-                  widget.ascending ? '正序' : '逆序',
+                  widget.ascending
+                      ? context.localeText('正序', 'Ascending')
+                      : context.localeText('倒序', 'Descending'),
                   style: actionTextStyle,
                 ),
                 style: TextButton.styleFrom(
@@ -401,13 +419,17 @@ class _ChapterSectionState extends State<_ChapterSection> {
             HorizontalScrollControls(
               child: Row(
                 children: [
-                  for (var i = 0; i < widget.groupCount; i++)
+                  for (final i in _visibleGroupIndexes(
+                    widget.groupCount,
+                    widget.groupDescending,
+                  ))
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: KeyedSubtree(
                         key: _groupKeys.putIfAbsent(i, () => GlobalKey()),
                         child: _ChapterGroupButton(
-                          label: _chapterGroupLabel(i, widget.activeTotal),
+                          label: _chapterGroupLabel(
+                              context, i, widget.activeTotal),
                           selected: widget.groupIndex == i,
                           themeColor: widget.themeColor,
                           onPressed: () => widget.onGroupChanged(i),
@@ -445,19 +467,24 @@ class _ChapterSectionState extends State<_ChapterSection> {
                   final compact = constraints.maxWidth < 520;
                   final selectButton = BatchSelectButton(
                     checked: allPageSelected,
-                    label: allPageSelected ? '取消本页' : '全选本页',
+                    label: allPageSelected
+                        ? context.localeText('取消本页', 'Unselect Page')
+                        : context.localeText('全选本页', 'Select Page'),
                     compact: compact,
                     onPressed: downloadable.isEmpty
                         ? null
                         : () => _toggleCurrentPage(downloadState),
                   );
                   final countBadge = BatchCountBadge(
-                    label: '已选 $selectedDownloadable',
+                    label: context.localeText('已选 $selectedDownloadable',
+                        '$selectedDownloadable selected'),
                     compact: compact,
                   );
                   final downloadButton = BatchActionButton(
                     icon: Icons.download_rounded,
-                    label: compact ? '下载' : '下载选中',
+                    label: compact
+                        ? context.localeText('下载', 'Download')
+                        : context.localeText('下载选中', 'Download Selected'),
                     filled: true,
                     compact: compact,
                     onPressed:
@@ -491,10 +518,11 @@ class _ChapterSectionState extends State<_ChapterSection> {
             const SizedBox(height: 16),
           ],
           if (widget.chapters.isEmpty)
-            const EmptyState(
+            EmptyState(
               icon: Icons.queue_music_rounded,
-              title: '暂无章节',
-              message: '这个分组下还没有章节。',
+              title: context.localeText('暂无章节', 'No Chapters'),
+              message: context.localeText(
+                  '这个分组下还没有章节。', 'This group has no chapters yet.'),
             )
           else
             Column(
@@ -540,14 +568,19 @@ class _ChapterSectionState extends State<_ChapterSection> {
   }
 }
 
-String _chapterGroupLabel(int groupIndex, int total) {
-  if (total <= 0) return '章节';
+List<int> _visibleGroupIndexes(int groupCount, bool descending) {
+  final indexes = List<int>.generate(groupCount, (index) => index);
+  return descending ? indexes.reversed.toList(growable: false) : indexes;
+}
+
+String _chapterGroupLabel(BuildContext context, int groupIndex, int total) {
+  if (total <= 0) return context.localeText('章节', 'Chapters');
   final start = groupIndex * _BookDetailPageState._chaptersPerGroup + 1;
   final end = math.min(
     start + _BookDetailPageState._chaptersPerGroup - 1,
     total,
   );
-  return '第 $start-$end 章';
+  return context.localeText('第 $start-$end 章', 'Chapters $start-$end');
 }
 
 class _ChapterTabs extends StatelessWidget {
@@ -577,13 +610,14 @@ class _ChapterTabs extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _ChapterTabButton(
-            label: '正文 ($mainCount)',
+            label: context.localeText('正文 ($mainCount)', 'Main ($mainCount)'),
             selected: activeTab == 'main',
             compact: compact,
             onPressed: () => onChanged('main'),
           ),
           _ChapterTabButton(
-            label: '番外 ($extraCount)',
+            label:
+                context.localeText('番外 ($extraCount)', 'Extra ($extraCount)'),
             selected: activeTab == 'extra',
             compact: compact,
             onPressed: () => onChanged('extra'),
@@ -716,9 +750,10 @@ class _ChapterListRowState extends State<_ChapterListRow> {
                 .clamp(0.0, 1.0)
             : 0.0;
     final progressText = progress >= 0.95
-        ? '已播完'
+        ? context.localeText('已播完', 'Completed')
         : progress > 0
-            ? '已播${(progress * 100).floor()}%'
+            ? context.localeText('已播${(progress * 100).floor()}%',
+                '${(progress * 100).floor()}% played')
             : null;
     final themeColor = widget.themeColor;
     final themedActive = widget.active && themeColor != null && !context.isDark;
@@ -754,7 +789,9 @@ class _ChapterListRowState extends State<_ChapterListRow> {
                   checked: widget.selected,
                   compact: compact,
                   enabled: !widget.downloaded && widget.task == null,
-                  tooltip: widget.selected ? '取消选择' : '选择章节',
+                  tooltip: widget.selected
+                      ? context.localeText('取消选择', 'Unselect')
+                      : context.localeText('选择章节', 'Select chapter'),
                   onChanged: widget.downloaded || widget.task != null
                       ? null
                       : widget.onSelected,
@@ -1017,7 +1054,7 @@ class _ChapterDownloadAction extends StatelessWidget {
         context,
         icon: Icons.check_rounded,
         color: AppColors.primary600,
-        tooltip: '已下载',
+        tooltip: context.localeText('已下载', 'Downloaded'),
       );
     }
 
@@ -1032,7 +1069,7 @@ class _ChapterDownloadAction extends StatelessWidget {
       };
       final label = task.status == DownloadStatus.downloading
           ? '${(task.progress * 100).clamp(0, 100).round()}%'
-          : task.status.label;
+          : task.status.labelForLocale(context.isEnglishLocale);
       if (compact) {
         return _iconChip(
           context,
@@ -1065,7 +1102,7 @@ class _ChapterDownloadAction extends StatelessWidget {
       context,
       icon: Icons.download_rounded,
       color: accent,
-      tooltip: '下载章节',
+      tooltip: context.localeText('下载章节', 'Download chapter'),
       onTap: onDownload,
     );
   }

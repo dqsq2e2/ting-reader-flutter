@@ -113,13 +113,21 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
     return _ascending ? group.chapters : group.chapters.reversed.toList();
   }
 
-  String? _progressText(Chapter chapter) {
+  _ChapterProgressLabel? _progressText(BuildContext context, Chapter chapter) {
     final position = chapter.progressPosition;
     if (position == null || chapter.duration <= 0) return null;
     final percent = ((position / chapter.duration) * 100).floor();
     if (percent <= 0) return null;
-    if (percent >= 95) return '已播完';
-    return '已播$percent%';
+    if (percent >= 95) {
+      return _ChapterProgressLabel(
+        text: context.localeText('已播完', 'Done'),
+        completed: true,
+      );
+    }
+    return _ChapterProgressLabel(
+      text: context.localeText('已播$percent%', 'Played $percent%'),
+      completed: false,
+    );
   }
 
   Future<void> _downloadChapter(Chapter chapter) async {
@@ -209,9 +217,9 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                     size: 25,
                                   ),
                                   const SizedBox(width: 9),
-                                  const Text(
-                                    '章节列表',
-                                    style: TextStyle(
+                                  Text(
+                                    context.localeText('章节列表', 'Chapters'),
+                                    style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -229,8 +237,10 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                       child: Row(
                                         children: [
                                           _ChapterTabButton(
-                                            label:
-                                                '正文 (${mainChapters.length})',
+                                            label: context.localeText(
+                                              '正文 (${mainChapters.length})',
+                                              'Main (${mainChapters.length})',
+                                            ),
                                             selected: !activeExtra,
                                             accent: accent,
                                             onAccent: onAccent,
@@ -241,8 +251,10 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                             }),
                                           ),
                                           _ChapterTabButton(
-                                            label:
-                                                '番外 (${extraChapters.length})',
+                                            label: context.localeText(
+                                              '番外 (${extraChapters.length})',
+                                              'Extra (${extraChapters.length})',
+                                            ),
                                             selected: activeExtra,
                                             accent: accent,
                                             onAccent: onAccent,
@@ -271,7 +283,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                               onPressed: () => Navigator.pop(context),
                               icon:
                                   const Icon(Icons.keyboard_arrow_down_rounded),
-                              tooltip: '关闭',
+                              tooltip: context.localeText('关闭', 'Close'),
                             ),
                           ],
                         ),
@@ -310,7 +322,10 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                         selected: selected,
                                         showCheckmark: false,
                                         label: Text(
-                                          '第 ${group.start}-${group.end} 章',
+                                          context.localeText(
+                                            '第 ${group.start}-${group.end} 章',
+                                            'Ch. ${group.start}-${group.end}',
+                                          ),
                                         ),
                                         labelStyle: TextStyle(
                                           color: selected
@@ -348,7 +363,15 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                         child: activeGroup == null
                             ? Center(
                                 child: Text(
-                                  activeExtra ? '暂无番外章节' : '暂无正文章节',
+                                  activeExtra
+                                      ? context.localeText(
+                                          '暂无番外章节',
+                                          'No extra chapters',
+                                        )
+                                      : context.localeText(
+                                          '暂无正文章节',
+                                          'No main chapters',
+                                        ),
                                   style: TextStyle(color: context.mutedText),
                                 ),
                               )
@@ -384,8 +407,8 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                                       ?.id,
                                               isPlaying:
                                                   widget.player.isPlaying,
-                                              progressText:
-                                                  _progressText(chapter),
+                                              progressText: _progressText(
+                                                  context, chapter),
                                               downloaded: downloadState
                                                   .hasChapter(chapter.id),
                                               task: downloadState
@@ -476,6 +499,16 @@ class _ChapterTabButton extends StatelessWidget {
   }
 }
 
+class _ChapterProgressLabel {
+  const _ChapterProgressLabel({
+    required this.text,
+    required this.completed,
+  });
+
+  final String text;
+  final bool completed;
+}
+
 class _ChapterSortButton extends StatelessWidget {
   const _ChapterSortButton({
     required this.ascending,
@@ -502,7 +535,11 @@ class _ChapterSortButton extends StatelessWidget {
         ascending ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
         size: 17,
       ),
-      label: Text(ascending ? '正序' : '逆序'),
+      label: Text(
+        ascending
+            ? context.localeText('正序', 'Ascending')
+            : context.localeText('逆序', 'Descending'),
+      ),
     );
   }
 }
@@ -526,7 +563,7 @@ class _ChapterSheetTile extends StatelessWidget {
   final int fallbackIndex;
   final bool active;
   final bool isPlaying;
-  final String? progressText;
+  final _ChapterProgressLabel? progressText;
   final bool downloaded;
   final DownloadTask? task;
   final Color accent;
@@ -584,7 +621,7 @@ class _ChapterSheetTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      chapter.title,
+                      localizedChapterTitle(context, chapter),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -624,15 +661,15 @@ class _ChapterSheetTile extends StatelessWidget {
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: progressText == '已播完'
+                              color: progressText!.completed
                                   ? const Color(0xffdcfce7)
                                   : AppColors.primary50,
                               borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
-                              progressText!,
+                              progressText!.text,
                               style: TextStyle(
-                                color: progressText == '已播完'
+                                color: progressText!.completed
                                     ? const Color(0xff22c55e)
                                     : AppColors.primary600,
                                 fontSize: compact ? 10 : 11,
@@ -684,7 +721,7 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
       return _iconMark(
         icon: Icons.check_rounded,
         color: AppColors.primary600,
-        tooltip: '已下载',
+        tooltip: context.localeText('已下载', 'Downloaded'),
       );
     }
 
@@ -693,7 +730,7 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
       return _iconMark(
         icon: Icons.download_rounded,
         color: accent,
-        tooltip: '下载章节',
+        tooltip: context.localeText('下载章节', 'Download chapter'),
         onTap: onDownload,
       );
     }
@@ -713,7 +750,7 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
     };
     final label = task.status == DownloadStatus.downloading
         ? '${(task.progress.clamp(0, 1) * 100).round()}%'
-        : task.status.label;
+        : task.status.labelForLocale(context.isEnglishLocale);
 
     return _iconMark(
       icon: icon,

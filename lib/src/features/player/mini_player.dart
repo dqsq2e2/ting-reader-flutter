@@ -4,15 +4,18 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
+import '../../core/plugin_extensions/types.dart';
 import '../../core/state/app_state.dart';
 import '../../core/state/download_state.dart';
 import '../../core/state/player_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/plugin_extensions/plugin_extension_host.dart';
 
 part 'parts/chapter_sheet.dart';
 part 'parts/collapsed_mini_player.dart';
@@ -107,8 +110,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 border: Border.all(color: borderColor),
                 boxShadow: [
                   BoxShadow(
-                    color:
-                        Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
+                    color: Colors.black
+                        .withValues(alpha: context.isDark ? 0.36 : 0.16),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
@@ -173,7 +176,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        book.title,
+                                        localizedBookTitle(context, book),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -187,7 +190,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        chapter.title,
+                                        localizedChapterTitle(context, chapter),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -209,98 +212,86 @@ class _MiniPlayerState extends State<MiniPlayer> {
                             child: Padding(
                               padding: EdgeInsets.symmetric(
                                   horizontal: centerHorizontalPadding),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      _MiniIconButton(
-                                        icon: Icons.skip_previous_rounded,
-                                        color: subduedAccent,
-                                        onPressed: player.previousChapter,
-                                      ),
-                                      const SizedBox(width: 24),
-                                      _MiniIconButton(
-                                        icon: Icons.rotate_left_rounded,
-                                        color: subduedAccent,
-                                        onPressed: () => player.seek(
-                                          (player.currentTime - 15)
-                                              .clamp(0, duration)
-                                              .toDouble(),
+                              child: Transform.translate(
+                                offset: const Offset(0, 2),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        _MiniIconButton(
+                                          icon: Icons.skip_previous_rounded,
+                                          color: subduedAccent,
+                                          onPressed: player.previousChapter,
                                         ),
-                                      ),
-                                      const SizedBox(width: 24),
-                                      _IconCircle(
-                                        filled: true,
-                                        icon: player.isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        onPressed: player.togglePlay,
-                                        diameter: 40,
-                                        iconSize: 22,
-                                        fillColor: accentColor,
-                                        filledIconColor: onAccent,
-                                      ),
-                                      const SizedBox(width: 24),
-                                      _MiniIconButton(
-                                        icon: Icons.rotate_right_rounded,
-                                        color: subduedAccent,
-                                        onPressed: () => player.seek(
-                                          (player.currentTime + 30)
-                                              .clamp(0, duration)
-                                              .toDouble(),
+                                        const SizedBox(width: 24),
+                                        _MiniIconButton(
+                                          icon: Icons.rotate_left_rounded,
+                                          color: subduedAccent,
+                                          onPressed: () => player.seek(
+                                            (player.currentTime - 15)
+                                                .clamp(0, duration)
+                                                .toDouble(),
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 24),
-                                      _MiniIconButton(
-                                        icon: Icons.skip_next_rounded,
-                                        color: subduedAccent,
-                                        onPressed: player.nextChapter,
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Row(
-                                    children: [
-                                      SizedBox(
-                                        width: 32,
-                                        child: Text(
-                                          formatDurationShort(
+                                        const SizedBox(width: 24),
+                                        _IconCircle(
+                                          filled: true,
+                                          icon: player.isPlaying
+                                              ? Icons.pause_rounded
+                                              : Icons.play_arrow_rounded,
+                                          onPressed: player.togglePlay,
+                                          diameter: 40,
+                                          iconSize: 22,
+                                          fillColor: accentColor,
+                                          filledIconColor: onAccent,
+                                        ),
+                                        const SizedBox(width: 24),
+                                        _MiniIconButton(
+                                          icon: Icons.rotate_right_rounded,
+                                          color: subduedAccent,
+                                          onPressed: () => player.seek(
+                                            (player.currentTime + 30)
+                                                .clamp(0, duration)
+                                                .toDouble(),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 24),
+                                        _MiniIconButton(
+                                          icon: Icons.skip_next_rounded,
+                                          color: subduedAccent,
+                                          onPressed: player.nextChapter,
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 5),
+                                    Row(
+                                      children: [
+                                        _MiniTimeLabel(
+                                          value: formatDurationShort(
                                               player.currentTime),
                                           textAlign: TextAlign.right,
-                                          style: TextStyle(
-                                            color: context.tertiaryText,
-                                            decoration: TextDecoration.none,
-                                            fontSize: 12,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: _MiniProgressSlider(
+                                            player: player,
+                                            currentTime: player.currentTime,
+                                            duration: duration,
+                                            percent: percent,
+                                            accentColor: accentColor,
                                           ),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: _MiniProgressSlider(
-                                          player: player,
-                                          currentTime: player.currentTime,
-                                          duration: duration,
-                                          percent: percent,
-                                          accentColor: accentColor,
+                                        const SizedBox(width: 12),
+                                        _MiniTimeLabel(
+                                          value: formatDurationShort(duration),
                                         ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      SizedBox(
-                                        width: 32,
-                                        child: Text(
-                                          formatDurationShort(duration),
-                                          style: TextStyle(
-                                            color: context.tertiaryText,
-                                            decoration: TextDecoration.none,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -451,7 +442,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
               border: Border.all(color: context.faintBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: context.isDark ? 0.36 : 0.16),
+                  color: Colors.black
+                      .withValues(alpha: context.isDark ? 0.36 : 0.16),
                   blurRadius: 24,
                   offset: const Offset(0, 12),
                 ),
@@ -482,7 +474,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                             ? AppColors.slate700
                             : AppColors.slate200,
                         thumbColor: AppColors.primary500,
-                        overlayColor: AppColors.primary500.withValues(alpha: 0.14),
+                        overlayColor:
+                            AppColors.primary500.withValues(alpha: 0.14),
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 6,
                         ),
@@ -544,7 +537,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
     return showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '关闭',
+      barrierLabel: context.localeText('关闭', 'Close'),
       barrierColor: Colors.transparent,
       transitionDuration: const Duration(milliseconds: 120),
       pageBuilder: (dialogContext, _, __) {
@@ -597,4 +590,3 @@ class ExpandedPlayerOverlay extends StatelessWidget {
     );
   }
 }
-

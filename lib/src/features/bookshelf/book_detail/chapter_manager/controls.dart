@@ -70,13 +70,17 @@ class _ChapterTypeSwitch extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _ChapterTypeSwitchItem(
-            label: compact ? '正文' : '正文 $mainCount',
+            label: compact
+                ? context.localeText('正文', 'Main')
+                : context.localeText('正文 $mainCount', 'Main $mainCount'),
             selected: activeTab == 'main',
             compact: compact,
             onTap: () => onChanged('main'),
           ),
           _ChapterTypeSwitchItem(
-            label: compact ? '番外' : '番外 $extraCount',
+            label: compact
+                ? context.localeText('番外', 'Extra')
+                : context.localeText('番外 $extraCount', 'Extra $extraCount'),
             selected: activeTab == 'extra',
             compact: compact,
             onTap: () => onChanged('extra'),
