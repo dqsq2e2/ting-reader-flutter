@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 - 2026-07-02
+
+- 修复 Windows / Linux 桌面端插件 Web UI 显示“WebView 不可用”的问题，客户端现在接入桌面 WebView 实现，可打开 `web_container` 插件界面。
+- 修复 Windows WebView2 忽略 `loadHtmlString(baseUrl)` 导致插件资产被 CSP 拒绝、页面显示“拒绝连接”的根因；Windows 端改为直接加载插件资产并注入插件桥接脚本。
+- 插件 Web UI 初始化上下文新增主题信息，Windows 顶层 WebView 会按应用当前亮色 / 深色设置同步 `color-scheme`，避免插件页面跟随系统主题而与应用设置不一致。
+- 插件管理页将 `tool_provider` 标签从“AI 工具”改为“工具能力”，避免 FFmpeg Provider 等基础工具插件被误标为 AI。
+- Release 构建流程补齐 Linux 桌面 WebView 所需的 WebKitGTK 构建依赖。
+
 ## 1.1.1 - 2026-07-01
 
 - 客户端全面接入多语言：新增中文 / 英文界面切换，登录、我的、下载、通知、书籍详情、播放器等页面文案全部走本地化，插件描述、配置项和事件通知也会按当前语言展示。

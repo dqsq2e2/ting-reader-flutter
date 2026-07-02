@@ -1923,7 +1923,7 @@ List<String> _pluginRiskSignals(BuildContext context, PluginItem item) {
         }
         break;
       case 'tool_provider':
-        signals.add(context.localeText('AI 工具', 'AI tools'));
+        signals.add(context.localeText('工具能力', 'Tool provider'));
         break;
       case 'content_processor':
         signals.add(context.localeText('文档处理', 'Document reader'));

@@ -1537,14 +1537,34 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       pluginId: widget.extension.pluginId,
       entry: entry,
     );
+    final loadAssetAsTopLevel = _pluginWebViewLoadsAssetAsTopLevel();
+    final pluginTheme = _pluginThemePayload(context);
+    final initPayload = _pluginInitPayloadJson(
+      extension: widget.extension,
+      extensionContext: widget.extensionContext,
+      theme: pluginTheme,
+    );
 
     final WebViewController controller;
     try {
-      controller = WebViewController()
+      late final WebViewController nextController;
+      nextController = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
         ..setNavigationDelegate(
           NavigationDelegate(
             onNavigationRequest: (request) {
+              if (loadAssetAsTopLevel) {
+                if (!request.isMainFrame) {
+                  return NavigationDecision.navigate;
+                }
+                return _isPluginAssetUrl(
+                  request.url,
+                  assetUrl: assetUrl,
+                  pluginId: widget.extension.pluginId,
+                )
+                    ? NavigationDecision.navigate
+                    : NavigationDecision.prevent;
+              }
               if (request.isMainFrame) {
                 return NavigationDecision.navigate;
               }
@@ -1555,6 +1575,15 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
               }
               return NavigationDecision.prevent;
             },
+            onPageFinished: (_) {
+              if (loadAssetAsTopLevel) {
+                _installTopLevelPluginBridge(
+                  nextController,
+                  initPayload: initPayload,
+                  theme: pluginTheme,
+                );
+              }
+            },
             onWebResourceError: (error) {
               if (!mounted || error.isForMainFrame != true) return;
               setState(() => _error = error.description);
@@ -1564,15 +1593,19 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
         ..addJavaScriptChannel(
           'TingPluginBridge',
           onMessageReceived: _handleBridgeMessage,
-        )
-        ..loadHtmlString(
+        );
+      controller = nextController;
+      if (loadAssetAsTopLevel) {
+        controller.loadRequest(Uri.parse(assetUrl));
+      } else {
+        controller.loadHtmlString(
           _pluginWebContainerHtml(
-            extension: widget.extension,
+            initPayload: initPayload,
             assetUrl: assetUrl,
-            extensionContext: widget.extensionContext,
           ),
           baseUrl: app.api.baseUrl,
         );
+      }
     } catch (error) {
       setState(() {
         _controller = null;
@@ -1690,12 +1723,21 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   }
 }
 
+bool _pluginWebViewLoadsAssetAsTopLevel() {
+  // The Windows WebView2 implementation ignores loadHtmlString(baseUrl).
+  // Loading the asset as the top-level document keeps the plugin UI same-origin
+  // with the backend, so the plugin asset CSP `frame-ancestors 'self'` remains valid.
+  return !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+}
+
 bool _pluginWebViewSupported() {
   if (kIsWeb) return false;
   return switch (defaultTargetPlatform) {
     TargetPlatform.android ||
     TargetPlatform.iOS ||
-    TargetPlatform.macOS =>
+    TargetPlatform.macOS ||
+    TargetPlatform.windows ||
+    TargetPlatform.linux =>
       true,
     _ => false,
   };
@@ -1734,12 +1776,64 @@ _PluginBridgeRequest? _decodeBridgeRequest(String raw) {
   );
 }
 
-String _pluginWebContainerHtml({
-  required ClientExtensionDescriptor extension,
+Future<void> _installTopLevelPluginBridge(
+  WebViewController controller, {
+  required String initPayload,
+  required Map<String, Object?> theme,
+}) async {
+  final colorScheme = jsonEncode(theme['colorScheme']?.toString() ?? 'light');
+  await controller.runJavaScript('''
+(function() {
+  const colorScheme = $colorScheme;
+  document.documentElement.style.colorScheme = colorScheme;
+  document.documentElement.dataset.tingTheme = colorScheme;
+  if (window.__tingPluginBridgeInstalled) {
+    window.postMessage($initPayload, "*");
+    return;
+  }
+  window.__tingPluginBridgeInstalled = true;
+  window.__tingPluginRespond = function(response) {
+    window.postMessage(response, "*");
+  };
+  window.addEventListener("message", function(event) {
+    const data = event.data;
+    if (!data || data.type !== "ting-plugin:request" || !data.id) return;
+    TingPluginBridge.postMessage(JSON.stringify(data));
+  });
+  window.postMessage($initPayload, "*");
+})();
+''');
+}
+
+bool _isPluginAssetUrl(
+  String url, {
   required String assetUrl,
-  required Map<String, Object?> extensionContext,
+  required String pluginId,
 }) {
-  final initPayload = jsonEncode({
+  final uri = Uri.tryParse(url);
+  final assetUri = Uri.tryParse(assetUrl);
+  if (uri == null || assetUri == null) return false;
+  if (uri.scheme != assetUri.scheme ||
+      uri.host != assetUri.host ||
+      uri.port != assetUri.port) {
+    return false;
+  }
+  final segments = uri.pathSegments;
+  if (segments.length < 5) return false;
+  final pluginSegment = segments[3];
+  return segments[0] == 'api' &&
+      segments[1] == 'v1' &&
+      segments[2] == 'plugin-assets' &&
+      (pluginSegment == pluginId ||
+          pluginSegment == Uri.encodeComponent(pluginId));
+}
+
+String _pluginInitPayloadJson({
+  required ClientExtensionDescriptor extension,
+  required Map<String, Object?> extensionContext,
+  required Map<String, Object?> theme,
+}) {
+  return jsonEncode({
     'type': 'ting-plugin:init',
     'pluginId': extension.pluginId,
     'pluginName': extension.pluginName,
@@ -1747,7 +1841,23 @@ String _pluginWebContainerHtml({
     'slot': extension.slot.value,
     'contexts': extension.contexts,
     'context': extensionContext,
+    'theme': theme,
   });
+}
+
+Map<String, Object?> _pluginThemePayload(BuildContext context) {
+  final theme = Theme.of(context);
+  final colorScheme = theme.brightness == Brightness.dark ? 'dark' : 'light';
+  return {
+    'colorScheme': colorScheme,
+    'brightness': colorScheme,
+  };
+}
+
+String _pluginWebContainerHtml({
+  required String initPayload,
+  required String assetUrl,
+}) {
   final assetPayload = jsonEncode(assetUrl);
 
   return '''
