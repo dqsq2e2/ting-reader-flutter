@@ -143,32 +143,35 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
       return const SizedBox.shrink();
     }
 
-    return Stack(
-      children: [
-        if (primary.isNotEmpty)
-          Positioned(
-            right: 18,
-            bottom: widget.bottomOffset,
-            child: _PluginFloatingLauncher(
-              extensions: primary,
-              menuOpen: _menuOpen,
-              onToggle: () => setState(() => _menuOpen = !_menuOpen),
-              onOpen: _openExtension,
+    return SizedBox.expand(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          if (primary.isNotEmpty)
+            Positioned(
+              right: 18,
+              bottom: widget.bottomOffset,
+              child: _PluginFloatingLauncher(
+                extensions: primary,
+                menuOpen: _menuOpen,
+                onToggle: () => setState(() => _menuOpen = !_menuOpen),
+                onOpen: _openExtension,
+              ),
             ),
-          ),
-        if (_activeExtension != null)
-          Positioned.fill(
-            child: _PluginExtensionPanel(
-              extension: _activeExtension!,
-              running: _running,
-              message: _actionMessage,
-              failed: _actionFailed,
-              onClose: () => setState(() => _activeExtension = null),
-              onInvoke: _invokeActiveAction,
-              extensionContext: const <String, Object?>{},
+          if (_activeExtension != null)
+            Positioned.fill(
+              child: _PluginExtensionPanel(
+                extension: _activeExtension!,
+                running: _running,
+                message: _actionMessage,
+                failed: _actionFailed,
+                onClose: () => setState(() => _activeExtension = null),
+                onInvoke: _invokeActiveAction,
+                extensionContext: const <String, Object?>{},
+              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -577,17 +580,21 @@ class _PluginFloatingLauncher extends StatelessWidget {
         Tooltip(
           message: context.localeText('插件入口', 'Plugin entries'),
           child: Material(
-            color: Colors.transparent,
-            elevation: 0,
+            color: context.isDark
+                ? AppColors.slate900.withValues(alpha: 0.94)
+                : Colors.white.withValues(alpha: 0.96),
+            elevation: 8,
+            shadowColor: Colors.black.withValues(alpha: 0.14),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: context.faintBorder),
             ),
             child: InkWell(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               onTap: onToggle,
               child: const SizedBox(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 child: Center(child: _PluginLauncherIcon()),
               ),
             ),
