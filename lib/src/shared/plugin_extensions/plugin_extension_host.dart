@@ -654,35 +654,36 @@ class _PluginLauncherIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const colors = [
-      Color(0xff54cde3),
-      Color(0xff48bfdd),
-      Color(0xff32b4d4),
-      Color(0xff249ec8),
+      Color(0xff38c7df),
+      Color(0xff2fb8d7),
+      Color(0xff1fa9cf),
+      Color(0xff158fc2),
     ];
 
     return SizedBox(
       width: 24,
       height: 24,
-      child: Column(
+      child: Stack(
         children: [
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: _PluginLauncherTile(color: colors[0])),
-                const SizedBox(width: 2),
-                Expanded(child: _PluginLauncherTile(color: colors[1])),
-              ],
-            ),
+          Positioned(
+            left: 0,
+            top: 0,
+            child: _PluginLauncherTile(color: colors[0]),
           ),
-          const SizedBox(height: 2),
-          Expanded(
-            child: Row(
-              children: [
-                Expanded(child: _PluginLauncherTile(color: colors[2])),
-                const SizedBox(width: 2),
-                Expanded(child: _PluginLauncherTile(color: colors[3])),
-              ],
-            ),
+          Positioned(
+            right: 0,
+            top: 0,
+            child: _PluginLauncherTile(color: colors[1]),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: _PluginLauncherTile(color: colors[2]),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: _PluginLauncherTile(color: colors[3]),
           ),
         ],
       ),
@@ -697,7 +698,9 @@ class _PluginLauncherTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
+      width: 11,
+      height: 11,
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(1.2),
