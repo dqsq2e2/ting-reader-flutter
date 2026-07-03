@@ -47,9 +47,11 @@ class AppState extends ChangeNotifier {
   List<SavedServerProfile> savedServers = [];
   RedirectResolution? lastRedirectResolution;
   bool resolvingRedirect = false;
+  int _pluginExtensionRevision = 0;
 
   bool get isAuthenticated => (token != null && user != null) || offlineMode;
   bool get isAdmin => user?.isAdmin ?? false;
+  int get pluginExtensionRevision => _pluginExtensionRevision;
 
   ThemeMode get themeMode {
     final theme = (settings['theme'] ?? '').toString();
@@ -63,6 +65,11 @@ class AppState extends ChangeNotifier {
   bool get isEnglish => languageCode.toLowerCase().startsWith('en');
 
   String textForLocale(String zh, String en) => isEnglish ? en : zh;
+
+  void notifyPluginExtensionsChanged() {
+    _pluginExtensionRevision++;
+    notifyListeners();
+  }
 
   Future<void> initialize({bool Function()? isCancelled}) async {
     void checkCancelled() {

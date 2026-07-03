@@ -1,5 +1,4 @@
-import '../models/_helpers.dart'
-    show asMap, readInt, readString, readStringList;
+import '../models/_helpers.dart' show asMap, readInt, readStringList;
 import '../models/plugin.dart';
 import 'types.dart';
 
@@ -58,11 +57,20 @@ ClientExtensionDescriptor _createDescriptor(
     renderMode: renderMode,
     render: Map.unmodifiable(render),
     title: _localizedText(extra['title']) ?? _localizedText(extra['label']),
-    icon: readString(extra, 'icon'),
+    icon: _normalizeIcon(extra['icon']),
     capability: capability,
     priority: readInt(extra, 'priority') ?? 100,
     contexts: _normalizeContexts(extra),
   );
+}
+
+Object? _normalizeIcon(Object? value) {
+  if (value is String) {
+    final text = value.trim();
+    return text.isEmpty ? null : text;
+  }
+  final map = asMap(value);
+  return map.isEmpty ? null : Map<String, dynamic>.unmodifiable(map);
 }
 
 List<ClientExtensionSlot> _normalizeSlots(Map<String, dynamic> extra) {

@@ -66,7 +66,7 @@ class ClientExtensionDescriptor {
   final PluginCapability capability;
   final Map<String, dynamic> render;
   final String? title;
-  final String? icon;
+  final Object? icon;
   final int priority;
   final List<String> contexts;
 

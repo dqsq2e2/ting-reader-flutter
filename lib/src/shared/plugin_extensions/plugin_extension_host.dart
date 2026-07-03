@@ -31,8 +31,11 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
       ClientExtensionRegistrySnapshot.empty;
   ClientExtensionDescriptor? _activeExtension;
   String? _loadedToken;
+  int? _loadedRevision;
   bool _loading = false;
+  bool _reloadQueued = false;
   bool _running = false;
+  bool _menuOpen = false;
   String? _actionMessage;
   bool _actionFailed = false;
 
@@ -40,15 +43,26 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final app = AppScope.appOf(context);
-    if (app.offlineMode || app.token == null || app.token == _loadedToken) {
+    final revision = app.pluginExtensionRevision;
+    if (app.offlineMode || app.token == null) {
+      _loadedToken = null;
+      _loadedRevision = null;
+      if (_registry.extensions.isNotEmpty) {
+        setState(() => _registry = ClientExtensionRegistrySnapshot.empty);
+      }
       return;
     }
+    if (app.token == _loadedToken && revision == _loadedRevision) return;
     _loadedToken = app.token;
+    _loadedRevision = revision;
     _loadExtensions();
   }
 
   Future<void> _loadExtensions() async {
-    if (_loading) return;
+    if (_loading) {
+      _reloadQueued = true;
+      return;
+    }
     setState(() => _loading = true);
     try {
       final api = AppScope.appOf(context).pluginCapabilities;
@@ -64,13 +78,20 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
       if (!mounted) return;
       setState(() => _registry = ClientExtensionRegistrySnapshot.empty);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        if (_reloadQueued) {
+          _reloadQueued = false;
+          _loadExtensions();
+        }
+      }
     }
   }
 
   void _openExtension(ClientExtensionDescriptor extension) {
     setState(() {
       _activeExtension = extension;
+      _menuOpen = false;
       _actionMessage = null;
       _actionFailed = false;
     });
@@ -128,18 +149,11 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
           Positioned(
             right: 18,
             bottom: widget.bottomOffset,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final extension in primary.take(3))
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: _PluginFloatingButton(
-                      extension: extension,
-                      onPressed: () => _openExtension(extension),
-                    ),
-                  ),
-              ],
+            child: _PluginFloatingLauncher(
+              extensions: primary,
+              menuOpen: _menuOpen,
+              onToggle: () => setState(() => _menuOpen = !_menuOpen),
+              onOpen: _openExtension,
             ),
           ),
         if (_activeExtension != null)
@@ -189,7 +203,9 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
   ClientExtensionDescriptor? _activeExtension;
   OverlayEntry? _overlayEntry;
   String? _loadedToken;
+  int? _loadedRevision;
   bool _loading = false;
+  bool _reloadQueued = false;
   bool _running = false;
   String? _actionMessage;
   bool _actionFailed = false;
@@ -198,10 +214,18 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final app = AppScope.appOf(context);
-    if (app.offlineMode || app.token == null || app.token == _loadedToken) {
+    final revision = app.pluginExtensionRevision;
+    if (app.offlineMode || app.token == null) {
+      _loadedToken = null;
+      _loadedRevision = null;
+      if (_registry.extensions.isNotEmpty) {
+        setState(() => _registry = ClientExtensionRegistrySnapshot.empty);
+      }
       return;
     }
+    if (app.token == _loadedToken && revision == _loadedRevision) return;
     _loadedToken = app.token;
+    _loadedRevision = revision;
     _loadExtensions();
   }
 
@@ -212,7 +236,10 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
   }
 
   Future<void> _loadExtensions() async {
-    if (_loading) return;
+    if (_loading) {
+      _reloadQueued = true;
+      return;
+    }
     setState(() => _loading = true);
     try {
       final api = AppScope.appOf(context).pluginCapabilities;
@@ -228,7 +255,13 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
       if (!mounted) return;
       setState(() => _registry = ClientExtensionRegistrySnapshot.empty);
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        if (_reloadQueued) {
+          _reloadQueued = false;
+          _loadExtensions();
+        }
+      }
     }
   }
 
@@ -345,8 +378,8 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
                 padding: EdgeInsets.zero,
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _openExtension(visible[index]),
-                icon: Icon(
-                  _iconForSlot(visible[index].slot),
+                icon: _PluginExtensionIcon(
+                  extension: visible[index],
                   size: widget.iconSize,
                 ),
               ),
@@ -372,8 +405,201 @@ IconData _iconForSlot(ClientExtensionSlot slot) {
   };
 }
 
-class _PluginFloatingButton extends StatelessWidget {
-  const _PluginFloatingButton({
+IconData? _iconForName(String value) {
+  final normalized = value
+      .trim()
+      .replaceFirst(RegExp(r'^lucide:', caseSensitive: false), '')
+      .replaceAll('_', '-')
+      .replaceAll(' ', '-')
+      .toLowerCase();
+
+  return switch (normalized) {
+    'message-circle' ||
+    'message-square' ||
+    'messages-square' ||
+    'chat' =>
+      Icons.chat_bubble_rounded,
+    'book' || 'book-open' || 'menu-book' => Icons.menu_book_rounded,
+    'library' || 'books' => Icons.local_library_rounded,
+    'search' => Icons.search_rounded,
+    'settings' || 'sliders-horizontal' || 'tune' => Icons.tune_rounded,
+    'sparkles' || 'wand-sparkles' || 'bot' || 'brain' => Icons.auto_awesome,
+    'file' || 'file-text' || 'description' => Icons.description_rounded,
+    'panel-right' || 'sidebar' || 'view-sidebar' => Icons.view_sidebar_rounded,
+    'play' || 'circle-play' => Icons.play_arrow_rounded,
+    'list' || 'list-music' || 'playlist' => Icons.playlist_play_rounded,
+    'heart' => Icons.favorite_rounded,
+    'star' => Icons.star_rounded,
+    'download' => Icons.download_rounded,
+    'upload' => Icons.upload_rounded,
+    'tool' || 'tools' || 'wrench' => Icons.build_rounded,
+    'plug' || 'plug-zap' || 'extension' => Icons.extension_rounded,
+    'grid' || 'grid-2x2' || 'layout-grid' => Icons.grid_view_rounded,
+    _ => null,
+  };
+}
+
+String? _iconText(Object? icon) {
+  if (icon is String) {
+    final text = icon.trim();
+    return text.isEmpty ? null : text;
+  }
+  if (icon is Map) {
+    for (final key in const ['src', 'name', 'value']) {
+      final value = icon[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+  }
+  return null;
+}
+
+String? _iconType(Object? icon) {
+  if (icon is Map) {
+    final value = icon['type'];
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim().toLowerCase();
+    }
+  }
+  return null;
+}
+
+bool _isImageIcon(String value) =>
+    value.startsWith('http://') ||
+    value.startsWith('https://') ||
+    value.startsWith('assets/');
+
+bool _isEmojiLikeIcon(String value) =>
+    value.runes.length <= 4 &&
+    !RegExp(r'^[a-z0-9:_ -]+$', caseSensitive: false).hasMatch(value);
+
+class _PluginExtensionIcon extends StatelessWidget {
+  const _PluginExtensionIcon({
+    required this.extension,
+    required this.size,
+    this.color,
+  });
+
+  final ClientExtensionDescriptor extension;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = _iconText(extension.icon);
+    final type = _iconType(extension.icon);
+
+    if (value != null &&
+        (type == 'image' || type == 'url' || _isImageIcon(value))) {
+      final image = value.startsWith('assets/')
+          ? Image.asset(value, width: size, height: size, fit: BoxFit.contain)
+          : Image.network(
+              value,
+              width: size,
+              height: size,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => Icon(
+                _iconForSlot(extension.slot),
+                size: size,
+                color: color,
+              ),
+            );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: image,
+      );
+    }
+
+    if (value != null && type != 'emoji') {
+      final icon = _iconForName(value);
+      if (icon != null) {
+        return Icon(icon, size: size, color: color);
+      }
+    }
+
+    if (value != null && (type == 'emoji' || _isEmojiLikeIcon(value))) {
+      return Text(
+        value,
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: size, height: 1),
+      );
+    }
+
+    return Icon(_iconForSlot(extension.slot), size: size, color: color);
+  }
+}
+
+class _PluginFloatingLauncher extends StatelessWidget {
+  const _PluginFloatingLauncher({
+    required this.extensions,
+    required this.menuOpen,
+    required this.onToggle,
+    required this.onOpen,
+  });
+
+  final List<ClientExtensionDescriptor> extensions;
+  final bool menuOpen;
+  final VoidCallback onToggle;
+  final ValueChanged<ClientExtensionDescriptor> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (menuOpen) ...[
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.58,
+            ),
+            child: SingleChildScrollView(
+              reverse: true,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  for (final extension in extensions)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _PluginFloatingMenuItem(
+                        extension: extension,
+                        onPressed: () => onOpen(extension),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+        ],
+        Tooltip(
+          message: context.localeText('插件入口', 'Plugin entries'),
+          child: Material(
+            color: Colors.transparent,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: onToggle,
+              child: const SizedBox(
+                width: 44,
+                height: 44,
+                child: Center(child: _PluginLauncherIcon()),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PluginFloatingMenuItem extends StatelessWidget {
+  const _PluginFloatingMenuItem({
     required this.extension,
     required this.onPressed,
   });
@@ -383,25 +609,91 @@ class _PluginFloatingButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final icon = extension.slot == ClientExtensionSlot.globalFloatingAction
-        ? Icons.chat_bubble_rounded
-        : Icons.extension_rounded;
     return Tooltip(
       message: extension.label,
       child: Material(
-        color: AppColors.primary600,
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.18),
-        shape: const CircleBorder(),
+        color: context.cardColor.withValues(alpha: 0.96),
+        elevation: 6,
+        shadowColor: Colors.black.withValues(alpha: 0.12),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(color: context.faintBorder),
+        ),
         child: InkWell(
-          customBorder: const CircleBorder(),
+          borderRadius: BorderRadius.circular(10),
           onTap: onPressed,
           child: SizedBox(
-            width: 52,
-            height: 52,
-            child: Icon(icon, color: Colors.white, size: 22),
+            width: 42,
+            height: 42,
+            child: Center(
+              child: _PluginExtensionIcon(
+                extension: extension,
+                size: 19,
+                color: context.isDark
+                    ? const Color(0xff7dd3fc)
+                    : AppColors.primary600,
+              ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _PluginLauncherIcon extends StatelessWidget {
+  const _PluginLauncherIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    const colors = [
+      Color(0xff54cde3),
+      Color(0xff48bfdd),
+      Color(0xff32b4d4),
+      Color(0xff249ec8),
+    ];
+
+    return SizedBox(
+      width: 24,
+      height: 24,
+      child: Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _PluginLauncherTile(color: colors[0])),
+                const SizedBox(width: 2),
+                Expanded(child: _PluginLauncherTile(color: colors[1])),
+              ],
+            ),
+          ),
+          const SizedBox(height: 2),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _PluginLauncherTile(color: colors[2])),
+                const SizedBox(width: 2),
+                Expanded(child: _PluginLauncherTile(color: colors[3])),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PluginLauncherTile extends StatelessWidget {
+  const _PluginLauncherTile({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(1.2),
       ),
     );
   }
@@ -518,10 +810,12 @@ class _PluginExtensionPanelHeader extends StatelessWidget {
               color: AppColors.primary50,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.extension_rounded,
-              size: 18,
-              color: AppColors.primary600,
+            child: Center(
+              child: _PluginExtensionIcon(
+                extension: extension,
+                size: 18,
+                color: AppColors.primary600,
+              ),
             ),
           ),
           const SizedBox(width: 10),

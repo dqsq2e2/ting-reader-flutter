@@ -89,6 +89,7 @@ class _PluginsPageState extends State<PluginsPage> {
     if (_hasPluginStoreProvider) {
       await _loadStore(clearCache: refreshStore);
     }
+    if (mounted) AppScope.appOf(context).notifyPluginExtensionsChanged();
   }
 
   Future<void> _reload(String id) async {
@@ -96,6 +97,7 @@ class _PluginsPageState extends State<PluginsPage> {
     if (!mounted) return;
     _showSnack(context.l10n.pluginsReloaded);
     await _loadInstalled();
+    if (mounted) AppScope.appOf(context).notifyPluginExtensionsChanged();
   }
 
   Future<void> _install(PluginItem item) async {
