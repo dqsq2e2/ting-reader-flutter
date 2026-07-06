@@ -390,6 +390,30 @@ class _BookActionPanelState extends State<_BookActionPanel> {
     }
   }
 
+  static double _measureActionLabelWidth(
+    BuildContext context,
+    Iterable<String> labels,
+    double fontSize,
+  ) {
+    final direction = Directionality.of(context);
+    final style = DefaultTextStyle.of(context).style.merge(
+          TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w400,
+          ),
+        );
+    var maxWidth = 0.0;
+    for (final label in labels) {
+      final painter = TextPainter(
+        text: TextSpan(text: label, style: style),
+        textDirection: direction,
+        maxLines: 1,
+      )..layout();
+      maxWidth = math.max(maxWidth, painter.width);
+    }
+    return maxWidth;
+  }
+
   @override
   Widget build(BuildContext context) {
     final playBackground = widget.themeColor ?? AppColors.primary600;
@@ -397,110 +421,176 @@ class _BookActionPanelState extends State<_BookActionPanel> {
         widget.themeColor != null && _isThemeLight(widget.themeColor!)
             ? AppColors.slate600
             : Colors.white;
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 448),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            height: 52,
-            child: ElevatedButton(
-              onPressed: widget.onPlay,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: playBackground,
-                foregroundColor: playForeground,
-                elevation: 0,
-                shadowColor: playBackground.withValues(alpha: 0.3),
-                padding: const EdgeInsets.symmetric(horizontal: 28),
-                minimumSize: const Size(0, 52),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final labelMaxWidth = (constraints.maxWidth - 28)
-                      .clamp(0.0, constraints.maxWidth);
-                  return Center(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.play_arrow_rounded, size: 20),
-                        const SizedBox(width: 8),
-                        ConstrainedBox(
-                          constraints: BoxConstraints(maxWidth: labelMaxWidth),
-                          child: _ScrollingButtonLabel(
-                            text: widget.resumeLabel,
-                            style: const TextStyle(),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final compactActions = constraints.maxWidth < 420;
-              const actionGap = 10.0;
-              final actionCount = 1 +
-                  (widget.admin ? 2 : 0) +
-                  (_hasBookDetailExtensions ? 1 : 0);
-              final columns =
-                  compactActions ? math.min(2, actionCount) : actionCount;
-              final availableWidth = math.max(
-                  0.0, constraints.maxWidth - actionGap * (columns - 1));
-              final actionWidth = availableWidth / columns;
-              final buttons = <Widget>[
-                _DetailActionButton(
-                  width: actionWidth,
-                  label: context.localeText(widget.favorite ? '已收藏' : '收藏',
-                      widget.favorite ? 'Saved' : 'Save'),
-                  icon: widget.favorite
-                      ? Icons.favorite_rounded
-                      : Icons.favorite_outline_rounded,
-                  selected: widget.favorite,
-                  selectedColor: const Color(0xffef4444),
-                  onPressed: widget.onFavorite,
-                ),
-                if (widget.admin)
-                  _DetailActionButton(
-                    width: actionWidth,
-                    label: context.localeText('刮削', 'Scrape'),
-                    icon: Icons.refresh_rounded,
-                    onPressed: widget.onScrape,
-                  ),
-                if (widget.admin)
-                  _DetailActionButton(
-                    width: actionWidth,
-                    label: context.l10n.commonEdit,
-                    icon: Icons.edit_rounded,
-                    onPressed: widget.onEdit,
-                  ),
-                if (_hasBookDetailExtensions)
-                  PluginExtensionSlot(
-                    slot: ClientExtensionSlot.bookDetailAction,
-                    extensionContext: widget.extensionContext,
-                    menuLabel: context.localeText('更多', 'More'),
-                    buttonWidth: actionWidth,
-                    buttonHeight: 48,
-                    iconSize: 17,
-                  ),
-              ];
+    final favoriteLabel = context.localeText(
+      widget.favorite ? '已收藏' : '收藏',
+      widget.favorite ? 'Favorited' : 'Favorite',
+    );
+    final scrapeLabel = context.localeText('刮削', 'Scrape');
+    final editLabel = context.l10n.commonEdit;
+    final moreLabel = context.localeText('更多', 'More');
+    final widthLabels = <String>[
+      context.localeText('收藏', 'Favorite'),
+      context.localeText('已收藏', 'Favorited'),
+      if (widget.admin) scrapeLabel,
+      if (widget.admin) editLabel,
+      if (_hasBookDetailExtensions) moreLabel,
+    ];
+    final actionCount =
+        1 + (widget.admin ? 2 : 0) + (_hasBookDetailExtensions ? 1 : 0);
 
-              return Wrap(
-                spacing: actionGap,
-                runSpacing: actionGap,
-                children: buttons,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 448.0;
+        final actionGap = maxWidth < 430
+            ? 4.0
+            : maxWidth < 768
+                ? 6.0
+                : 12.0;
+        final actionFontSize = maxWidth < 430
+            ? 11.0
+            : maxWidth < 768
+                ? 12.0
+                : 14.0;
+        final actionIconSize = maxWidth < 768 ? 18.0 : 20.0;
+        final actionPadding = maxWidth < 430
+            ? 6.0
+            : maxWidth < 768
+                ? 8.0
+                : 12.0;
+        final actionIconTextGap = maxWidth < 430
+            ? 4.0
+            : maxWidth < 768
+                ? 6.0
+                : 8.0;
+        final showActionLabels = maxWidth >= 380;
+        final labelActionButtonWidth = math.max(
+          maxWidth < 430 ? 88.0 : 100.0,
+          _measureActionLabelWidth(context, widthLabels, actionFontSize) + 68,
+        );
+        final actionButtonWidth =
+            showActionLabels ? labelActionButtonWidth : 52.0;
+        final targetWidth =
+            actionButtonWidth * actionCount + actionGap * (actionCount - 1);
+        final panelWidth = maxWidth < 768
+            ? maxWidth
+            : math.min(
+                maxWidth,
+                math.max(math.min(320.0, maxWidth), targetWidth),
               );
-            },
+
+        final actionButtons = <Widget>[
+          _DetailActionButton(
+            label: favoriteLabel,
+            icon: widget.favorite
+                ? Icons.favorite_rounded
+                : Icons.favorite_outline_rounded,
+            selected: widget.favorite,
+            selectedColor: const Color(0xffef4444),
+            showLabel: showActionLabels,
+            fontSize: actionFontSize,
+            iconSize: actionIconSize,
+            horizontalPadding: actionPadding,
+            iconTextGap: actionIconTextGap,
+            onPressed: widget.onFavorite,
           ),
-        ],
-      ),
+          if (widget.admin)
+            _DetailActionButton(
+              label: scrapeLabel,
+              icon: Icons.refresh_rounded,
+              showLabel: showActionLabels,
+              fontSize: actionFontSize,
+              iconSize: actionIconSize,
+              horizontalPadding: actionPadding,
+              iconTextGap: actionIconTextGap,
+              onPressed: widget.onScrape,
+            ),
+          if (widget.admin)
+            _DetailActionButton(
+              label: editLabel,
+              icon: Icons.edit_rounded,
+              showLabel: showActionLabels,
+              fontSize: actionFontSize,
+              iconSize: actionIconSize,
+              horizontalPadding: actionPadding,
+              iconTextGap: actionIconTextGap,
+              onPressed: widget.onEdit,
+            ),
+          if (_hasBookDetailExtensions)
+            PluginExtensionSlot(
+              slot: ClientExtensionSlot.bookDetailAction,
+              extensionContext: widget.extensionContext,
+              menuLabel: moreLabel,
+              showMenuLabel: showActionLabels,
+              buttonHeight: 48,
+              iconSize: actionIconSize,
+              menuFontSize: actionFontSize,
+              menuHorizontalPadding: actionPadding,
+              menuIconTextGap: actionIconTextGap,
+            ),
+        ];
+
+        return SizedBox(
+          width: panelWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: widget.onPlay,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: playBackground,
+                    foregroundColor: playForeground,
+                    elevation: 0,
+                    shadowColor: playBackground.withValues(alpha: 0.3),
+                    padding: const EdgeInsets.symmetric(horizontal: 28),
+                    minimumSize: const Size(0, 52),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final labelMaxWidth = (constraints.maxWidth - 28)
+                          .clamp(0.0, constraints.maxWidth);
+                      return Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.play_arrow_rounded, size: 20),
+                            const SizedBox(width: 8),
+                            ConstrainedBox(
+                              constraints:
+                                  BoxConstraints(maxWidth: labelMaxWidth),
+                              child: _ScrollingButtonLabel(
+                                text: widget.resumeLabel,
+                                style: const TextStyle(),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (var index = 0;
+                      index < actionButtons.length;
+                      index++) ...[
+                    if (index > 0) SizedBox(width: actionGap),
+                    Expanded(child: actionButtons[index]),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -606,7 +696,11 @@ class _DetailActionButton extends StatefulWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
-    this.width,
+    this.showLabel = true,
+    this.fontSize = 14,
+    this.iconSize = 20,
+    this.horizontalPadding = 12,
+    this.iconTextGap = 8,
     this.selected = false,
     this.selectedColor = AppColors.primary600,
   });
@@ -614,7 +708,11 @@ class _DetailActionButton extends StatefulWidget {
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;
-  final double? width;
+  final bool showLabel;
+  final double fontSize;
+  final double iconSize;
+  final double horizontalPadding;
+  final double iconTextGap;
   final bool selected;
   final Color selectedColor;
 
@@ -640,14 +738,13 @@ class _DetailActionButtonState extends State<_DetailActionButton> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: SizedBox(
-        width: widget.width,
         height: 48,
-        child: TextButton.icon(
+        child: TextButton(
           onPressed: widget.onPressed,
           style: TextButton.styleFrom(
             backgroundColor: bg,
             foregroundColor: color,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
             minimumSize: const Size(0, 48),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             shape: RoundedRectangleBorder(
@@ -659,12 +756,26 @@ class _DetailActionButtonState extends State<_DetailActionButton> {
               ),
             ),
           ),
-          icon: Icon(widget.icon, size: 20),
-          label: Text(
-            widget.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Icon(widget.icon, size: widget.iconSize),
+              if (widget.showLabel) ...[
+                SizedBox(width: widget.iconTextGap),
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: widget.fontSize,
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

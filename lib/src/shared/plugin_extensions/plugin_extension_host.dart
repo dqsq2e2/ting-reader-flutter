@@ -189,6 +189,10 @@ class PluginExtensionSlot extends StatefulWidget {
     this.iconSize = 18,
     this.padding,
     this.menuLabel,
+    this.showMenuLabel = true,
+    this.menuFontSize = 14,
+    this.menuHorizontalPadding = 12,
+    this.menuIconTextGap = 8,
     this.buttonWidth,
     this.buttonHeight = 48,
   });
@@ -201,6 +205,10 @@ class PluginExtensionSlot extends StatefulWidget {
   final double iconSize;
   final EdgeInsetsGeometry? padding;
   final String? menuLabel;
+  final bool showMenuLabel;
+  final double menuFontSize;
+  final double menuHorizontalPadding;
+  final double menuIconTextGap;
   final double? buttonWidth;
   final double buttonHeight;
 
@@ -383,6 +391,10 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
         width: widget.buttonWidth,
         height: widget.buttonHeight,
         iconSize: widget.iconSize,
+        showLabel: widget.showMenuLabel,
+        fontSize: widget.menuFontSize,
+        horizontalPadding: widget.menuHorizontalPadding,
+        iconTextGap: widget.menuIconTextGap,
         onOpen: _openExtension,
       );
       final padding = widget.padding;
@@ -427,6 +439,10 @@ class _PluginExtensionMenuButton extends StatefulWidget {
     required this.onOpen,
     required this.height,
     required this.iconSize,
+    required this.showLabel,
+    required this.fontSize,
+    required this.horizontalPadding,
+    required this.iconTextGap,
     this.width,
   });
 
@@ -436,6 +452,10 @@ class _PluginExtensionMenuButton extends StatefulWidget {
   final double? width;
   final double height;
   final double iconSize;
+  final bool showLabel;
+  final double fontSize;
+  final double horizontalPadding;
+  final double iconTextGap;
 
   @override
   State<_PluginExtensionMenuButton> createState() =>
@@ -503,24 +523,28 @@ class _PluginExtensionMenuButtonState
               border: Border.all(color: context.faintBorder),
             ),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding:
+                  EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.more_horiz_rounded, size: 20, color: color),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      widget.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
+                  Icon(Icons.more_horiz_rounded,
+                      size: widget.iconSize, color: color),
+                  if (widget.showLabel) ...[
+                    SizedBox(width: widget.iconTextGap),
+                    Flexible(
+                      child: Text(
+                        widget.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: color,
+                          fontSize: widget.fontSize,
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
