@@ -77,6 +77,13 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
     if (result == null) return;
+    if (!mounted) return;
+    if (result.deleted) {
+      if (profile != null) {
+        await AppScope.appOf(context).deleteSavedServerProfile(profile);
+      }
+      return;
+    }
     await _login(
       server: result.serverUrl,
       localServer: result.localServerUrl,
@@ -512,6 +519,10 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
     );
   }
 
+  void _delete() {
+    Navigator.pop(context, const _ServerLoginDraft.deleted());
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
@@ -611,32 +622,11 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                     : null,
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(l10n.commonCancel),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton.icon(
-                    onPressed: _submit,
-                    icon: const Icon(Icons.login_rounded, size: 18),
-                    label: Text(l10n.authSaveAndLogin),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary600,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 13,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ],
+              _ServerLoginActions(
+                canDelete: widget.profile != null,
+                onCancel: () => Navigator.pop(context),
+                onDelete: _delete,
+                onSubmit: _submit,
               ),
             ],
           ),
@@ -678,12 +668,92 @@ class _ServerLoginDraft {
     required this.localServerUrl,
     required this.username,
     required this.password,
-  });
+  }) : deleted = false;
+
+  const _ServerLoginDraft.deleted()
+      : serverUrl = '',
+        localServerUrl = '',
+        username = '',
+        password = '',
+        deleted = true;
 
   final String serverUrl;
   final String localServerUrl;
   final String username;
   final String password;
+  final bool deleted;
+}
+
+class _ServerLoginActions extends StatelessWidget {
+  const _ServerLoginActions({
+    required this.canDelete,
+    required this.onCancel,
+    required this.onDelete,
+    required this.onSubmit,
+  });
+
+  final bool canDelete;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final deleteButton = TextButton.icon(
+      onPressed: canDelete ? onDelete : null,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.red,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      ),
+      icon: const Icon(Icons.delete_outline_rounded, size: 18),
+      label: Text(l10n.commonDelete),
+    );
+    final cancelButton = TextButton(
+      onPressed: onCancel,
+      child: Text(l10n.commonCancel),
+    );
+    final saveButton = ElevatedButton.icon(
+      onPressed: onSubmit,
+      icon: const Icon(Icons.login_rounded, size: 18),
+      label: Text(l10n.authSaveAndLogin),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary600,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 380;
+        final actions = Wrap(
+          spacing: 10,
+          runSpacing: 8,
+          alignment: WrapAlignment.end,
+          children: [
+            if (compact && canDelete) deleteButton,
+            cancelButton,
+            saveButton,
+          ],
+        );
+        if (compact || !canDelete) {
+          return Align(alignment: Alignment.centerRight, child: actions);
+        }
+        return Row(
+          children: [
+            deleteButton,
+            const Spacer(),
+            actions,
+          ],
+        );
+      },
+    );
+  }
 }
 
 String _serverProfileSubtitle(

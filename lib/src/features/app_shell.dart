@@ -290,7 +290,7 @@ class _AppShellState extends State<AppShell> {
                   final collapsedMini = player.isMiniCollapsed;
                   final pluginExtensionBottom =
                       player.hasChapter && !player.isExpanded
-                          ? (desktop ? 92.0 : 150.0 + bottomInset)
+                          ? (desktop ? 128.0 : 150.0 + bottomInset)
                           : (desktop ? 24.0 : 84.0 + bottomInset);
                   return Stack(
                     children: [

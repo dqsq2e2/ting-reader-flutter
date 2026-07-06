@@ -697,6 +697,25 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  Future<void> deleteSavedServerProfile(SavedServerProfile profile) async {
+    final normalizedServer = _normalizeOptionalServerUrl(profile.serverUrl);
+    final normalizedLocal = _normalizeOptionalServerUrl(profile.localServerUrl);
+    savedServers = savedServers
+        .where(
+          (item) =>
+              _normalizeOptionalServerUrl(item.serverUrl) != normalizedServer ||
+              _normalizeOptionalServerUrl(item.localServerUrl) !=
+                  normalizedLocal ||
+              item.username != profile.username,
+        )
+        .toList();
+    await _prefs?.setString(
+      'saved_servers',
+      jsonEncode(savedServers.map((item) => item.toJson()).toList()),
+    );
+    notifyListeners();
+  }
+
   Future<List<String>> _serverCandidates({
     required String server,
     required String localServer,

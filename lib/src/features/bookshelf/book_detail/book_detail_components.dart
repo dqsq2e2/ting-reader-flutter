@@ -305,7 +305,7 @@ class _BookTagToggle extends StatelessWidget {
   }
 }
 
-class _BookActionPanel extends StatelessWidget {
+class _BookActionPanel extends StatefulWidget {
   const _BookActionPanel({
     required this.favorite,
     required this.admin,
@@ -329,11 +329,74 @@ class _BookActionPanel extends StatelessWidget {
   final VoidCallback onEdit;
 
   @override
+  State<_BookActionPanel> createState() => _BookActionPanelState();
+}
+
+class _BookActionPanelState extends State<_BookActionPanel> {
+  bool _hasBookDetailExtensions = false;
+  String? _loadedToken;
+  int? _loadedRevision;
+  bool _loadingExtensions = false;
+  bool _reloadQueued = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final app = AppScope.appOf(context);
+    final revision = app.pluginExtensionRevision;
+    if (app.offlineMode || app.token == null) {
+      _loadedToken = null;
+      _loadedRevision = null;
+      if (_hasBookDetailExtensions) {
+        setState(() => _hasBookDetailExtensions = false);
+      }
+      return;
+    }
+    if (app.token == _loadedToken && revision == _loadedRevision) return;
+    _loadedToken = app.token;
+    _loadedRevision = revision;
+    _loadBookDetailExtensions();
+  }
+
+  Future<void> _loadBookDetailExtensions() async {
+    if (_loadingExtensions) {
+      _reloadQueued = true;
+      return;
+    }
+    setState(() => _loadingExtensions = true);
+    try {
+      final api = AppScope.appOf(context).pluginCapabilities;
+      final registrations = [
+        ...await api.listPluginCapabilities(kind: 'ui_extension'),
+        ...await api.listPluginCapabilities(kind: 'client_extension'),
+      ];
+      if (!mounted) return;
+      final registry = buildClientExtensionRegistry(registrations);
+      final hasExtensions =
+          (registry.bySlot[ClientExtensionSlot.bookDetailAction] ?? const [])
+              .isNotEmpty;
+      setState(() => _hasBookDetailExtensions = hasExtensions);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _hasBookDetailExtensions = false);
+    } finally {
+      if (mounted) {
+        setState(() => _loadingExtensions = false);
+        if (_reloadQueued) {
+          _reloadQueued = false;
+          _loadBookDetailExtensions();
+        }
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final playBackground = themeColor ?? AppColors.primary600;
-    final playForeground = themeColor != null && _isThemeLight(themeColor!)
-        ? AppColors.slate600
-        : Colors.white;
+    final playBackground = widget.themeColor ?? AppColors.primary600;
+    final playForeground =
+        widget.themeColor != null && _isThemeLight(widget.themeColor!)
+            ? AppColors.slate600
+            : Colors.white;
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 448),
       child: Column(
@@ -342,7 +405,7 @@ class _BookActionPanel extends StatelessWidget {
           SizedBox(
             height: 52,
             child: ElevatedButton(
-              onPressed: onPlay,
+              onPressed: widget.onPlay,
               style: ElevatedButton.styleFrom(
                 backgroundColor: playBackground,
                 foregroundColor: playForeground,
@@ -368,7 +431,7 @@ class _BookActionPanel extends StatelessWidget {
                         ConstrainedBox(
                           constraints: BoxConstraints(maxWidth: labelMaxWidth),
                           child: _ScrollingButtonLabel(
-                            text: resumeLabel,
+                            text: widget.resumeLabel,
                             style: const TextStyle(),
                           ),
                         ),
@@ -383,61 +446,58 @@ class _BookActionPanel extends StatelessWidget {
           LayoutBuilder(
             builder: (context, constraints) {
               final compactActions = constraints.maxWidth < 420;
-              final buttons = [
+              const actionGap = 10.0;
+              final actionCount = 1 +
+                  (widget.admin ? 2 : 0) +
+                  (_hasBookDetailExtensions ? 1 : 0);
+              final columns =
+                  compactActions ? math.min(2, actionCount) : actionCount;
+              final availableWidth = math.max(
+                  0.0, constraints.maxWidth - actionGap * (columns - 1));
+              final actionWidth = availableWidth / columns;
+              final buttons = <Widget>[
                 _DetailActionButton(
-                  width: compactActions ? null : (admin ? 132 : 180),
-                  label: context.localeText(
-                      favorite ? '已收藏' : '收藏', favorite ? 'Saved' : 'Save'),
-                  icon: favorite
+                  width: actionWidth,
+                  label: context.localeText(widget.favorite ? '已收藏' : '收藏',
+                      widget.favorite ? 'Saved' : 'Save'),
+                  icon: widget.favorite
                       ? Icons.favorite_rounded
                       : Icons.favorite_outline_rounded,
-                  selected: favorite,
+                  selected: widget.favorite,
                   selectedColor: const Color(0xffef4444),
-                  onPressed: onFavorite,
+                  onPressed: widget.onFavorite,
                 ),
-                if (admin)
+                if (widget.admin)
                   _DetailActionButton(
-                    width: compactActions ? null : 132,
+                    width: actionWidth,
                     label: context.localeText('刮削', 'Scrape'),
                     icon: Icons.refresh_rounded,
-                    onPressed: onScrape,
+                    onPressed: widget.onScrape,
                   ),
-                if (admin)
+                if (widget.admin)
                   _DetailActionButton(
-                    width: compactActions ? null : 132,
+                    width: actionWidth,
                     label: context.l10n.commonEdit,
                     icon: Icons.edit_rounded,
-                    onPressed: onEdit,
+                    onPressed: widget.onEdit,
+                  ),
+                if (_hasBookDetailExtensions)
+                  PluginExtensionSlot(
+                    slot: ClientExtensionSlot.bookDetailAction,
+                    extensionContext: widget.extensionContext,
+                    menuLabel: context.localeText('更多', 'More'),
+                    buttonWidth: actionWidth,
+                    buttonHeight: 48,
+                    iconSize: 17,
                   ),
               ];
 
-              if (compactActions) {
-                return Row(
-                  children: [
-                    for (var i = 0; i < buttons.length; i++) ...[
-                      Expanded(child: buttons[i]),
-                      if (i < buttons.length - 1) const SizedBox(width: 10),
-                    ],
-                  ],
-                );
-              }
-
               return Wrap(
-                spacing: 12,
-                runSpacing: 12,
+                spacing: actionGap,
+                runSpacing: actionGap,
                 children: buttons,
               );
             },
-          ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: PluginExtensionSlot(
-              slot: ClientExtensionSlot.bookDetailAction,
-              extensionContext: extensionContext,
-              padding: const EdgeInsets.only(top: 10),
-              buttonSize: 36,
-              iconSize: 17,
-            ),
           ),
         ],
       ),
