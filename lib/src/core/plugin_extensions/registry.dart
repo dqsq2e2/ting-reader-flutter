@@ -53,6 +53,7 @@ ClientExtensionDescriptor _createDescriptor(
     id: '${registration.pluginId}:${capability.id}:${slot.value}',
     pluginId: registration.pluginId,
     pluginName: registration.pluginName,
+    adminOnly: registration.adminOnly,
     slot: slot,
     renderMode: renderMode,
     render: Map.unmodifiable(render),

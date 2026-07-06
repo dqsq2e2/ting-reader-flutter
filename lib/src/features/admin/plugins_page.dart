@@ -1874,6 +1874,10 @@ bool _usesClientExtension(PluginItem item) {
 List<String> _pluginRiskSignals(BuildContext context, PluginItem item) {
   final signals = <String>{};
 
+  if (item.adminOnly) {
+    signals.add(context.localeText('仅管理员', 'Admin only'));
+  }
+
   for (final permission in item.permissions.map(_normalizePluginPermission)) {
     if (permission.contains('network')) {
       signals.add(context.localeText('网络访问', 'Network'));

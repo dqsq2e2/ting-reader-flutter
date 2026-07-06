@@ -48,6 +48,7 @@ class ClientExtensionDescriptor {
     required this.id,
     required this.pluginId,
     required this.pluginName,
+    this.adminOnly = false,
     required this.slot,
     required this.renderMode,
     required this.capability,
@@ -61,6 +62,7 @@ class ClientExtensionDescriptor {
   final String id;
   final String pluginId;
   final String pluginName;
+  final bool adminOnly;
   final ClientExtensionSlot slot;
   final ClientExtensionRenderMode renderMode;
   final PluginCapability capability;

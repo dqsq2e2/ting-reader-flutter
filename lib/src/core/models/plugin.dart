@@ -16,6 +16,7 @@ class PluginItem {
     this.repo,
     this.minCoreVersion,
     this.minFlutterVersion,
+    this.adminOnly = false,
     this.dependencies = const [],
     this.permissions = const [],
     this.capabilities = const [],
@@ -37,6 +38,7 @@ class PluginItem {
   final String? repo;
   final String? minCoreVersion;
   final String? minFlutterVersion;
+  final bool adminOnly;
   final List<String> dependencies;
   final List<String> permissions;
   final List<PluginCapability> capabilities;
@@ -62,6 +64,7 @@ class PluginItem {
       repo: readString(json, 'repo'),
       minCoreVersion: readString(json, 'min_core_version'),
       minFlutterVersion: readString(json, 'min_flutter_version'),
+      adminOnly: readBool(json, 'admin_only') ?? false,
       dependencies: _pluginStringList(json['dependencies']),
       permissions: readStringList(json['permissions']),
       capabilities: capabilities,
@@ -106,17 +109,20 @@ class PluginCapabilityRegistration {
   const PluginCapabilityRegistration({
     required this.pluginId,
     required this.pluginName,
+    this.adminOnly = false,
     required this.capability,
   });
 
   final String pluginId;
   final String pluginName;
+  final bool adminOnly;
   final PluginCapability capability;
 
   factory PluginCapabilityRegistration.fromJson(Map<String, dynamic> json) {
     return PluginCapabilityRegistration(
       pluginId: readString(json, 'plugin_id') ?? '',
       pluginName: readString(json, 'plugin_name') ?? '',
+      adminOnly: readBool(json, 'admin_only') ?? false,
       capability: PluginCapability.fromJson(asMap(json['capability'])),
     );
   }
@@ -126,6 +132,7 @@ class ToolProviderRegistration extends PluginCapabilityRegistration {
   const ToolProviderRegistration({
     required super.pluginId,
     required super.pluginName,
+    super.adminOnly = false,
     required super.capability,
     this.tool,
   });
@@ -136,6 +143,7 @@ class ToolProviderRegistration extends PluginCapabilityRegistration {
     return ToolProviderRegistration(
       pluginId: readString(json, 'plugin_id') ?? '',
       pluginName: readString(json, 'plugin_name') ?? '',
+      adminOnly: readBool(json, 'admin_only') ?? false,
       capability: PluginCapability.fromJson(asMap(json['capability'])),
       tool: json['tool'],
     );
