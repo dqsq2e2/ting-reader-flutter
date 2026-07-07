@@ -797,83 +797,131 @@ class _DescriptionPanel extends StatefulWidget {
 }
 
 class _DescriptionPanelState extends State<_DescriptionPanel> {
+  static const int _collapsedMaxLines = 2;
+  static const double _panelPadding = 16;
+
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: widget.themeColor != null && !context.isDark
-            ? widget.themeColor!.withValues(alpha: 0.08)
-            : (context.isDark
-                ? AppColors.slate900.withValues(alpha: 0.28)
-                : Colors.white.withValues(alpha: 0.74)),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: context.isDark
-              ? AppColors.slate800.withValues(alpha: 0.5)
-              : AppColors.slate200.withValues(alpha: 0.72),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.info_outline_rounded,
-                size: 16,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final descriptionStyle = DefaultTextStyle.of(context).style.merge(
+              TextStyle(
                 color: context.isDark ? AppColors.slate400 : AppColors.slate600,
+                height: 1.6,
+                fontSize: 15,
               ),
-              const SizedBox(width: 8),
+            );
+        final textWidth = constraints.maxWidth.isFinite
+            ? math.max(0.0, constraints.maxWidth - _panelPadding * 2)
+            : double.infinity;
+        final isDescriptionOverflowing = _doesDescriptionOverflow(
+          widget.description,
+          descriptionStyle,
+          Directionality.of(context),
+          textWidth,
+          MediaQuery.textScalerOf(context),
+        );
+        final showToggle = isDescriptionOverflowing || _expanded;
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(_panelPadding),
+          decoration: BoxDecoration(
+            color: widget.themeColor != null && !context.isDark
+                ? widget.themeColor!.withValues(alpha: 0.08)
+                : (context.isDark
+                    ? AppColors.slate900.withValues(alpha: 0.28)
+                    : Colors.white.withValues(alpha: 0.74)),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: context.isDark
+                  ? AppColors.slate800.withValues(alpha: 0.5)
+                  : AppColors.slate200.withValues(alpha: 0.72),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: context.isDark
+                        ? AppColors.slate400
+                        : AppColors.slate600,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    context.localeText('简介内容', 'Description'),
+                    style: TextStyle(
+                      color: context.isDark
+                          ? AppColors.slate300
+                          : AppColors.slate700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               Text(
-                context.localeText('简介内容', 'Description'),
-                style: TextStyle(
-                  color:
-                      context.isDark ? AppColors.slate300 : AppColors.slate700,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
+                widget.description,
+                maxLines: _expanded ? null : _collapsedMaxLines,
+                overflow:
+                    _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                style: descriptionStyle,
               ),
+              if (showToggle) ...[
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: () => setState(() => _expanded = !_expanded),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary600,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: Icon(
+                    _expanded
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    context.localeText(
+                      _expanded ? '收起详情' : '展开全部',
+                      _expanded ? 'Less' : 'More',
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            widget.description,
-            maxLines: _expanded ? null : 2,
-            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            style: TextStyle(
-              color: context.isDark ? AppColors.slate400 : AppColors.slate600,
-              height: 1.6,
-              fontSize: 15,
-            ),
-          ),
-          if (widget.description.length > 80) ...[
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () => setState(() => _expanded = !_expanded),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primary600,
-                padding: EdgeInsets.zero,
-                minimumSize: const Size(0, 28),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              icon: Icon(
-                _expanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                size: 18,
-              ),
-              label: Text(
-                context.localeText(
-                    _expanded ? '收起详情' : '展开全部', _expanded ? 'Less' : 'More'),
-              ),
-            ),
-          ],
-        ],
-      ),
+        );
+      },
     );
+  }
+
+  static bool _doesDescriptionOverflow(
+    String text,
+    TextStyle style,
+    TextDirection direction,
+    double maxWidth,
+    TextScaler textScaler,
+  ) {
+    if (text.isEmpty || !maxWidth.isFinite || maxWidth <= 0) return false;
+
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: direction,
+      maxLines: _collapsedMaxLines,
+      ellipsis: '\u2026',
+      textScaler: textScaler,
+    )..layout(maxWidth: maxWidth);
+
+    return painter.didExceedMaxLines;
   }
 }
