@@ -242,7 +242,14 @@ class _ScrapeSearchAside extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final appState = AppScope.appOf(context);
     final fields = source?.resultFields ?? const <String>[];
+    final draftCoverUrl = coverUrl(
+      appState,
+      url: _draftField('cover_url')?.toString(),
+      libraryId: book.libraryId,
+      bookId: book.id,
+    );
     final authorText = _formatScrapeValueForLocale(
       context,
       _draftField('author'),
@@ -266,7 +273,7 @@ class _ScrapeSearchAside extends StatelessWidget {
                 width: 82,
                 height: 112,
                 child: CoverImage(
-                  url: _draftField('cover_url')?.toString() ?? '',
+                  url: draftCoverUrl,
                   radius: 10,
                 ),
               ),
