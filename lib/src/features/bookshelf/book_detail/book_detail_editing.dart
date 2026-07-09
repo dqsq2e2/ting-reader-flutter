@@ -106,6 +106,70 @@ class _EditMetadataField extends StatelessWidget {
   }
 }
 
+class _ReadOnlyMetadataField extends StatefulWidget {
+  const _ReadOnlyMetadataField({
+    required this.label,
+    required this.value,
+    this.mono = false,
+  });
+
+  final String label;
+  final String value;
+  final bool mono;
+
+  @override
+  State<_ReadOnlyMetadataField> createState() => _ReadOnlyMetadataFieldState();
+}
+
+class _ReadOnlyMetadataFieldState extends State<_ReadOnlyMetadataField> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = widget.value.trim().isEmpty
+        ? context.localeText('未识别', 'Unknown')
+        : widget.value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _EditFieldLabel(widget.label),
+        const SizedBox(height: 7),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+              decoration: BoxDecoration(
+                color: context.isDark
+                    ? AppColors.slate800.withValues(alpha: 0.62)
+                    : AppColors.slate100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.faintBorder),
+              ),
+              child: Text(
+                value,
+                maxLines: _expanded ? null : 1,
+                overflow:
+                    _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.primaryText,
+                  fontSize: 15,
+                  height: 1.35,
+                  fontFamily: widget.mono ? 'monospace' : null,
+                  fontWeight: FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _RegexMatchPreview extends StatelessWidget {
   const _RegexMatchPreview({
     required this.label,

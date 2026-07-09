@@ -1197,6 +1197,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
                             controller: cover,
                             label: context.l10n.bookDetailCoverUrlField),
                         const SizedBox(height: 14),
+                        _ReadOnlyMetadataField(
+                          label: context.localeText('书籍位置', 'Book Location'),
+                          value: book.path ?? '',
+                          mono: true,
+                        ),
+                        const SizedBox(height: 14),
                         Row(
                           children: [
                             Expanded(
