@@ -56,7 +56,7 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
         .where((chapter) =>
             chapter.title.toLowerCase().contains(search) ||
             chapter.chapterIndex.toString().contains(search) ||
-            _relativeChapterPath(chapter.path).toLowerCase().contains(search))
+            _chapterDisplayPath(chapter.path).toLowerCase().contains(search))
         .toList();
   }
 
@@ -347,124 +347,52 @@ class _ChapterManagerDialogState extends State<_ChapterManagerDialog> {
     );
   }
 
-  String _safeDecodePath(String path) {
+  String _decodeSegment(String segment) {
     try {
-      return Uri.decodeComponent(path);
+      return Uri.decodeComponent(segment);
     } catch (_) {
-      return path;
+      return segment;
     }
   }
 
-  String _normalizePath(String path) {
-    return _safeDecodePath(path)
+  String _decodePathBySegment(String path) {
+    return path.split('/').map(_decodeSegment).join('/');
+  }
+
+  String _stripWindowsVerbatimPrefix(String path) {
+    if (path.startsWith(r'\\?\UNC\')) return '//${path.substring(8)}';
+    if (path.startsWith('//?/UNC/')) return '//${path.substring(8)}';
+    if (path.startsWith(r'\\?\')) return path.substring(4);
+    if (path.startsWith('//?/')) return path.substring(4);
+    return path;
+  }
+
+  String _normalizeDisplayPath(String path) {
+    return _stripWindowsVerbatimPrefix(path)
         .replaceAll('\\', '/')
         .replaceAllMapped(RegExp(r'([^:])/{2,}'), (match) => '${match[1]}/')
         .replaceAll(RegExp(r'/+$'), '');
   }
 
-  String _stripOuterSlashes(String path) {
-    return path.replaceAll(RegExp(r'^/+|/+$'), '');
-  }
-
-  String _joinDisplayPath(List<String?> parts) {
-    return parts
-        .map((part) => _stripOuterSlashes(part ?? ''))
-        .where((part) => part.isNotEmpty)
-        .join('/');
-  }
-
-  String _pathName(String path) {
-    final parts = _stripOuterSlashes(_normalizePath(path))
-        .split('/')
-        .where((part) => part.isNotEmpty)
-        .toList();
-    return parts.isEmpty ? path : parts.last;
-  }
-
-  String? _relativeFromRoot(String path, String? root) {
-    final normalizedPath = _normalizePath(path);
-    final normalizedRoot = _normalizePath(root ?? '');
-    if (normalizedRoot.isEmpty || normalizedRoot == '/') return null;
-
-    final lowerPath = normalizedPath.toLowerCase();
-    final lowerRoot = normalizedRoot.toLowerCase();
-    if (lowerPath == lowerRoot) return '';
-    if (lowerPath.startsWith('$lowerRoot/')) {
-      return _stripOuterSlashes(
-        normalizedPath.substring(normalizedRoot.length + 1),
+  String _remoteDisplayPath(String path) {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return '';
+    final uri = Uri.tryParse(trimmed);
+    if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
+      final decodedPath = _decodePathBySegment(uri.path);
+      return _normalizeDisplayPath(
+        '${uri.origin}$decodedPath${uri.hasQuery ? '?${uri.query}' : ''}${uri.hasFragment ? '#${uri.fragment}' : ''}',
       );
     }
-    return null;
+    return _normalizeDisplayPath(_decodePathBySegment(trimmed));
   }
 
-  String? _relativeFromPathSegment(String path, String? segment) {
-    final pathParts = _stripOuterSlashes(_normalizePath(path))
-        .split('/')
-        .where((part) => part.isNotEmpty)
-        .toList();
-    final segmentParts = _stripOuterSlashes(_normalizePath(segment ?? ''))
-        .split('/')
-        .where((part) => part.isNotEmpty)
-        .toList();
-    if (segmentParts.isEmpty || segmentParts.length > pathParts.length) {
-      return null;
-    }
-
-    final lowerPathParts = pathParts.map((part) => part.toLowerCase()).toList();
-    final lowerSegmentParts =
-        segmentParts.map((part) => part.toLowerCase()).toList();
-    for (var i = 0; i <= pathParts.length - segmentParts.length; i++) {
-      var matched = true;
-      for (var j = 0; j < segmentParts.length; j++) {
-        if (lowerPathParts[i + j] != lowerSegmentParts[j]) {
-          matched = false;
-          break;
-        }
-      }
-      if (matched) {
-        return pathParts.skip(i + segmentParts.length).join('/');
-      }
-    }
-    return null;
-  }
-
-  String _relativeChapterPath(String chapterPath) {
+  String _chapterDisplayPath(String chapterPath) {
     final library = _pathLibrary;
-    final roots = <String>[];
-    if (library != null) {
-      if (library.libraryType == 'webdav') {
-        roots.add(_joinDisplayPath([library.url, library.rootPath]));
-      }
-      if ((library.url ?? '').isNotEmpty) roots.add(library.url!);
-      if (library.rootPath.isNotEmpty) roots.add(library.rootPath);
-    }
-
-    roots.sort((a, b) => b.length.compareTo(a.length));
-    for (final root in roots) {
-      final relativePath = _relativeFromRoot(chapterPath, root);
-      if (relativePath != null) return relativePath;
-    }
-
     if (library?.libraryType == 'local') {
-      for (final segment in [library?.url, library?.rootPath]) {
-        final relativePath = _relativeFromPathSegment(chapterPath, segment);
-        if (relativePath != null) return relativePath;
-      }
+      return _normalizeDisplayPath(chapterPath);
     }
-
-    final bookPath = widget.book.path;
-    if (bookPath != null && bookPath.isNotEmpty) {
-      final relativeToBook = _relativeFromRoot(chapterPath, bookPath);
-      if (relativeToBook != null) {
-        return _joinDisplayPath([_pathName(bookPath), relativeToBook]);
-      }
-    }
-
-    final normalizedPath = _normalizePath(chapterPath);
-    if (!normalizedPath.contains(':') && !normalizedPath.startsWith('/')) {
-      return _stripOuterSlashes(normalizedPath);
-    }
-    return _pathName(chapterPath);
+    return _remoteDisplayPath(chapterPath);
   }
 
   @override

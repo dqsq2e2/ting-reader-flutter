@@ -478,9 +478,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DialogLabel(
-            context.localeText('选择本地路径（相对 storage/ 目录）',
-                'Choose a local path (relative to storage/)'),
+        DialogLabel(context.localeText('本地目录', 'Local Directory'),
             fontSize: 14),
         const SizedBox(height: 8),
         Row(
@@ -493,8 +491,8 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                         '请选择或输入本地路径', 'Choose or enter a local path')
                     : null,
                 decoration: InputDecoration(
-                    hintText: context.localeText(
-                        '例如 audiobooks', 'For example: audiobooks')),
+                    hintText: context.localeText('输入绝对路径，或浏览授权目录',
+                        'Enter an absolute path or browse authorized folders')),
               ),
             ),
             const SizedBox(width: 10),

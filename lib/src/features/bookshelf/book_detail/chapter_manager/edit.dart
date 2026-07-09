@@ -16,12 +16,12 @@ class _ChapterEditSheet extends StatefulWidget {
   const _ChapterEditSheet({
     required this.chapter,
     required this.libraryName,
-    required this.relativePath,
+    required this.displayPath,
   });
 
   final Chapter chapter;
   final String libraryName;
-  final String relativePath;
+  final String displayPath;
 
   @override
   State<_ChapterEditSheet> createState() => _ChapterEditSheetState();
@@ -155,10 +155,10 @@ class _ChapterEditSheetState extends State<_ChapterEditSheet> {
                       const SizedBox(height: 8),
                       _ChapterEditMetaRow(
                         icon: Icons.folder_rounded,
-                        label: context.localeText('相对位置', 'Relative Path'),
-                        value: widget.relativePath.isEmpty
+                        label: context.localeText('存储位置', 'Location'),
+                        value: widget.displayPath.isEmpty
                             ? context.localeText('未识别', 'Unknown')
-                            : widget.relativePath,
+                            : widget.displayPath,
                       ),
                     ],
                   ),
@@ -294,8 +294,6 @@ class _ChapterEditMetaRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: context.secondaryText,
               fontSize: 12,

@@ -57,7 +57,7 @@ extension _ChapterManagerLayout on _ChapterManagerDialogState {
         chapter: current,
         libraryName: _pathLibrary?.name ??
             context.localeText('未知存储库', 'Unknown Library'),
-        relativePath: _relativeChapterPath(current.path),
+        displayPath: _chapterDisplayPath(current.path),
       ),
     );
     if (result == null || !mounted) return;

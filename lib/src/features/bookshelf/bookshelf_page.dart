@@ -8,6 +8,7 @@ import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
 import '../../shared/filter/display_filter_menu.dart';
+import 'book_delete_dialog.dart';
 
 class BookshelfPage extends StatefulWidget {
   const BookshelfPage({
@@ -39,6 +40,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   CoverShape _coverShape = CoverShape.rect;
   bool _showFilterMenu = false;
   bool _selectionMode = false;
+  bool _deletingBooks = false;
   final Set<String> _selectedBookIds = {};
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
@@ -160,6 +162,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           selectedLibraryId: _selectedLibraryId,
           showFilterMenu: _showFilterMenu,
           filterMenuLink: _filterMenuLink,
+          deletingBooks: _deletingBooks,
           onSearchOpen: widget.openSearch,
           onLibraryChanged: (value) async {
             setState(() {
@@ -182,8 +185,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
             });
           },
           onSelectAll: _selectAllVisible,
-          onCreateSeries:
-              _selectedBookIds.isEmpty ? null : _showCreateSeriesDialog,
+          onCreateSeries: _selectedBookIds.isEmpty || _deletingBooks
+              ? null
+              : _showCreateSeriesDialog,
+          onDeleteBooks: _selectedBookIds.isEmpty || _deletingBooks
+              ? null
+              : _showDeleteBooksDialog,
         ),
         const SizedBox(height: 10),
         if (!hasContent)
@@ -327,6 +334,50 @@ class _BookshelfPageState extends State<BookshelfPage> {
     );
   }
 
+  Future<void> _showDeleteBooksDialog() async {
+    final selectedBooks =
+        _books.where((book) => _selectedBookIds.contains(book.id)).toList();
+    if (selectedBooks.isEmpty || _deletingBooks) return;
+
+    final confirmation = await showDeleteBookConfirmationDialog(
+      context,
+      books: selectedBooks,
+    );
+    if (confirmation == null) return;
+    if (!mounted) return;
+
+    setState(() => _deletingBooks = true);
+    try {
+      final api = AppScope.appOf(context).api;
+      await Future.wait(
+        selectedBooks.map(
+          (book) => api.delete(
+            '/api/books/${book.id}',
+            params: {'delete_files': confirmation.deleteSourceFiles},
+          ),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectionMode = false;
+        _selectedBookIds.clear();
+      });
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.localeText(
+                '删除书籍失败：$error', 'Failed to delete books: $error'),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deletingBooks = false);
+    }
+  }
+
   Future<void> _showCreateSeriesDialog() async {
     final selectedBooks =
         _books.where((book) => _selectedBookIds.contains(book.id)).toList();
@@ -441,6 +492,7 @@ class _Header extends StatelessWidget {
     required this.selectedLibraryId,
     required this.showFilterMenu,
     required this.filterMenuLink,
+    required this.deletingBooks,
     required this.onSearchOpen,
     required this.onLibraryChanged,
     required this.onToggleFilterMenu,
@@ -448,6 +500,7 @@ class _Header extends StatelessWidget {
     required this.onCancelSelection,
     required this.onSelectAll,
     required this.onCreateSeries,
+    required this.onDeleteBooks,
   });
 
   final bool selectionMode;
@@ -457,6 +510,7 @@ class _Header extends StatelessWidget {
   final String selectedLibraryId;
   final bool showFilterMenu;
   final LayerLink filterMenuLink;
+  final bool deletingBooks;
   final VoidCallback onSearchOpen;
   final ValueChanged<String?> onLibraryChanged;
   final VoidCallback onToggleFilterMenu;
@@ -464,6 +518,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onCancelSelection;
   final VoidCallback onSelectAll;
   final VoidCallback? onCreateSeries;
+  final VoidCallback? onDeleteBooks;
 
   @override
   Widget build(BuildContext context) {
@@ -499,6 +554,14 @@ class _Header extends StatelessWidget {
                 filled: true,
                 compact: mobile,
                 onPressed: onCreateSeries,
+              ),
+              BatchActionButton(
+                icon: Icons.delete_outline_rounded,
+                label: context.localeText('删除', 'Delete'),
+                danger: true,
+                loading: deletingBooks,
+                compact: mobile,
+                onPressed: onDeleteBooks,
               ),
               _SquareToolbarButton(
                 icon: Icons.close_rounded,
@@ -563,6 +626,14 @@ class _Header extends StatelessWidget {
                   filled: true,
                   compact: mobile,
                   onPressed: onCreateSeries,
+                ),
+                BatchActionButton(
+                  icon: Icons.delete_outline_rounded,
+                  label: context.localeText('删除', 'Delete'),
+                  danger: true,
+                  loading: deletingBooks,
+                  compact: mobile,
+                  onPressed: onDeleteBooks,
                 ),
                 _SquareToolbarButton(
                   icon: Icons.close_rounded,

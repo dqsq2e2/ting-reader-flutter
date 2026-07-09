@@ -16,6 +16,7 @@ import '../../../shared/cards/book_card.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
 import '../../../shared/plugin_extensions/plugin_extension_host.dart';
+import '../book_delete_dialog.dart';
 
 part 'book_detail_components.dart';
 part 'book_detail_chapter_section.dart';
@@ -887,31 +888,11 @@ class _BookDetailPageState extends State<BookDetailPage> {
 
             Future<void> deleteBook() async {
               final api = AppScope.appOf(dialogContext).api;
-              final confirmed = await showDialog<bool>(
-                context: dialogContext,
-                builder: (confirmContext) => AlertDialog(
-                  title: Text(context.l10n.bookDetailDeleteBookTitle),
-                  content: Text(
-                    context.l10n.bookDetailDeleteBookMessage(book.title),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(confirmContext, false),
-                      child: Text(context.l10n.commonCancel),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: () => Navigator.pop(confirmContext, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xffef4444),
-                        foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                      label: Text(context.l10n.commonDelete),
-                    ),
-                  ],
-                ),
+              final confirmation = await showDeleteBookConfirmationDialog(
+                dialogContext,
+                books: [book],
               );
-              if (!dialogContext.mounted || confirmed != true || deleting) {
+              if (!dialogContext.mounted || confirmation == null || deleting) {
                 return;
               }
               setDialogState(() {
@@ -919,7 +900,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 dialogError = null;
               });
               try {
-                await api.delete('/api/books/${book.id}');
+                await api.delete(
+                  '/api/books/${book.id}',
+                  params: {'delete_files': confirmation.deleteSourceFiles},
+                );
                 if (dialogContext.mounted) {
                   Navigator.pop(
                     dialogContext,
