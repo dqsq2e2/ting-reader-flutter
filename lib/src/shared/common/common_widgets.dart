@@ -630,7 +630,7 @@ class BatchActionButton extends StatelessWidget {
                   style: TextStyle(
                     color: foreground,
                     fontSize: narrow ? 13 : 14,
-                    fontWeight: filled ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: FontWeight.w400,
                     height: 1.15,
                   ),
                 ),
@@ -677,7 +677,7 @@ class BatchCountBadge extends StatelessWidget {
           style: TextStyle(
             color: context.secondaryText,
             fontSize: narrow ? 13 : 14,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w400,
             height: 1.15,
           ),
         ),

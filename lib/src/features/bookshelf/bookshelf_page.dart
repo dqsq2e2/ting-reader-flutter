@@ -41,7 +41,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
   bool _showFilterMenu = false;
   bool _selectionMode = false;
   bool _deletingBooks = false;
+  bool _deletingSeries = false;
   final Set<String> _selectedBookIds = {};
+  final Set<String> _selectedSeriesIds = {};
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
 
@@ -136,7 +138,6 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   List<Series> get _filteredSeries {
-    if (_selectionMode) return [];
     final query = _searchQuery.trim().toLowerCase();
     if (query.isEmpty) return _series;
     return _series.where((series) {
@@ -156,13 +157,14 @@ class _BookshelfPageState extends State<BookshelfPage> {
       children: [
         _Header(
           selectionMode: _selectionMode,
-          selectedCount: _selectedBookIds.length,
+          selectedBookCount: _selectedBookIds.length,
+          selectedSeriesCount: _selectedSeriesIds.length,
           isAdmin: appState.isAdmin,
           libraries: _libraries,
           selectedLibraryId: _selectedLibraryId,
           showFilterMenu: _showFilterMenu,
           filterMenuLink: _filterMenuLink,
-          deletingBooks: _deletingBooks,
+          deletingItems: _deletingBooks || _deletingSeries,
           onSearchOpen: widget.openSearch,
           onLibraryChanged: (value) async {
             setState(() {
@@ -176,21 +178,32 @@ class _BookshelfPageState extends State<BookshelfPage> {
           onToggleFilterMenu: _toggleFilterMenu,
           onSelectionMode: () {
             _closeFilterMenu();
-            setState(() => _selectionMode = true);
+            setState(() {
+              _selectionMode = true;
+              _selectedBookIds.clear();
+              _selectedSeriesIds.clear();
+            });
           },
           onCancelSelection: () {
             setState(() {
               _selectionMode = false;
               _selectedBookIds.clear();
+              _selectedSeriesIds.clear();
             });
           },
           onSelectAll: _selectAllVisible,
-          onCreateSeries: _selectedBookIds.isEmpty || _deletingBooks
+          onCreateSeries: _selectedBookIds.isEmpty ||
+                  _selectedSeriesIds.isNotEmpty ||
+                  _deletingBooks ||
+                  _deletingSeries
               ? null
               : _showCreateSeriesDialog,
-          onDeleteBooks: _selectedBookIds.isEmpty || _deletingBooks
-              ? null
-              : _showDeleteBooksDialog,
+          onDeleteSelected:
+              (_selectedBookIds.isEmpty && _selectedSeriesIds.isEmpty) ||
+                      _deletingBooks ||
+                      _deletingSeries
+                  ? null
+                  : _showDeleteSelectedDialog,
         ),
         const SizedBox(height: 10),
         if (!hasContent)
@@ -220,6 +233,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
             coverShape: _coverShape,
             selectionMode: _selectionMode,
             selectedBookIds: _selectedBookIds,
+            selectedSeriesIds: _selectedSeriesIds,
             onBook: (book) {
               if (_selectionMode) {
                 setState(() {
@@ -231,7 +245,17 @@ class _BookshelfPageState extends State<BookshelfPage> {
                 widget.openBook(book.id);
               }
             },
-            onSeries: (series) => widget.openSeries(series.id),
+            onSeries: (series) {
+              if (_selectionMode) {
+                setState(() {
+                  _selectedSeriesIds.contains(series.id)
+                      ? _selectedSeriesIds.remove(series.id)
+                      : _selectedSeriesIds.add(series.id);
+                });
+              } else {
+                widget.openSeries(series.id);
+              }
+            },
           ),
         const SafeBottomSpacer(),
       ],
@@ -239,12 +263,19 @@ class _BookshelfPageState extends State<BookshelfPage> {
   }
 
   void _selectAllVisible() {
-    final visibleIds = _filteredBooks.map((book) => book.id).toSet();
+    final visibleBookIds = _filteredBooks.map((book) => book.id).toSet();
+    final visibleSeriesIds = _filteredSeries.map((series) => series.id).toSet();
+    if (visibleBookIds.isEmpty && visibleSeriesIds.isEmpty) return;
     setState(() {
-      if (visibleIds.every(_selectedBookIds.contains)) {
-        _selectedBookIds.removeAll(visibleIds);
+      final allBooksSelected = visibleBookIds.every(_selectedBookIds.contains);
+      final allSeriesSelected =
+          visibleSeriesIds.every(_selectedSeriesIds.contains);
+      if (allBooksSelected && allSeriesSelected) {
+        _selectedBookIds.removeAll(visibleBookIds);
+        _selectedSeriesIds.removeAll(visibleSeriesIds);
       } else {
-        _selectedBookIds.addAll(visibleIds);
+        _selectedBookIds.addAll(visibleBookIds);
+        _selectedSeriesIds.addAll(visibleSeriesIds);
       }
     });
   }
@@ -334,21 +365,150 @@ class _BookshelfPageState extends State<BookshelfPage> {
     );
   }
 
-  Future<void> _showDeleteBooksDialog() async {
+  Future<void> _showDeleteSelectedDialog() async {
+    final selectedSeries = _series
+        .where((series) => _selectedSeriesIds.contains(series.id))
+        .toList();
     final selectedBooks =
         _books.where((book) => _selectedBookIds.contains(book.id)).toList();
-    if (selectedBooks.isEmpty || _deletingBooks) return;
+    if ((selectedBooks.isEmpty && selectedSeries.isEmpty) ||
+        _deletingBooks ||
+        _deletingSeries) {
+      return;
+    }
+
+    var deletedSeries = false;
+    if (selectedSeries.isNotEmpty) {
+      final confirmed = await _confirmDeleteSeries(selectedSeries);
+      if (confirmed != true) return;
+      if (!mounted) return;
+
+      deletedSeries = await _deleteSeries(selectedSeries);
+      if (!deletedSeries || !mounted) return;
+      setState(() => _selectedSeriesIds.clear());
+    }
+
+    if (selectedBooks.isNotEmpty) {
+      final deletedBooks = await _confirmAndDeleteBooks(selectedBooks);
+      if (!deletedBooks && deletedSeries) await _load();
+      return;
+    }
+
+    if (deletedSeries) {
+      setState(() {
+        _selectionMode = false;
+        _selectedBookIds.clear();
+        _selectedSeriesIds.clear();
+      });
+      await _load();
+    }
+  }
+
+  Future<bool?> _confirmDeleteSeries(List<Series> selectedSeries) {
+    if (selectedSeries.isEmpty) return Future.value(false);
+    final bulk = selectedSeries.length > 1;
+    final title = selectedSeries.first.title;
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: const Color(0xffef4444).withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xffef4444),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(context.localeText('删除系列', 'Delete Series'))),
+          ],
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440),
+          child: Text(
+            bulk
+                ? context.localeText(
+                    '此操作会删除选中的 ${selectedSeries.length} 个系列，系列中的书籍不会被删除。',
+                    'Delete ${selectedSeries.length} selected series. Books in those series will not be deleted.',
+                  )
+                : context.localeText(
+                    '确定要删除“$title”这个系列吗？系列中的书籍不会被删除。',
+                    'Delete "$title"? Books in this series will not be deleted.',
+                  ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(context.l10n.commonCancel),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xffef4444),
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: Text(context.l10n.commonDelete),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _deleteSeries(List<Series> selectedSeries) async {
+    if (selectedSeries.isEmpty || _deletingSeries) return false;
+    final api = AppScope.appOf(context).api;
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() => _deletingSeries = true);
+    try {
+      await Future.wait(
+        selectedSeries.map(
+          (series) => api.delete('/api/v1/series/${series.id}'),
+        ),
+      );
+      return true;
+    } catch (error) {
+      if (!mounted) return false;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            context.localeText(
+              '删除系列失败：$error',
+              'Failed to delete series: $error',
+            ),
+          ),
+        ),
+      );
+      return false;
+    } finally {
+      if (mounted) setState(() => _deletingSeries = false);
+    }
+  }
+
+  Future<bool> _confirmAndDeleteBooks(List<Book> selectedBooks) async {
+    if (selectedBooks.isEmpty || _deletingBooks) return false;
 
     final confirmation = await showDeleteBookConfirmationDialog(
       context,
       books: selectedBooks,
     );
-    if (confirmation == null) return;
-    if (!mounted) return;
+    if (confirmation == null) return false;
+    if (!mounted) return false;
+
+    final api = AppScope.appOf(context).api;
+    final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _deletingBooks = true);
     try {
-      final api = AppScope.appOf(context).api;
       await Future.wait(
         selectedBooks.map(
           (book) => api.delete(
@@ -357,15 +517,17 @@ class _BookshelfPageState extends State<BookshelfPage> {
           ),
         ),
       );
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() {
         _selectionMode = false;
         _selectedBookIds.clear();
+        _selectedSeriesIds.clear();
       });
       await _load();
+      return true;
     } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      if (!mounted) return false;
+      messenger.showSnackBar(
         SnackBar(
           content: Text(
             context.localeText(
@@ -373,6 +535,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           ),
         ),
       );
+      return false;
     } finally {
       if (mounted) setState(() => _deletingBooks = false);
     }
@@ -477,6 +640,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
       setState(() {
         _selectionMode = false;
         _selectedBookIds.clear();
+        _selectedSeriesIds.clear();
       });
       await _load();
     }
@@ -486,13 +650,14 @@ class _BookshelfPageState extends State<BookshelfPage> {
 class _Header extends StatelessWidget {
   const _Header({
     required this.selectionMode,
-    required this.selectedCount,
+    required this.selectedBookCount,
+    required this.selectedSeriesCount,
     required this.isAdmin,
     required this.libraries,
     required this.selectedLibraryId,
     required this.showFilterMenu,
     required this.filterMenuLink,
-    required this.deletingBooks,
+    required this.deletingItems,
     required this.onSearchOpen,
     required this.onLibraryChanged,
     required this.onToggleFilterMenu,
@@ -500,17 +665,18 @@ class _Header extends StatelessWidget {
     required this.onCancelSelection,
     required this.onSelectAll,
     required this.onCreateSeries,
-    required this.onDeleteBooks,
+    required this.onDeleteSelected,
   });
 
   final bool selectionMode;
-  final int selectedCount;
+  final int selectedBookCount;
+  final int selectedSeriesCount;
   final bool isAdmin;
   final List<Library> libraries;
   final String selectedLibraryId;
   final bool showFilterMenu;
   final LayerLink filterMenuLink;
-  final bool deletingBooks;
+  final bool deletingItems;
   final VoidCallback onSearchOpen;
   final ValueChanged<String?> onLibraryChanged;
   final VoidCallback onToggleFilterMenu;
@@ -518,7 +684,7 @@ class _Header extends StatelessWidget {
   final VoidCallback onCancelSelection;
   final VoidCallback onSelectAll;
   final VoidCallback? onCreateSeries;
-  final VoidCallback? onDeleteBooks;
+  final VoidCallback? onDeleteSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -527,6 +693,17 @@ class _Header extends StatelessWidget {
         final compact = constraints.maxWidth < 880;
         final mobile = constraints.maxWidth < 560;
         final searchWidth = compact ? constraints.maxWidth : 256.0;
+        final selectedCount = selectedBookCount + selectedSeriesCount;
+        final hasSelection = selectedCount > 0;
+        final operationsButton = _BatchOperationsMenuButton(
+          compact: mobile,
+          hasSelection: hasSelection,
+          canCreateSeries: onCreateSeries != null,
+          canDelete: onDeleteSelected != null,
+          loading: deletingItems,
+          onCreateSeries: onCreateSeries,
+          onDelete: onDeleteSelected,
+        );
         final desktopToolbar = Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -548,21 +725,7 @@ class _Header extends StatelessWidget {
                 compact: mobile,
                 onPressed: onSelectAll,
               ),
-              BatchActionButton(
-                icon: Icons.layers_rounded,
-                label: context.localeText('创建系列', 'Create Series'),
-                filled: true,
-                compact: mobile,
-                onPressed: onCreateSeries,
-              ),
-              BatchActionButton(
-                icon: Icons.delete_outline_rounded,
-                label: context.localeText('删除', 'Delete'),
-                danger: true,
-                loading: deletingBooks,
-                compact: mobile,
-                onPressed: onDeleteBooks,
-              ),
+              operationsButton,
               _SquareToolbarButton(
                 icon: Icons.close_rounded,
                 onPressed: onCancelSelection,
@@ -620,21 +783,7 @@ class _Header extends StatelessWidget {
                   compact: mobile,
                   onPressed: onSelectAll,
                 ),
-                BatchActionButton(
-                  icon: Icons.layers_rounded,
-                  label: context.localeText('创建系列', 'Create Series'),
-                  filled: true,
-                  compact: mobile,
-                  onPressed: onCreateSeries,
-                ),
-                BatchActionButton(
-                  icon: Icons.delete_outline_rounded,
-                  label: context.localeText('删除', 'Delete'),
-                  danger: true,
-                  loading: deletingBooks,
-                  compact: mobile,
-                  onPressed: onDeleteBooks,
-                ),
+                operationsButton,
                 _SquareToolbarButton(
                   icon: Icons.close_rounded,
                   onPressed: onCancelSelection,
@@ -724,6 +873,208 @@ class _Header extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+enum _BatchOperation { createSeries, delete }
+
+class _BatchOperationsMenuButton extends StatelessWidget {
+  const _BatchOperationsMenuButton({
+    required this.compact,
+    required this.hasSelection,
+    required this.canCreateSeries,
+    required this.canDelete,
+    required this.loading,
+    required this.onCreateSeries,
+    required this.onDelete,
+  });
+
+  final bool compact;
+  final bool hasSelection;
+  final bool canCreateSeries;
+  final bool canDelete;
+  final bool loading;
+  final VoidCallback? onCreateSeries;
+  final VoidCallback? onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<_BatchOperation>(
+      enabled: !loading,
+      tooltip: context.localeText('批量操作', 'Batch Actions'),
+      position: PopupMenuPosition.under,
+      offset: const Offset(0, 8),
+      onSelected: (operation) {
+        switch (operation) {
+          case _BatchOperation.createSeries:
+            onCreateSeries?.call();
+          case _BatchOperation.delete:
+            onDelete?.call();
+        }
+      },
+      itemBuilder: (context) {
+        if (!hasSelection) {
+          return [
+            PopupMenuItem<_BatchOperation>(
+              enabled: false,
+              child: SizedBox(
+                width: 210,
+                child: Text(
+                  context.localeText(
+                    '请先在下方勾选书籍或系列',
+                    'Select books or series first',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: context.mutedText, fontSize: 13),
+                ),
+              ),
+            ),
+          ];
+        }
+
+        return [
+          PopupMenuItem<_BatchOperation>(
+            value: _BatchOperation.createSeries,
+            enabled: canCreateSeries,
+            child: _BatchOperationMenuItem(
+              icon: Icons.layers_rounded,
+              label: context.localeText('创建系列', 'Create Series'),
+              enabled: canCreateSeries,
+            ),
+          ),
+          PopupMenuItem<_BatchOperation>(
+            value: _BatchOperation.delete,
+            enabled: canDelete,
+            child: _BatchOperationMenuItem(
+              icon: Icons.delete_outline_rounded,
+              label: context.localeText('删除', 'Delete'),
+              danger: true,
+              enabled: canDelete,
+            ),
+          ),
+        ];
+      },
+      child: _BatchOperationsButtonSurface(
+        compact: compact,
+        loading: loading,
+      ),
+    );
+  }
+}
+
+class _BatchOperationMenuItem extends StatelessWidget {
+  const _BatchOperationMenuItem({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    this.danger = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? const Color(0xffef4444) : context.secondaryText;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BatchOperationsButtonSurface extends StatelessWidget {
+  const _BatchOperationsButtonSurface({
+    required this.compact,
+    required this.loading,
+  });
+
+  final bool compact;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final height = compact ? 40.0 : 44.0;
+    final background = loading
+        ? AppColors.primary600.withValues(alpha: 0.55)
+        : AppColors.primary600;
+
+    return Container(
+      constraints: BoxConstraints(minHeight: height),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 12 : 15,
+        vertical: compact ? 8 : 10,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(compact ? 12 : 14),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary600.withValues(alpha: loading ? 0 : 0.22),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (loading)
+            SizedBox(
+              width: compact ? 15 : 16,
+              height: compact ? 15 : 16,
+              child: const CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            )
+          else
+            Icon(
+              Icons.more_horiz_rounded,
+              size: compact ? 17 : 18,
+              color: Colors.white,
+            ),
+          SizedBox(width: compact ? 6 : 8),
+          Text(
+            compact
+                ? context.localeText('操作', 'Actions')
+                : context.localeText('批量操作', 'Batch Actions'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 13 : 14,
+              fontWeight: FontWeight.w400,
+              height: 1.15,
+            ),
+          ),
+          if (!loading) ...[
+            SizedBox(width: compact ? 4 : 6),
+            Icon(
+              Icons.keyboard_arrow_down_rounded,
+              size: compact ? 17 : 18,
+              color: Colors.white,
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -887,6 +1238,7 @@ class _ContentGrid extends StatelessWidget {
     required this.coverShape,
     required this.selectionMode,
     required this.selectedBookIds,
+    required this.selectedSeriesIds,
     required this.onBook,
     required this.onSeries,
   });
@@ -898,6 +1250,7 @@ class _ContentGrid extends StatelessWidget {
   final CoverShape coverShape;
   final bool selectionMode;
   final Set<String> selectedBookIds;
+  final Set<String> selectedSeriesIds;
   final ValueChanged<Book> onBook;
   final ValueChanged<Series> onSeries;
 
@@ -960,6 +1313,8 @@ class _ContentGrid extends StatelessWidget {
                       return SeriesCard(
                         series: item,
                         coverShape: coverShape,
+                        selectionMode: selectionMode,
+                        selected: selectedSeriesIds.contains(item.id),
                         onTap: () => onSeries(item),
                       );
                     }
@@ -996,6 +1351,8 @@ class _ContentGrid extends StatelessWidget {
               return SeriesCard(
                 series: item,
                 coverShape: coverShape,
+                selectionMode: selectionMode,
+                selected: selectedSeriesIds.contains(item.id),
                 onTap: () => onSeries(item),
               );
             }

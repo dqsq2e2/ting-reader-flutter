@@ -218,11 +218,15 @@ class SeriesCard extends StatelessWidget {
     required this.series,
     required this.onTap,
     this.coverShape = CoverShape.rect,
+    this.selected = false,
+    this.selectionMode = false,
   });
 
   final Series series;
   final VoidCallback onTap;
   final CoverShape coverShape;
+  final bool selected;
+  final bool selectionMode;
 
   @override
   Widget build(BuildContext context) {
@@ -232,148 +236,176 @@ class SeriesCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned(
-                left: 8,
-                right: 8,
-                top: -6,
-                bottom: 8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.isDark
-                        ? AppColors.slate800
-                        : AppColors.slate200,
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 3,
-                right: 3,
-                top: -1,
-                bottom: 3,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.isDark
-                        ? AppColors.slate700
-                        : AppColors.slate300,
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              AspectRatio(
-                aspectRatio: coverAspectRatio(coverShape),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.cardColor,
-                    borderRadius: BorderRadius.circular(6),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.16),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: CoverImage(url: url, radius: 6),
-                ),
-              ),
-              Positioned(
-                right: 8,
-                top: 8,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.layers_rounded,
-                          color: Colors.white, size: 11),
-                      const SizedBox(width: 4),
-                      Text(
-                        context.localeText('系列', 'Series'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+      child: Opacity(
+        opacity: selectionMode && !selected ? 0.64 : 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  top: -6,
+                  bottom: 8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.isDark
+                          ? AppColors.slate800
+                          : AppColors.slate200,
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 8,
-                bottom: 8,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary600.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(4),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    context.localeText(
-                      '${series.books.length} 本书',
-                      '${series.books.length} books',
-                    ),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      ],
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 9),
-          Text(
-            localizedSeriesTitle(context, series),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            series.author?.isNotEmpty == true
-                ? series.author!
-                : context.localeText('系列', 'Series'),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: context.mutedText, fontSize: 12),
-          ),
-        ],
+                Positioned(
+                  left: 3,
+                  right: 3,
+                  top: -1,
+                  bottom: 3,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.isDark
+                          ? AppColors.slate700
+                          : AppColors.slate300,
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                AspectRatio(
+                  aspectRatio: coverAspectRatio(coverShape),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.cardColor,
+                      borderRadius: BorderRadius.circular(6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.16),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: CoverImage(url: url, radius: 6),
+                  ),
+                ),
+                if (selectionMode)
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: context.cardColor.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.08),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: BatchCheckbox(
+                        checked: selected,
+                        compact: true,
+                        interactive: false,
+                        visualSize: 20,
+                      ),
+                    ),
+                  )
+                else
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.layers_rounded,
+                              color: Colors.white, size: 11),
+                          const SizedBox(width: 4),
+                          Text(
+                            context.localeText('系列', 'Series'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary600.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(4),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      context.localeText(
+                        '${series.books.length} 本书',
+                        '${series.books.length} books',
+                      ),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 9),
+            Text(
+              localizedSeriesTitle(context, series),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              series.author?.isNotEmpty == true
+                  ? series.author!
+                  : context.localeText('系列', 'Series'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: context.mutedText, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
