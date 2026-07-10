@@ -948,13 +948,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final chapter = currentChapter;
     if (book == null || chapter == null) return;
     if (appState.offlineMode) return;
-    unawaited(
-      _sendProgressByWebSocket(
-        book,
-        chapter,
-        playbackStart: playbackStart,
-      ),
+    final sentByWebSocket = await _sendProgressByWebSocket(
+      book,
+      chapter,
+      playbackStart: playbackStart,
     );
+    if (sentByWebSocket) return;
     await _sendProgressByHttp(
       book,
       chapter,
@@ -973,6 +972,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final book = currentBook;
     final chapter = currentChapter;
     if (book == null || chapter == null || appState.offlineMode) return;
+    if (!kIsWeb && _progressSocket != null) return;
     await _sendProgressByHttp(book, chapter);
   }
 
@@ -997,17 +997,17 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _sendProgressByWebSocket(
+  Future<bool> _sendProgressByWebSocket(
     Book book,
     Chapter chapter, {
     double? playbackStart,
   }) async {
-    if (kIsWeb) return;
+    if (kIsWeb) return false;
     final token = appState.token;
-    if (token == null || token.isEmpty || appState.offlineMode) return;
+    if (token == null || token.isEmpty || appState.offlineMode) return false;
     try {
       final socket = await _ensureProgressSocket();
-      if (socket == null) return;
+      if (socket == null) return false;
       socket.add(
         jsonEncode({
           'type': 'progress_update',
@@ -1017,8 +1017,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           if (playbackStart != null) 'playback_start': playbackStart.floor(),
         }),
       );
+      return true;
     } catch (_) {
-      // HTTP sync is kept as a separate fallback, matching the web client.
+      _closeProgressSocket();
+      return false;
     }
   }
 

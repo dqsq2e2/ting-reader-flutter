@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 
 class ApiClient {
@@ -16,6 +18,8 @@ class ApiClient {
   String? _token;
   Map<String, String> _clientHeaders = const {};
   String _languageCode = 'zh';
+  final Map<String, Future<Response<dynamic>>> _inFlightMutations = {};
+  int _mutationSequence = 0;
   Future<String?> Function(String failedBaseUrl)? recoverBaseUrl;
 
   String get baseUrl => _baseUrl;
@@ -66,25 +70,46 @@ class ApiClient {
     Object? data,
     Map<String, dynamic>? params,
   }) {
-    return _send(
+    final idempotencyKey = _idempotencyKey();
+    return _sendMutation(
+      'POST',
+      path,
+      data: data,
+      params: params,
       () => _dio.post<dynamic>(
         path,
         data: data,
         queryParameters: params,
-        options: _authOptions(),
+        options: _authOptions(idempotencyKey: idempotencyKey),
       ),
     );
   }
 
   Future<Response<dynamic>> put(String path, {Object? data}) {
-    return _send(
-      () => _dio.put<dynamic>(path, data: data, options: _authOptions()),
+    final idempotencyKey = _idempotencyKey();
+    return _sendMutation(
+      'PUT',
+      path,
+      data: data,
+      () => _dio.put<dynamic>(
+        path,
+        data: data,
+        options: _authOptions(idempotencyKey: idempotencyKey),
+      ),
     );
   }
 
   Future<Response<dynamic>> patch(String path, {Object? data}) {
-    return _send(
-      () => _dio.patch<dynamic>(path, data: data, options: _authOptions()),
+    final idempotencyKey = _idempotencyKey();
+    return _sendMutation(
+      'PATCH',
+      path,
+      data: data,
+      () => _dio.patch<dynamic>(
+        path,
+        data: data,
+        options: _authOptions(idempotencyKey: idempotencyKey),
+      ),
     );
   }
 
@@ -93,14 +118,66 @@ class ApiClient {
     Object? data,
     Map<String, dynamic>? params,
   }) {
-    return _send(
+    final idempotencyKey = _idempotencyKey();
+    return _sendMutation(
+      'DELETE',
+      path,
+      data: data,
+      params: params,
       () => _dio.delete<dynamic>(
         path,
         data: data,
         queryParameters: params,
-        options: _authOptions(),
+        options: _authOptions(idempotencyKey: idempotencyKey),
       ),
     );
+  }
+
+  Future<Response<dynamic>> _sendMutation(
+    String method,
+    String path,
+    Future<Response<dynamic>> Function() request, {
+    Object? data,
+    Map<String, dynamic>? params,
+  }) {
+    final fingerprint = _mutationFingerprint(method, path, data, params);
+    final existing = _inFlightMutations[fingerprint];
+    if (existing != null) return existing;
+
+    final future = _send(request).whenComplete(() {
+      _inFlightMutations.remove(fingerprint);
+    });
+    _inFlightMutations[fingerprint] = future;
+    return future;
+  }
+
+  String _mutationFingerprint(
+    String method,
+    String path,
+    Object? data,
+    Map<String, dynamic>? params,
+  ) {
+    return '$method|$_baseUrl|$path|${_stableEncode(params)}|${_stableEncode(data)}';
+  }
+
+  String _idempotencyKey() {
+    final now = DateTime.now();
+    return '${now.microsecondsSinceEpoch}-${_mutationSequence++}';
+  }
+
+  String _stableEncode(Object? value) {
+    if (value is Map) {
+      final keys = value.keys.map((key) => key.toString()).toList()..sort();
+      return '{${keys.map((key) => '$key:${_stableEncode(value[key])}').join(',')}}';
+    }
+    if (value is Iterable) {
+      return '[${value.map(_stableEncode).join(',')}]';
+    }
+    try {
+      return jsonEncode(value);
+    } catch (_) {
+      return value.toString();
+    }
   }
 
   Future<Response<dynamic>> _send(
@@ -127,7 +204,7 @@ class ApiClient {
     return status == 502 || status == 503 || status == 504;
   }
 
-  Options _authOptions() {
+  Options _authOptions({String? idempotencyKey}) {
     final headers = <String, dynamic>{
       'Content-Type': 'application/json',
       'Accept-Language': _languageCode,
@@ -135,6 +212,9 @@ class ApiClient {
     };
     if (_token != null && _token!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $_token';
+    }
+    if (idempotencyKey != null) {
+      headers['Idempotency-Key'] = idempotencyKey;
     }
     return Options(headers: headers);
   }
