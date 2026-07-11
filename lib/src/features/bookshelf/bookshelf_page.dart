@@ -29,6 +29,8 @@ class BookshelfPage extends StatefulWidget {
 }
 
 class _BookshelfPageState extends State<BookshelfPage> {
+  static const int _pageSize = 50;
+
   bool _loading = true;
   List<Book> _books = [];
   List<Series> _series = [];
@@ -45,18 +47,38 @@ class _BookshelfPageState extends State<BookshelfPage> {
   final Set<String> _selectedBookIds = {};
   final Set<String> _selectedSeriesIds = {};
   final LayerLink _filterMenuLink = LayerLink();
+  final ScrollController _scrollController = ScrollController();
   OverlayEntry? _filterOverlay;
+  int _visibleCount = _pageSize;
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_loadMoreWhenNeeded);
     _load();
   }
 
   @override
   void dispose() {
     _filterOverlay?.remove();
+    _scrollController
+      ..removeListener(_loadMoreWhenNeeded)
+      ..dispose();
     super.dispose();
+  }
+
+  void _loadMoreWhenNeeded() {
+    if (!_scrollController.hasClients || _loading) return;
+    if (_scrollController.position.extentAfter > 800) return;
+    final totalCount = _filteredBooks.length + _filteredSeries.length;
+    if (_visibleCount >= totalCount) return;
+    setState(() {
+      _visibleCount = (_visibleCount + _pageSize).clamp(0, totalCount);
+    });
+  }
+
+  void _resetVisibleItems() {
+    _visibleCount = _pageSize;
   }
 
   Future<void> _load() async {
@@ -99,6 +121,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         _libraries = libraries;
         _books = asMapList(results[0].data).map(Book.fromJson).toList();
         _series = asMapList(results[1].data).map(Series.fromJson).toList();
+        _resetVisibleItems();
       });
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -153,6 +176,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     final hasContent = _books.isNotEmpty || _series.isNotEmpty;
 
     return PageListView(
+      controller: _scrollController,
       onRefresh: _load,
       children: [
         _Header(
@@ -228,6 +252,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
           _ContentGrid(
             books: _filteredBooks,
             series: _filteredSeries,
+            visibleCount: _visibleCount,
             sortBy: _sortBy,
             iconSize: _iconSize,
             coverShape: _coverShape,
@@ -346,7 +371,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   Future<void> _changeSort(String value) async {
     _closeFilterMenu();
-    setState(() => _sortBy = value);
+    setState(() {
+      _sortBy = value;
+      _resetVisibleItems();
+    });
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
     await _persist('bookshelf_sort_by', value);
   }
 
@@ -1233,6 +1264,7 @@ class _ContentGrid extends StatelessWidget {
   const _ContentGrid({
     required this.books,
     required this.series,
+    required this.visibleCount,
     required this.sortBy,
     required this.iconSize,
     required this.coverShape,
@@ -1245,6 +1277,7 @@ class _ContentGrid extends StatelessWidget {
 
   final List<Book> books;
   final List<Series> series;
+  final int visibleCount;
   final String sortBy;
   final IconSizeSetting iconSize;
   final CoverShape coverShape;
@@ -1283,14 +1316,25 @@ class _ContentGrid extends StatelessWidget {
               if (sortBy == 'year') return b.compareTo(a);
               return a.compareTo(b);
             });
+          var remaining = visibleCount;
+          final visibleGroups = <String, List<Object>>{};
+          for (final key in keys) {
+            if (remaining <= 0) break;
+            final group = groups[key]!;
+            final take = group.length < remaining ? group.length : remaining;
+            if (take > 0) {
+              visibleGroups[key] = group.sublist(0, take);
+              remaining -= take;
+            }
+          }
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final key in keys) ...[
+              for (final entry in visibleGroups.entries) ...[
                 Padding(
                   padding: const EdgeInsets.only(left: 2, bottom: 10, top: 6),
                   child: Text(
-                    key,
+                    entry.key,
                     style: TextStyle(
                       color: context.mutedText,
                       fontWeight: FontWeight.w700,
@@ -1300,7 +1344,7 @@ class _ContentGrid extends StatelessWidget {
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  itemCount: groups[key]!.length,
+                  itemCount: entry.value.length,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
                     crossAxisSpacing: spacing,
@@ -1308,7 +1352,7 @@ class _ContentGrid extends StatelessWidget {
                     childAspectRatio: ratio,
                   ),
                   itemBuilder: (context, index) {
-                    final item = groups[key]![index];
+                    final item = entry.value[index];
                     if (item is Series) {
                       return SeriesCard(
                         series: item,
@@ -1334,7 +1378,7 @@ class _ContentGrid extends StatelessWidget {
           );
         }
 
-        final items = <Object>[...series, ...books];
+        final items = <Object>[...series, ...books].take(visibleCount).toList();
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),

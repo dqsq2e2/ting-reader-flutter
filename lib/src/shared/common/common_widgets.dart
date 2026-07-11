@@ -311,16 +311,19 @@ class PageListView extends StatelessWidget {
     super.key,
     required this.children,
     this.onRefresh,
+    this.controller,
   });
 
   final List<Widget> children;
   final Future<void> Function()? onRefresh;
+  final ScrollController? controller;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final list = ListView(
+          controller: controller,
           padding: pagePaddingForWidth(constraints.maxWidth),
           children: children,
         );
