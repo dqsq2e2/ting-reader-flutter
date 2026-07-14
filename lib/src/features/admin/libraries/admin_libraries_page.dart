@@ -726,6 +726,7 @@ class _DeleteLibraryDialog extends StatelessWidget {
 
 const Map<String, dynamic> _defaultLibraryScraperConfig = {
   'extract_audio_cover': true,
+  'extract_extra_chapters': true,
   'use_filename_as_title': true,
   'nfo_writing_enabled': false,
   'metadata_writing_enabled': false,

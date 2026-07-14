@@ -192,6 +192,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
     final metadata = _boolValue('metadata_writing_enabled', false);
     final preferTitle = _boolValue('use_filename_as_title', true);
     final extractCover = _boolValue('extract_audio_cover', true);
+    final extractExtraChapters = _boolValue('extract_extra_chapters', true);
     final watcherEnabled = !_boolValue('disable_watcher', false);
     final cloudMode = _boolValue('cloud_mode', false);
     final tab = _currentTab;
@@ -275,6 +276,14 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
                       'System or plugins will try to extract cover art from audio files'),
                   value: extractCover,
                   onChanged: (value) => _setBool('extract_audio_cover', value),
+                ),
+                _ConfigSwitchRow(
+                  title: context.localeText('提取番外章节', 'Extract extra chapters'),
+                  subtitle: context.localeText('根据章节标题自动识别番外并与正文分组；关闭后按正文处理',
+                      'Detect extras from chapter titles and group them separately; when disabled, treat them as main chapters'),
+                  value: extractExtraChapters,
+                  onChanged: (value) =>
+                      _setBool('extract_extra_chapters', value),
                 ),
                 if (widget.libraryType == 'local')
                   _ConfigSwitchRow(

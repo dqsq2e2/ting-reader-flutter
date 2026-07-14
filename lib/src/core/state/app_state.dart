@@ -745,16 +745,34 @@ class AppState extends ChangeNotifier {
 
     final cached = _redirectCache[normalizedSource];
     if (!force && cached != null && cached.isNotEmpty) {
-      final reachable = await _probeRedirectTarget(cached, quick: quick);
-      if (reachable != null) {
+      final resolved = await _probeRedirectTarget(
+        normalizedSource,
+        quick: quick,
+      );
+      if (resolved != null) {
+        _redirectCache[normalizedSource] = resolved;
+        await _saveRedirectCache();
         return RedirectResolution(
           sourceUrl: normalizedSource,
-          resolvedUrl: cached,
-          fromCache: true,
+          resolvedUrl: resolved,
+          fromCache: resolved == cached,
         );
       }
+
+      if (cached != normalizedSource) {
+        final reachable = await _probeRedirectTarget(cached, quick: quick);
+        if (reachable != null) {
+          return RedirectResolution(
+            sourceUrl: normalizedSource,
+            resolvedUrl: cached,
+            fromCache: true,
+          );
+        }
+      }
+
       _redirectCache.remove(normalizedSource);
       await _saveRedirectCache();
+      return null;
     }
 
     final resolved = await _probeRedirectTarget(normalizedSource, quick: quick);
