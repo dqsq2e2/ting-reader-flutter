@@ -91,36 +91,19 @@ String pinyinInitial(String value) {
   }
   if (code < 0x4e00 || code > 0x9fa5) return '#';
 
-  const boundaries = <int, String>{
-    0x963F: 'A',
-    0x82AD: 'B',
-    0x64E6: 'C',
-    0x642D: 'D',
-    0x5A40: 'E',
-    0x53D1: 'F',
-    0x5676: 'G',
-    0x54C8: 'H',
-    0x808C: 'J',
-    0x5580: 'K',
-    0x5783: 'L',
-    0x5988: 'M',
-    0x62FF: 'N',
-    0x54E6: 'O',
-    0x556A: 'P',
-    0x671F: 'Q',
-    0x7136: 'R',
-    0x6492: 'S',
-    0x584C: 'T',
-    0x6316: 'W',
-    0x6614: 'X',
-    0x538B: 'Y',
-    0x531D: 'Z',
-  };
-  var result = '#';
-  for (final entry in boundaries.entries) {
-    if (code >= entry.key) result = entry.value;
+  // CJK codepoint order does not follow pinyin order, so the initial must
+  // come from the actual pinyin. This also keeps grouping consistent with
+  // chineseSortKey/compareChineseText (and the web client's collation).
+  final pinyin = PinyinHelper.getPinyinE(first, separator: '').trim();
+  if (pinyin.isEmpty) return '#';
+  final initialCode = pinyin.codeUnitAt(0);
+  if (initialCode >= 97 && initialCode <= 122) {
+    return String.fromCharCode(initialCode - 32);
   }
-  return result;
+  if (initialCode >= 65 && initialCode <= 90) {
+    return String.fromCharCode(initialCode);
+  }
+  return '#';
 }
 
 int compareChineseText(String a, String b) {

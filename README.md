@@ -62,3 +62,7 @@ GitHub Actions 会在推送 `v*` tag 或手动触发时构建以下产物：
 - Windows 和 Linux 当前只保证应用内播放；系统级媒体通知/锁屏控制未接入。
 - Linux 播放走 media_kit native libs；如果发行版改为系统 libmpv，需要同步调整打包依赖。
 - iOS/macOS 的系统媒体能力需要真实设备和签名环境验证。
+
+## 开源协议
+
+本项目采用 [GNU Affero General Public License v3.0](LICENSE) 协议（SPDX：`AGPL-3.0-only`）。

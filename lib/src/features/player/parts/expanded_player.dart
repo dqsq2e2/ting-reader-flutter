@@ -14,6 +14,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
 
   Timer? _sleepTimer;
   int? _sleepRemainingSeconds;
+  // 按集数睡眠：剩余可播集数（含当前集）。监听章节切换递减，归零即暂停。
+  int? _sleepEpisodesRemaining;
+  String? _sleepEpisodeChapterId;
   CoverShape _coverShape = CoverShape.rect;
   double? _dragSeekValue;
 
@@ -26,7 +29,33 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   @override
   void dispose() {
     _sleepTimer?.cancel();
+    widget.player.removeListener(_handleSleepChapterChange);
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _sleepEpisodeChapterId = widget.player.currentChapter?.id;
+    widget.player.addListener(_handleSleepChapterChange);
+  }
+
+  // 章节边界（含自动连播与手动跳集）都算一集播完；到 0 就暂停在下一集开头。
+  void _handleSleepChapterChange() {
+    final chapterId = widget.player.currentChapter?.id;
+    if (chapterId == _sleepEpisodeChapterId) return;
+    _sleepEpisodeChapterId = chapterId;
+    final remaining = _sleepEpisodesRemaining;
+    if (remaining == null) return;
+    if (remaining <= 1) {
+      _sleepEpisodesRemaining = null;
+      if (widget.player.isPlaying) {
+        unawaited(widget.player.togglePlay());
+      }
+    } else {
+      _sleepEpisodesRemaining = remaining - 1;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _toggleSpeed(PlayerState player) async {
@@ -297,6 +326,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   Future<void> _startSleepTimer(PlayerState player, int minutes) async {
     _sleepTimer?.cancel();
     _sleepRemainingSeconds = minutes * 60;
+    _sleepEpisodesRemaining = null;
     setState(() {});
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
       if (!mounted) return;
@@ -320,7 +350,19 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepRemainingSeconds = null;
+    _sleepEpisodesRemaining = null;
     if (mounted) setState(() {});
+  }
+
+  // 按集数定时：episodes = 1 表示播完本集即停，与按分钟定时互斥。
+  void _startEpisodeSleepTimer(int episodes) {
+    if (episodes <= 0) return;
+    _sleepTimer?.cancel();
+    _sleepTimer = null;
+    _sleepRemainingSeconds = null;
+    _sleepEpisodesRemaining = episodes;
+    _sleepEpisodeChapterId = widget.player.currentChapter?.id;
+    setState(() {});
   }
 
   Future<void> _openSleepTimerSheet(
@@ -328,10 +370,13 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     BuildContext anchorContext,
   ) async {
     final controller = TextEditingController();
+    final episodeController = TextEditingController();
+    // 0 = 按分钟，1 = 按集数；有集数定时在跑时默认落在集数页。
+    var sheetTab = _sleepEpisodesRemaining != null ? 1 : 0;
     await _showAnchoredPopover(
       anchorContext: anchorContext,
-      width: 198,
-      estimatedHeight: 204,
+      width: 216,
+      estimatedHeight: 252,
       alignRight: true,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -373,113 +418,264 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                     ),
                   ),
                   const SizedBox(height: 7),
-                  for (final row in const [
-                    [15, 30],
-                    [45, 60],
-                  ]) ...[
-                    Row(
-                      children: [
-                        for (var i = 0; i < row.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 7),
-                          Expanded(
-                            child: SizedBox(
-                              height: 32,
-                              child: OutlinedButton(
-                                onPressed: () async {
-                                  await _startSleepTimer(player, row[i]);
-                                  if (dialogContext.mounted) {
-                                    Navigator.pop(dialogContext);
-                                  }
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: context.mutedText,
-                                  side: BorderSide(color: context.faintBorder),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  textStyle: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                child: Text(context.localeText(
-                                    '${row[i]} 分钟', '${row[i]} min')),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    if (row.first != 45) const SizedBox(height: 7),
-                  ],
-                  const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
                       color: context.isDark
-                          ? AppColors.slate900.withValues(alpha: 0.5)
-                          : AppColors.slate50,
-                      borderRadius: BorderRadius.circular(13),
-                      border: Border.all(color: context.faintBorder),
+                          ? AppColors.slate800
+                          : AppColors.slate100,
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: controller,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(fontSize: 12),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              hintText:
-                                  context.localeText('自定义分钟', 'Custom minutes'),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              contentPadding:
-                                  const EdgeInsets.symmetric(horizontal: 8),
-                            ),
+                          child: _ChapterTabButton(
+                            label: context.localeText('按分钟', 'Minutes'),
+                            selected: sheetTab == 0,
+                            accent: AppColors.primary600,
+                            onAccent: Colors.white,
+                            onTap: () => setSheetState(() => sheetTab = 0),
                           ),
                         ),
-                        TextButton(
-                          onPressed: () async {
-                            final minutes =
-                                int.tryParse(controller.text.trim()) ?? 0;
-                            if (minutes <= 0) return;
-                            await _startSleepTimer(player, minutes);
-                            if (dialogContext.mounted) {
-                              Navigator.pop(dialogContext);
-                            }
-                          },
-                          style: TextButton.styleFrom(
-                            backgroundColor: AppColors.primary600,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(48, 30),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            textStyle: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        Expanded(
+                          child: _ChapterTabButton(
+                            label: context.localeText('按集数', 'Episodes'),
+                            selected: sheetTab == 1,
+                            accent: AppColors.primary600,
+                            onAccent: Colors.white,
+                            onTap: () => setSheetState(() => sheetTab = 1),
                           ),
-                          child: Text(context.localeText('开启', 'Start')),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
+                  if (sheetTab == 0) ...[
+                    for (final row in const [
+                      [15, 30],
+                      [45, 60],
+                    ]) ...[
+                      Row(
+                        children: [
+                          for (var i = 0; i < row.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 7),
+                            Expanded(
+                              child: SizedBox(
+                                height: 32,
+                                child: OutlinedButton(
+                                  onPressed: () async {
+                                    await _startSleepTimer(player, row[i]);
+                                    if (dialogContext.mounted) {
+                                      Navigator.pop(dialogContext);
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.mutedText,
+                                    side:
+                                        BorderSide(color: context.faintBorder),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    textStyle: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    context.localeText(
+                                        '${row[i]} 分钟', '${row[i]} min'),
+                                    maxLines: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (row.first != 45) const SizedBox(height: 7),
+                    ],
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: context.isDark
+                            ? AppColors.slate900.withValues(alpha: 0.5)
+                            : AppColors.slate50,
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: context.faintBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              keyboardType: TextInputType.number,
+                              style: const TextStyle(fontSize: 12),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText: context.localeText(
+                                    '自定义分钟', 'Custom minutes'),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () async {
+                              final minutes =
+                                  int.tryParse(controller.text.trim()) ?? 0;
+                              if (minutes <= 0) return;
+                              await _startSleepTimer(player, minutes);
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                            },
+                            style: TextButton.styleFrom(
+                              backgroundColor: AppColors.primary600,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(48, 30),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: Text(context.localeText('开启', 'Start')),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (sheetTab == 1) ...[
+                    for (final row in const [
+                      [1, 2],
+                      [3, 4],
+                    ]) ...[
+                      Row(
+                        children: [
+                          for (var i = 0; i < row.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 7),
+                            Expanded(
+                              child: SizedBox(
+                                height: 32,
+                                child: OutlinedButton(
+                                  onPressed: () {
+                                    _startEpisodeSleepTimer(row[i]);
+                                    if (dialogContext.mounted) {
+                                      Navigator.pop(dialogContext);
+                                    }
+                                  },
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.mutedText,
+                                    side:
+                                        BorderSide(color: context.faintBorder),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    padding: EdgeInsets.zero,
+                                    textStyle: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  // 字号缩小并保持单行，避免按钮文字折行。
+                                  child: Text(
+                                    row[i] == 1
+                                        ? context.localeText(
+                                            '播完本集', 'This episode')
+                                        : context.localeText('播完 ${row[i]} 集',
+                                            '${row[i]} episodes'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (row.first != 3) const SizedBox(height: 7),
+                    ],
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: context.isDark
+                            ? AppColors.slate900.withValues(alpha: 0.5)
+                            : AppColors.slate50,
+                        borderRadius: BorderRadius.circular(13),
+                        border: Border.all(color: context.faintBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: episodeController,
+                              keyboardType: TextInputType.number,
+                              style: const TextStyle(fontSize: 12),
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText: context.localeText(
+                                    '自定义集数', 'Custom episodes'),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              final episodes =
+                                  int.tryParse(episodeController.text.trim()) ??
+                                      0;
+                              if (episodes <= 0) return;
+                              _startEpisodeSleepTimer(episodes);
+                              if (dialogContext.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                            },
+                            style: TextButton.styleFrom(
+                              backgroundColor: AppColors.primary600,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(48, 30),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(9),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            child: Text(context.localeText('开启', 'Start')),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     child: TextButton(
-                      onPressed: _sleepTimer == null
-                          ? null
-                          : () {
-                              _cancelSleepTimer();
-                              Navigator.pop(dialogContext);
-                            },
+                      onPressed:
+                          _sleepTimer == null && _sleepEpisodesRemaining == null
+                              ? null
+                              : () {
+                                  _cancelSleepTimer();
+                                  Navigator.pop(dialogContext);
+                                },
                       style: TextButton.styleFrom(
                         backgroundColor: context.isDark
                             ? const Color(0xff7f1d1d).withValues(alpha: 0.22)
@@ -508,6 +704,17 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       ),
                     ),
                   ],
+                  if (_sleepEpisodesRemaining != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      context.localeText('再播 $_sleepEpisodesRemaining 集后停止',
+                          'Stops after $_sleepEpisodesRemaining more ep.'),
+                      style: TextStyle(
+                        color: context.mutedText,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -516,6 +723,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
       },
     );
     controller.dispose();
+    episodeController.dispose();
   }
 
   Future<void> _openPlaybackSettings(PlayerState player, Book book) async {
@@ -1088,11 +1296,16 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               Expanded(
                                 child: _QuickActionButton(
                                   icon: Icons.timer_outlined,
-                                  label: _sleepRemainingSeconds == null
-                                      ? context.localeText('定时', 'Timer')
-                                      : _formatSleepTime(
-                                          _sleepRemainingSeconds!),
-                                  active: _sleepRemainingSeconds != null,
+                                  label: _sleepRemainingSeconds != null
+                                      ? _formatSleepTime(
+                                          _sleepRemainingSeconds!)
+                                      : _sleepEpisodesRemaining != null
+                                          ? context.localeText(
+                                              '$_sleepEpisodesRemaining 集',
+                                              '$_sleepEpisodesRemaining ep')
+                                          : context.localeText('定时', 'Timer'),
+                                  active: _sleepRemainingSeconds != null ||
+                                      _sleepEpisodesRemaining != null,
                                   onTapWithContext: (buttonContext) =>
                                       _openSleepTimerSheet(
                                           player, buttonContext),

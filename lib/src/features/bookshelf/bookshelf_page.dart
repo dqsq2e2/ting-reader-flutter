@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
@@ -50,6 +52,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
   final ScrollController _scrollController = ScrollController();
   OverlayEntry? _filterOverlay;
   int _visibleCount = _pageSize;
+  final Map<String, GlobalKey> _groupSectionKeys = {};
+  String? _activeLetter;
+  bool _indexBarTouchActive = false;
 
   @override
   void initState() {
@@ -169,13 +174,121 @@ class _BookshelfPageState extends State<BookshelfPage> {
     }).toList();
   }
 
+  /// Groups the filtered books and series by pinyin initial (or year) for the
+  /// active sort mode, mirroring the web client's bookshelf grouping.
+  ({List<String> keys, Map<String, List<Object>> groups})?
+      get _groupedContent {
+    if (_sortBy == 'created_at') return null;
+
+    final groups = <String, List<Object>>{};
+    for (final book in _filteredBooks) {
+      final String key;
+      if (_sortBy == 'author') {
+        key = pinyinInitial(book.author ?? '');
+      } else if (_sortBy == 'year') {
+        key = _yearGroupKey(book.year);
+      } else {
+        key = pinyinInitial(book.title);
+      }
+      groups.putIfAbsent(key, () => []).add(book);
+    }
+    for (final item in _filteredSeries) {
+      final String key;
+      if (_sortBy == 'author') {
+        key = pinyinInitial(item.author ?? '');
+      } else if (_sortBy == 'year') {
+        key = '#';
+      } else {
+        key = pinyinInitial(item.title);
+      }
+      groups.putIfAbsent(key, () => []).add(item);
+    }
+
+    for (final items in groups.values) {
+      items.sort((a, b) {
+        if (_sortBy == 'author') {
+          return compareChineseText(_itemAuthor(a), _itemAuthor(b));
+        }
+        if (_sortBy == 'year') return _itemYear(b).compareTo(_itemYear(a));
+        return compareChineseText(_itemTitle(a), _itemTitle(b));
+      });
+    }
+
+    final keys = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == '#') return 1;
+        if (b == '#') return -1;
+        if (_sortBy == 'year') return b.compareTo(a);
+        return a.compareTo(b);
+      });
+    for (final key in keys) {
+      _groupSectionKeys.putIfAbsent(key, GlobalKey.new);
+    }
+    return (keys: keys, groups: groups);
+  }
+
+  static String _yearGroupKey(int? year) {
+    if (year == null) return '#';
+    final text = year.toString();
+    return text.length > 2 ? text.substring(text.length - 2) : text;
+  }
+
+  static String _itemTitle(Object item) =>
+      item is Book ? item.title : (item as Series).title;
+
+  static String _itemAuthor(Object item) =>
+      item is Book ? (item.author ?? '') : ((item as Series).author ?? '');
+
+  static int _itemYear(Object item) => item is Book ? (item.year ?? 0) : 0;
+
+  void _scrollToGroup(String key) {
+    final grouped = _groupedContent;
+    if (grouped == null) return;
+
+    // The list is paged, so render up to the target group before scrolling.
+    var needed = 0;
+    for (final groupKey in grouped.keys) {
+      needed += grouped.groups[groupKey]!.length;
+      if (groupKey == key) break;
+    }
+    setState(() {
+      _activeLetter = key;
+      if (_visibleCount < needed) _visibleCount = needed;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final targetContext = _groupSectionKeys[key]?.currentContext;
+      if (targetContext == null) return;
+      Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+        alignment: 0.02,
+      );
+    });
+  }
+
+  void _endIndexBarTouch() {
+    if (!_indexBarTouchActive) return;
+    setState(() => _indexBarTouchActive = false);
+    Timer(const Duration(milliseconds: 800), () {
+      if (mounted && !_indexBarTouchActive && _activeLetter != null) {
+        setState(() => _activeLetter = null);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
     final appState = AppScope.appOf(context);
     final hasContent = _books.isNotEmpty || _series.isNotEmpty;
+    final grouped = _groupedContent;
+    final hasFilteredContent =
+        _filteredBooks.isNotEmpty || _filteredSeries.isNotEmpty;
 
-    return PageListView(
+    final list = PageListView(
       controller: _scrollController,
       onRefresh: _load,
       children: [
@@ -253,7 +366,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
             books: _filteredBooks,
             series: _filteredSeries,
             visibleCount: _visibleCount,
-            sortBy: _sortBy,
+            groupKeys: grouped?.keys,
+            groups: grouped?.groups,
+            groupSectionKeys: _groupSectionKeys,
             iconSize: _iconSize,
             coverShape: _coverShape,
             selectionMode: _selectionMode,
@@ -283,6 +398,63 @@ class _BookshelfPageState extends State<BookshelfPage> {
             },
           ),
         const SafeBottomSpacer(),
+      ],
+    );
+
+    // The default desktop scroll behavior adds an always-visible scrollbar;
+    // the bookshelf uses the alphabet index bar for navigation instead.
+    final content = ScrollConfiguration(
+      behavior: const _NoScrollbarBehavior(),
+      child: list,
+    );
+
+    if (grouped == null || !hasContent || !hasFilteredContent) {
+      return content;
+    }
+
+    return Stack(
+      children: [
+        content,
+        Positioned(
+          right: 2,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: _AlphabetIndexBar(
+              keys: grouped.keys,
+              activeKey: _indexBarTouchActive ? _activeLetter : null,
+              onTouchStart: () => setState(() => _indexBarTouchActive = true),
+              onKeyTouch: (key) {
+                if (key != _activeLetter) _scrollToGroup(key);
+              },
+              onTouchEnd: _endIndexBarTouch,
+            ),
+          ),
+        ),
+        if (_indexBarTouchActive && _activeLetter != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Center(
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    color: const Color(0xff0f172a).withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    _activeLetter!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 36,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -1265,7 +1437,9 @@ class _ContentGrid extends StatelessWidget {
     required this.books,
     required this.series,
     required this.visibleCount,
-    required this.sortBy,
+    required this.groupKeys,
+    required this.groups,
+    required this.groupSectionKeys,
     required this.iconSize,
     required this.coverShape,
     required this.selectionMode,
@@ -1278,7 +1452,9 @@ class _ContentGrid extends StatelessWidget {
   final List<Book> books;
   final List<Series> series;
   final int visibleCount;
-  final String sortBy;
+  final List<String>? groupKeys;
+  final Map<String, List<Object>>? groups;
+  final Map<String, GlobalKey> groupSectionKeys;
   final IconSizeSetting iconSize;
   final CoverShape coverShape;
   final bool selectionMode;
@@ -1295,30 +1471,12 @@ class _ContentGrid extends StatelessWidget {
         final spacing = gridSpacing(iconSize);
         final ratio = coverShape == CoverShape.square ? 0.78 : 0.62;
 
-        if (sortBy != 'created_at') {
-          final groups = <String, List<Object>>{};
-          for (final book in books) {
-            final source = sortBy == 'author' ? book.author ?? '' : book.title;
-            final key = sortBy == 'year'
-                ? (book.year?.toString().substring(2) ?? '#')
-                : pinyinInitial(source);
-            groups.putIfAbsent(key, () => []).add(book);
-          }
-          for (final item in series) {
-            final source = sortBy == 'author' ? item.author ?? '' : item.title;
-            final key = sortBy == 'year' ? '#' : pinyinInitial(source);
-            groups.putIfAbsent(key, () => []).add(item);
-          }
-          final keys = groups.keys.toList()
-            ..sort((a, b) {
-              if (a == '#') return 1;
-              if (b == '#') return -1;
-              if (sortBy == 'year') return b.compareTo(a);
-              return a.compareTo(b);
-            });
+        final groupKeys = this.groupKeys;
+        final groups = this.groups;
+        if (groupKeys != null && groups != null) {
           var remaining = visibleCount;
           final visibleGroups = <String, List<Object>>{};
-          for (final key in keys) {
+          for (final key in groupKeys) {
             if (remaining <= 0) break;
             final group = groups[key]!;
             final take = group.length < remaining ? group.length : remaining;
@@ -1330,50 +1488,56 @@ class _ContentGrid extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final entry in visibleGroups.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.only(left: 2, bottom: 10, top: 6),
-                  child: Text(
-                    entry.key,
-                    style: TextStyle(
-                      color: context.mutedText,
-                      fontWeight: FontWeight.w700,
+              for (final entry in visibleGroups.entries)
+                Column(
+                  key: groupSectionKeys[entry.key],
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(left: 2, bottom: 10, top: 6),
+                      child: Text(
+                        entry.key,
+                        style: TextStyle(
+                          color: context.mutedText,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
-                  ),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: entry.value.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: spacing,
+                        mainAxisSpacing: spacing + 12,
+                        childAspectRatio: ratio,
+                      ),
+                      itemBuilder: (context, index) {
+                        final item = entry.value[index];
+                        if (item is Series) {
+                          return SeriesCard(
+                            series: item,
+                            coverShape: coverShape,
+                            selectionMode: selectionMode,
+                            selected: selectedSeriesIds.contains(item.id),
+                            onTap: () => onSeries(item),
+                          );
+                        }
+                        final book = item as Book;
+                        return BookCard(
+                          book: book,
+                          coverShape: coverShape,
+                          selectionMode: selectionMode,
+                          selected: selectedBookIds.contains(book.id),
+                          onTap: () => onBook(book),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                 ),
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: entry.value.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: spacing,
-                    mainAxisSpacing: spacing + 12,
-                    childAspectRatio: ratio,
-                  ),
-                  itemBuilder: (context, index) {
-                    final item = entry.value[index];
-                    if (item is Series) {
-                      return SeriesCard(
-                        series: item,
-                        coverShape: coverShape,
-                        selectionMode: selectionMode,
-                        selected: selectedSeriesIds.contains(item.id),
-                        onTap: () => onSeries(item),
-                      );
-                    }
-                    final book = item as Book;
-                    return BookCard(
-                      book: book,
-                      coverShape: coverShape,
-                      selectionMode: selectionMode,
-                      selected: selectedBookIds.contains(book.id),
-                      onTap: () => onBook(book),
-                    );
-                  },
-                ),
-                const SizedBox(height: 18),
-              ],
             ],
           );
         }
@@ -1413,4 +1577,104 @@ class _ContentGrid extends StatelessWidget {
       },
     );
   }
+}
+
+class _AlphabetIndexBar extends StatelessWidget {
+  const _AlphabetIndexBar({
+    required this.keys,
+    required this.activeKey,
+    required this.onTouchStart,
+    required this.onKeyTouch,
+    required this.onTouchEnd,
+  });
+
+  static const double _itemExtent = 18;
+
+  final List<String> keys;
+  final String? activeKey;
+  final VoidCallback onTouchStart;
+  final ValueChanged<String> onKeyTouch;
+  final VoidCallback onTouchEnd;
+
+  void _handleTouch(Offset localPosition) {
+    if (keys.isEmpty) return;
+    final index =
+        (localPosition.dy / _itemExtent).floor().clamp(0, keys.length - 1);
+    onKeyTouch(keys[index]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final idleColor = isDark ? AppColors.slate500 : AppColors.slate400;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: (details) {
+        onTouchStart();
+        _handleTouch(details.localPosition);
+      },
+      onVerticalDragUpdate: (details) => _handleTouch(details.localPosition),
+      onVerticalDragEnd: (_) => onTouchEnd(),
+      onVerticalDragCancel: onTouchEnd,
+      onTapDown: (details) {
+        onTouchStart();
+        _handleTouch(details.localPosition);
+      },
+      onTapUp: (_) => onTouchEnd(),
+      onTapCancel: onTouchEnd,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final key in keys)
+              SizedBox(
+                width: 16,
+                height: _itemExtent,
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: activeKey == key
+                          ? AppColors.primary600
+                          : Colors.transparent,
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      key,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: activeKey == key ? Colors.white : idleColor,
+                        fontSize: 10,
+                        fontWeight: activeKey == key
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        height: 1,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Removes the always-visible scrollbar that the default scroll behavior
+/// adds on desktop platforms.
+class _NoScrollbarBehavior extends ScrollBehavior {
+  const _NoScrollbarBehavior();
+
+  @override
+  Widget buildScrollbar(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
+      child;
 }
