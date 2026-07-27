@@ -470,6 +470,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                     ],
                     const SizedBox(height: 8),
                     Container(
+                      width: MediaQuery.sizeOf(context).shortestSide < 600
+                          ? 158
+                          : null,
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: context.isDark
@@ -589,6 +592,9 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                     ],
                     const SizedBox(height: 8),
                     Container(
+                      width: MediaQuery.sizeOf(context).shortestSide < 600
+                          ? 158
+                          : null,
                       padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
                         color: context.isDark
