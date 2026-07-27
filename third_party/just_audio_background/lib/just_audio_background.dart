@@ -892,7 +892,9 @@ class _PlayerAudioHandler extends BaseAudioHandler
     // just_audio's behaviour. E.g. if stop() was called, we actually want to
     // keep the state around even though the platform may be disposing its own
     // state.
-    _platform.disposePlayer(DisposePlayerRequest(id: (await _player).id));
+    await _platform.disposePlayer(
+      DisposePlayerRequest(id: (await _player).id),
+    );
     _justAudioEvent = _justAudioEvent.copyWith(
       processingState: ProcessingStateMessage.idle,
     );

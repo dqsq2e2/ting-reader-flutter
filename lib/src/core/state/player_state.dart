@@ -373,10 +373,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> _playWithSession() async {
     if (_suppressAutoPlay) {
       _suppressAutoPlay = false;
-      // 旧音频可能仍在播放（skip-outro 触发切集），确保暂停。
-      if (_audio.playing) {
-        await _audio.pause();
-      }
+      // playing 状态可能先于原生播放器变为 false，pause() 会因此直接返回。
+      // stop() 不依赖 playing 状态，并会保留音源和当前位置供用户继续播放。
+      await _audio.stop();
       return false;
     }
     await _audioSessionReady;
@@ -421,11 +420,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     return false;
   }
 
-  /// 队列模式下集数用完时直接暂停（不经过 _playWithSession）。
+  /// 队列模式下集数用完时确定性停止底层音频。
   Future<void> _pauseForEpisodeSleep() async {
-    if (_audio.playing) {
-      await _audio.pause();
-    }
+    _cancelFocusRecovery(clearResume: true);
+    // Android/Windows 在队列切集时可能先上报 playing=false，导致 pause()
+    // 短路而未通知原生播放器。stop() 始终停掉平台播放器，同时保留音源状态。
+    await _audio.stop();
     await sendProgress();
   }
 
