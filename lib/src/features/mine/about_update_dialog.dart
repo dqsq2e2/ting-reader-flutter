@@ -100,7 +100,11 @@ class _AboutPageState extends State<AboutPage> {
           await openExternalUrl(serverUpdateGuideUrl);
         }
       } else {
-        _showLocalizedSnack('服务端已是最新版本', 'Server is up to date');
+        _showLocalizedSnack(
+          '服务端已是最新版本',
+          'Server is up to date',
+          success: true,
+        );
       }
     } catch (error) {
       _showLocalizedSnack(
@@ -128,7 +132,11 @@ class _AboutPageState extends State<AboutPage> {
 
       final current = await _clientUpdateService.currentVersion();
       if (!_clientUpdateService.isNewer(latest.version, current)) {
-        _showLocalizedSnack('客户端已是最新版本', 'Client is up to date');
+        _showLocalizedSnack(
+          '客户端已是最新版本',
+          'Client is up to date',
+          success: true,
+        );
         return;
       }
 
@@ -301,32 +309,70 @@ class _AboutPageState extends State<AboutPage> {
     );
   }
 
-  void _showSnack(String text) {
+  void _showSnack(String text, {bool success = false}) {
     if (!mounted) return;
     final width = MediaQuery.sizeOf(context).width;
-    final horizontal = width < 480 ? 56.0 : 96.0;
+    final isDark = context.isDark;
+    final foreground = isDark ? AppColors.slate50 : AppColors.slate900;
+    final background = isDark ? AppColors.slate800 : Colors.white;
+    final accent = success ? const Color(0xff10b981) : AppColors.primary600;
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        content: Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: isDark ? 0.2 : 0.12),
+                shape: BoxShape.circle,
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                success
+                    ? Icons.check_rounded
+                    : Icons.info_outline_rounded,
+                size: 19,
+                color: accent,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: foreground,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
         ),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: AppColors.slate900,
+        backgroundColor: background,
+        elevation: isDark ? 8 : 5,
         duration: const Duration(seconds: 2),
-        margin:
-            EdgeInsets.only(left: horizontal, right: horizontal, bottom: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        width: width < 440 ? width - 32 : 400,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: isDark ? AppColors.slate700 : AppColors.slate200,
+          ),
+        ),
       ),
     );
   }
 
-  void _showLocalizedSnack(String zh, String en) {
+  void _showLocalizedSnack(
+    String zh,
+    String en, {
+    bool success = false,
+  }) {
     if (!mounted) return;
-    _showSnack(context.localeText(zh, en));
+    _showSnack(context.localeText(zh, en), success: success);
   }
 
   @override

@@ -40,8 +40,12 @@ const _permissionsChannel = MethodChannel('ting_reader/permissions');
 
 void _initializeNativeAudioBackend() {
   if (kIsWeb) return;
-  if (defaultTargetPlatform == TargetPlatform.linux) {
-    JustAudioMediaKit.ensureInitialized(linux: true, windows: false);
+  if (defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows) {
+    JustAudioMediaKit.ensureInitialized(
+      linux: defaultTargetPlatform == TargetPlatform.linux,
+      windows: defaultTargetPlatform == TargetPlatform.windows,
+    );
   }
 }
 

@@ -459,6 +459,7 @@ class _ChapterTabButton extends StatelessWidget {
     required this.accent,
     required this.onAccent,
     required this.onTap,
+    this.fontWeight,
   });
 
   final String label;
@@ -466,6 +467,7 @@ class _ChapterTabButton extends StatelessWidget {
   final Color accent;
   final Color onAccent;
   final VoidCallback onTap;
+  final FontWeight? fontWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -492,6 +494,7 @@ class _ChapterTabButton extends StatelessWidget {
           style: TextStyle(
             color: selected ? accent : context.mutedText,
             fontSize: 12,
+            fontWeight: fontWeight,
           ),
         ),
       ),

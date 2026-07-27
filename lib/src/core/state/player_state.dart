@@ -114,6 +114,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _usingAudioQueue = false;
   bool _suppressPositionUpdates = false;
   bool _applyingQueueStartSeek = false;
+  // 睡眠定时按集数：集数用完时阻止 playChapter 的 _playWithSession 自动起播，
+  // 并在 _playWithSession 中暂停仍在播放的旧音频。
+  bool _suppressAutoPlay = false;
+  // 按集数睡眠：剩余可播集数（含当前集）。章节切换时递减，归零即暂停。
+  int? _sleepEpisodesRemaining;
+  String? _sleepEpisodeChapterId;
   double _transcodeClockPosition = 0;
   DateTime? _transcodeClockStartedAt;
 
@@ -365,10 +371,62 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> _playWithSession() async {
+    if (_suppressAutoPlay) {
+      _suppressAutoPlay = false;
+      // 旧音频可能仍在播放（skip-outro 触发切集），确保暂停。
+      if (_audio.playing) {
+        await _audio.pause();
+      }
+      return false;
+    }
     await _audioSessionReady;
     if (!await _activateAudioSessionForPlayback()) return false;
     await _audio.play();
     return true;
+  }
+
+  /// 开启按集数睡眠定时。episodes=1 表示播完本集即停。
+  void startEpisodeSleepTimer(int episodes) {
+    if (episodes <= 0) return;
+    _sleepEpisodesRemaining = episodes;
+    _sleepEpisodeChapterId = currentChapter?.id;
+    notifyListeners();
+  }
+
+  /// 取消按集数睡眠定时。
+  void cancelEpisodeSleepTimer() {
+    _sleepEpisodesRemaining = null;
+    _sleepEpisodeChapterId = null;
+    notifyListeners();
+  }
+
+  /// 当前剩余集数（含当前集），null 表示未开启。
+  int? get sleepEpisodesRemaining => _sleepEpisodesRemaining;
+
+  /// 在 currentChapter 更新后、notifyListeners 前调用。
+  /// 返回 true 表示集数已用完，调用方应阻止自动起播。
+  bool _checkEpisodeSleepOnChapterChange() {
+    final newChapterId = currentChapter?.id;
+    if (newChapterId == null || newChapterId == _sleepEpisodeChapterId) {
+      return false;
+    }
+    _sleepEpisodeChapterId = newChapterId;
+    final remaining = _sleepEpisodesRemaining;
+    if (remaining == null) return false;
+    if (remaining <= 1) {
+      _sleepEpisodesRemaining = null;
+      return true;
+    }
+    _sleepEpisodesRemaining = remaining - 1;
+    return false;
+  }
+
+  /// 队列模式下集数用完时直接暂停（不经过 _playWithSession）。
+  Future<void> _pauseForEpisodeSleep() async {
+    if (_audio.playing) {
+      await _audio.pause();
+    }
+    await sendProgress();
   }
 
   Future<void> playChapter(
@@ -378,6 +436,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     double? startAt,
   }) async {
     _cancelFocusRecovery(clearResume: true);
+    // 清除可能残留的抑制标记，确保用户手动切集时正常起播；
+    // 睡眠定时的监听器会在 notifyListeners 期间重新设置它。
+    _suppressAutoPlay = false;
     await applySettings(appState.settings);
     final playGeneration = ++_playGeneration;
     currentBook = book;
@@ -400,6 +461,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _usingTranscodeStream = false;
     _usingAudioQueue = false;
     _clearTranscodeClock();
+    // 按集数睡眠：集数用完则阻止后续 _playWithSession 起播，并暂停旧音频。
+    if (_checkEpisodeSleepOnChapterChange()) {
+      _suppressAutoPlay = true;
+    }
     notifyListeners();
     await _waitForPendingTranscodeSeek();
     if (!_isActivePlay(playGeneration, targetChapter.id)) return;
@@ -470,12 +535,24 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> togglePlay() async {
     if (!hasChapter) return;
     _cancelFocusRecovery(clearResume: true);
+    // 用户手动操作，清除睡眠定时设置的自动暂停标记。
+    _suppressAutoPlay = false;
     if (_audio.playing) {
       await _audio.pause();
       await sendProgress();
     } else {
       await _playWithSession();
       _startProgressTimer();
+    }
+  }
+
+  /// 仅暂停播放，不会在未播放时触发播放。用于睡眠定时等需要确定性地暂停的场景。
+  Future<void> pause() async {
+    if (!hasChapter) return;
+    _cancelFocusRecovery(clearResume: true);
+    if (_audio.playing) {
+      await _audio.pause();
+      await sendProgress();
     }
   }
 
@@ -890,7 +967,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _advancingFromOutro = false;
     usingLocalFile = _localFilePathFromChapter(nextChapter) != null ||
         downloadState.hasChapter(nextChapter.id);
+    // 按集数睡眠：队列模式下集数用完则直接暂停音频。
+    final shouldStopForSleep = _checkEpisodeSleepOnChapterChange();
     notifyListeners();
+    if (shouldStopForSleep) {
+      unawaited(_pauseForEpisodeSleep());
+      return;
+    }
     if (!_applyingQueueStartSeek && startPosition > 0 && book != null) {
       unawaited(_seekAudioQueueToChapter(index, book, nextChapter));
     }

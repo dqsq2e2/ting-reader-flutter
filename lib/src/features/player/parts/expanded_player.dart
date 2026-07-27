@@ -14,9 +14,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
 
   Timer? _sleepTimer;
   int? _sleepRemainingSeconds;
-  // 按集数睡眠：剩余可播集数（含当前集）。监听章节切换递减，归零即暂停。
-  int? _sleepEpisodesRemaining;
-  String? _sleepEpisodeChapterId;
+  // 按集数睡眠的状态由 PlayerState 管理（避免 widget 销毁丢失）。
   CoverShape _coverShape = CoverShape.rect;
   double? _dragSeekValue;
 
@@ -29,33 +27,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   @override
   void dispose() {
     _sleepTimer?.cancel();
-    widget.player.removeListener(_handleSleepChapterChange);
     super.dispose();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _sleepEpisodeChapterId = widget.player.currentChapter?.id;
-    widget.player.addListener(_handleSleepChapterChange);
-  }
-
-  // 章节边界（含自动连播与手动跳集）都算一集播完；到 0 就暂停在下一集开头。
-  void _handleSleepChapterChange() {
-    final chapterId = widget.player.currentChapter?.id;
-    if (chapterId == _sleepEpisodeChapterId) return;
-    _sleepEpisodeChapterId = chapterId;
-    final remaining = _sleepEpisodesRemaining;
-    if (remaining == null) return;
-    if (remaining <= 1) {
-      _sleepEpisodesRemaining = null;
-      if (widget.player.isPlaying) {
-        unawaited(widget.player.togglePlay());
-      }
-    } else {
-      _sleepEpisodesRemaining = remaining - 1;
-    }
-    if (mounted) setState(() {});
   }
 
   Future<void> _toggleSpeed(PlayerState player) async {
@@ -326,18 +298,18 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   Future<void> _startSleepTimer(PlayerState player, int minutes) async {
     _sleepTimer?.cancel();
     _sleepRemainingSeconds = minutes * 60;
-    _sleepEpisodesRemaining = null;
+    player.cancelEpisodeSleepTimer();
     setState(() {});
     _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
       if (!mounted) return;
+      // 播放暂停时倒计时也暂停，恢复后才继续递减。
+      if (!player.isPlaying) return;
       final remaining = (_sleepRemainingSeconds ?? 0) - 1;
       if (remaining <= 0) {
         _sleepTimer?.cancel();
         _sleepTimer = null;
         _sleepRemainingSeconds = null;
-        if (player.isPlaying) {
-          await player.togglePlay();
-        }
+        await player.pause();
         if (mounted) setState(() {});
         return;
       }
@@ -350,7 +322,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepRemainingSeconds = null;
-    _sleepEpisodesRemaining = null;
+    widget.player.cancelEpisodeSleepTimer();
     if (mounted) setState(() {});
   }
 
@@ -360,8 +332,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     _sleepTimer?.cancel();
     _sleepTimer = null;
     _sleepRemainingSeconds = null;
-    _sleepEpisodesRemaining = episodes;
-    _sleepEpisodeChapterId = widget.player.currentChapter?.id;
+    widget.player.startEpisodeSleepTimer(episodes);
     setState(() {});
   }
 
@@ -372,7 +343,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     final controller = TextEditingController();
     final episodeController = TextEditingController();
     // 0 = 按分钟，1 = 按集数；有集数定时在跑时默认落在集数页。
-    var sheetTab = _sleepEpisodesRemaining != null ? 1 : 0;
+    var sheetTab = player.sleepEpisodesRemaining != null ? 1 : 0;
     await _showAnchoredPopover(
       anchorContext: anchorContext,
       width: 216,
@@ -413,7 +384,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       style: TextStyle(
                         color: context.tertiaryText,
                         fontSize: 11,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ),
@@ -434,6 +405,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                             selected: sheetTab == 0,
                             accent: AppColors.primary600,
                             onAccent: Colors.white,
+                            fontWeight: FontWeight.w400,
                             onTap: () => setSheetState(() => sheetTab = 0),
                           ),
                         ),
@@ -443,6 +415,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                             selected: sheetTab == 1,
                             accent: AppColors.primary600,
                             onAccent: Colors.white,
+                            fontWeight: FontWeight.w400,
                             onTap: () => setSheetState(() => sheetTab = 1),
                           ),
                         ),
@@ -479,7 +452,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                     padding: EdgeInsets.zero,
                                     textStyle: const TextStyle(
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w400,
                                     ),
                                   ),
                                   child: Text(
@@ -507,15 +480,23 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 80,
                             child: TextField(
                               controller: controller,
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(fontSize: 12),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                              ),
                               decoration: InputDecoration(
                                 isDense: true,
                                 hintText: context.localeText(
                                     '自定义分钟', 'Custom minutes'),
+                                hintStyle: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                ),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: InputBorder.none,
@@ -524,6 +505,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                             ),
                           ),
+                          const Spacer(),
                           TextButton(
                             onPressed: () async {
                               final minutes =
@@ -545,7 +527,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                               textStyle: const TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                             child: Text(context.localeText('开启', 'Start')),
@@ -584,7 +566,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                     padding: EdgeInsets.zero,
                                     textStyle: const TextStyle(
                                       fontSize: 11,
-                                      fontWeight: FontWeight.w500,
+                                      fontWeight: FontWeight.w400,
                                     ),
                                   ),
                                   // 字号缩小并保持单行，避免按钮文字折行。
@@ -617,15 +599,23 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       ),
                       child: Row(
                         children: [
-                          Expanded(
+                          SizedBox(
+                            width: 80,
                             child: TextField(
                               controller: episodeController,
                               keyboardType: TextInputType.number,
-                              style: const TextStyle(fontSize: 12),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                              ),
                               decoration: InputDecoration(
                                 isDense: true,
                                 hintText: context.localeText(
                                     '自定义集数', 'Custom episodes'),
+                                hintStyle: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                ),
                                 border: InputBorder.none,
                                 enabledBorder: InputBorder.none,
                                 focusedBorder: InputBorder.none,
@@ -634,6 +624,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                             ),
                           ),
+                          const Spacer(),
                           TextButton(
                             onPressed: () {
                               final episodes =
@@ -656,7 +647,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                               ),
                               textStyle: const TextStyle(
                                 fontSize: 12,
-                                fontWeight: FontWeight.w700,
+                                fontWeight: FontWeight.w400,
                               ),
                             ),
                             child: Text(context.localeText('开启', 'Start')),
@@ -669,13 +660,13 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   SizedBox(
                     width: double.infinity,
                     child: TextButton(
-                      onPressed:
-                          _sleepTimer == null && _sleepEpisodesRemaining == null
-                              ? null
-                              : () {
-                                  _cancelSleepTimer();
-                                  Navigator.pop(dialogContext);
-                                },
+                      onPressed: _sleepTimer == null &&
+                              player.sleepEpisodesRemaining == null
+                          ? null
+                          : () {
+                              _cancelSleepTimer();
+                              Navigator.pop(dialogContext);
+                            },
                       style: TextButton.styleFrom(
                         backgroundColor: context.isDark
                             ? const Color(0xff7f1d1d).withValues(alpha: 0.22)
@@ -686,7 +677,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                         ),
                         textStyle: const TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w400,
                         ),
                       ),
                       child: Text(context.localeText('取消定时', 'Cancel Timer')),
@@ -701,17 +692,20 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       style: TextStyle(
                         color: context.mutedText,
                         fontSize: 12,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
-                  if (_sleepEpisodesRemaining != null) ...[
+                  if (player.sleepEpisodesRemaining != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      context.localeText('再播 $_sleepEpisodesRemaining 集后停止',
-                          'Stops after $_sleepEpisodesRemaining more ep.'),
+                      context.localeText(
+                          '再播 ${player.sleepEpisodesRemaining} 集后停止',
+                          'Stops after ${player.sleepEpisodesRemaining} more ep.'),
                       style: TextStyle(
                         color: context.mutedText,
                         fontSize: 12,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -1299,13 +1293,13 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   label: _sleepRemainingSeconds != null
                                       ? _formatSleepTime(
                                           _sleepRemainingSeconds!)
-                                      : _sleepEpisodesRemaining != null
+                                      : player.sleepEpisodesRemaining != null
                                           ? context.localeText(
-                                              '$_sleepEpisodesRemaining 集',
-                                              '$_sleepEpisodesRemaining ep')
+                                              '${player.sleepEpisodesRemaining} 集',
+                                              '${player.sleepEpisodesRemaining} ep')
                                           : context.localeText('定时', 'Timer'),
                                   active: _sleepRemainingSeconds != null ||
-                                      _sleepEpisodesRemaining != null,
+                                      player.sleepEpisodesRemaining != null,
                                   onTapWithContext: (buttonContext) =>
                                       _openSleepTimerSheet(
                                           player, buttonContext),

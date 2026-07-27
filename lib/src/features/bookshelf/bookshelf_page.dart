@@ -55,6 +55,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   final Map<String, GlobalKey> _groupSectionKeys = {};
   String? _activeLetter;
   bool _indexBarTouchActive = false;
+  Timer? _indexOverlayTimer;
 
   @override
   void initState() {
@@ -65,6 +66,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   @override
   void dispose() {
+    _indexOverlayTimer?.cancel();
     _filterOverlay?.remove();
     _scrollController
       ..removeListener(_loadMoreWhenNeeded)
@@ -269,7 +271,26 @@ class _BookshelfPageState extends State<BookshelfPage> {
     });
   }
 
+  void _beginIndexBarTouch() {
+    _indexOverlayTimer?.cancel();
+    if (!_indexBarTouchActive) {
+      setState(() => _indexBarTouchActive = true);
+    }
+  }
+
+  void _endIndexBarTap() {
+    _indexOverlayTimer?.cancel();
+    _indexOverlayTimer = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() {
+        _indexBarTouchActive = false;
+        _activeLetter = null;
+      });
+    });
+  }
+
   void _endIndexBarTouch() {
+    _indexOverlayTimer?.cancel();
     if (!_indexBarTouchActive) return;
     setState(() => _indexBarTouchActive = false);
     Timer(const Duration(milliseconds: 800), () {
@@ -423,38 +444,67 @@ class _BookshelfPageState extends State<BookshelfPage> {
             child: _AlphabetIndexBar(
               keys: grouped.keys,
               activeKey: _indexBarTouchActive ? _activeLetter : null,
-              onTouchStart: () => setState(() => _indexBarTouchActive = true),
+              onTouchStart: _beginIndexBarTouch,
               onKeyTouch: (key) {
                 if (key != _activeLetter) _scrollToGroup(key);
               },
+              onTapEnd: _endIndexBarTap,
               onTouchEnd: _endIndexBarTouch,
             ),
           ),
         ),
-        if (_indexBarTouchActive && _activeLetter != null)
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: const Color(0xff0f172a).withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    _activeLetter!,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 36,
-                      fontWeight: FontWeight.w700,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Center(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                reverseDuration: const Duration(milliseconds: 120),
+                transitionBuilder: (child, animation) {
+                  final curved = CurvedAnimation(
+                    parent: animation,
+                    curve: Curves.easeOutCubic,
+                    reverseCurve: Curves.easeInCubic,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.82, end: 1).animate(curved),
+                      child: child,
                     ),
-                  ),
-                ),
+                  );
+                },
+                child: _indexBarTouchActive && _activeLetter != null
+                    ? Container(
+                        key: ValueKey(_activeLetter),
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: const Color(0xff0f172a)
+                              .withValues(alpha: 0.58),
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.16),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _activeLetter!,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    : const SizedBox(key: ValueKey('index-overlay-empty')),
               ),
             ),
           ),
+        ),
       ],
     );
   }
@@ -1585,6 +1635,7 @@ class _AlphabetIndexBar extends StatelessWidget {
     required this.activeKey,
     required this.onTouchStart,
     required this.onKeyTouch,
+    required this.onTapEnd,
     required this.onTouchEnd,
   });
 
@@ -1594,6 +1645,7 @@ class _AlphabetIndexBar extends StatelessWidget {
   final String? activeKey;
   final VoidCallback onTouchStart;
   final ValueChanged<String> onKeyTouch;
+  final VoidCallback onTapEnd;
   final VoidCallback onTouchEnd;
 
   void _handleTouch(Offset localPosition) {
@@ -1620,7 +1672,7 @@ class _AlphabetIndexBar extends StatelessWidget {
         onTouchStart();
         _handleTouch(details.localPosition);
       },
-      onTapUp: (_) => onTouchEnd(),
+      onTapUp: (_) => onTapEnd(),
       onTapCancel: onTouchEnd,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -1632,27 +1684,32 @@ class _AlphabetIndexBar extends StatelessWidget {
                 width: 16,
                 height: _itemExtent,
                 child: Center(
-                  child: AnimatedContainer(
+                  child: AnimatedScale(
+                    scale: activeKey == key ? 1.25 : 1,
                     duration: const Duration(milliseconds: 120),
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: activeKey == key
-                          ? AppColors.primary600
-                          : Colors.transparent,
-                      shape: BoxShape.circle,
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      key,
-                      maxLines: 1,
-                      style: TextStyle(
-                        color: activeKey == key ? Colors.white : idleColor,
-                        fontSize: 10,
-                        fontWeight: activeKey == key
-                            ? FontWeight.w700
-                            : FontWeight.w500,
-                        height: 1,
+                    curve: Curves.easeOutCubic,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: activeKey == key
+                            ? AppColors.primary600
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        key,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: activeKey == key ? Colors.white : idleColor,
+                          fontSize: 10,
+                          fontWeight: activeKey == key
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                          height: 1,
+                        ),
                       ),
                     ),
                   ),

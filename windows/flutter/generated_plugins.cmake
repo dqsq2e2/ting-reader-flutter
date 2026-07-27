@@ -4,7 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   fullscreen_window
-  just_audio_windows
+  media_kit_libs_windows_audio
   url_launcher_windows
   webview_win_floating
 )
