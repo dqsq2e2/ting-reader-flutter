@@ -15,7 +15,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   Timer? _sleepTimer;
   int? _sleepRemainingSeconds;
   // 按集数睡眠的状态由 PlayerState 管理（避免 widget 销毁丢失）。
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
   double? _dragSeekValue;
 
   @override
@@ -922,21 +922,17 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     required double mainButtonSize,
     required bool hasError,
   }) {
-    final baseMaxWidth = _coverShape == CoverShape.square
-        ? (tightControls ? 300.0 : 340.0)
-        : (tightControls ? 280.0 : 320.0);
-    final baseMaxHeight = _coverShape == CoverShape.square
-        ? baseMaxWidth
-        : (tightControls ? 340.0 : 390.0);
     final portraitPhone =
         screenSize.height > screenSize.width && screenSize.width < 600;
+    final squareMaxSize = tightControls ? 300.0 : 340.0;
+    final baseMaxWidth = _coverShape == CoverShape.square
+        ? squareMaxSize
+        : (tightControls ? 280.0 : 320.0);
+    // Tall artwork shares the square cover's height budget on portrait phones.
+    final baseMaxHeight = _coverShape == CoverShape.square
+        ? squareMaxSize
+        : (portraitPhone ? squareMaxSize : (tightControls ? 340.0 : 390.0));
     if (!portraitPhone) return Size(baseMaxWidth, baseMaxHeight);
-
-    // Honor 90 Pro is the reference device where the previous cover size fits.
-    const referencePortraitHeight = 900.0;
-    if (screenSize.height >= referencePortraitHeight) {
-      return Size(baseMaxWidth, baseMaxHeight);
-    }
 
     final afterCoverGap = tightControls ? 20.0 : 24.0;
     final titleHeight = tightControls ? 32.0 : 36.0;

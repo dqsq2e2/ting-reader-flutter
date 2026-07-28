@@ -49,7 +49,7 @@ class _SearchPageState extends State<SearchPage> {
   List<String> _narrators = [];
   List<Book> _results = [];
   IconSizeSetting _iconSize = IconSizeSetting.medium;
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
 
   @override
   void initState() {

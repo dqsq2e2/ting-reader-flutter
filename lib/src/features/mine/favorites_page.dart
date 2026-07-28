@@ -26,7 +26,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
   bool _loading = true;
   List<Book> _books = [];
   IconSizeSetting _iconSize = IconSizeSetting.medium;
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
 
   @override
   void initState() {

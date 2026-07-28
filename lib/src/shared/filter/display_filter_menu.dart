@@ -81,12 +81,12 @@ class DisplayFilterMenu extends StatelessWidget {
               _DisplayFilterSection(context.localeText('封面形状', 'Cover Shape'),
                   topBorder: true),
               _DisplayFilterOption(
-                label: context.localeText('3:4 比例（默认）', '3:4 (Default)'),
+                label: context.localeText('3:4 比例', '3:4'),
                 selected: coverShape == CoverShape.rect,
                 onTap: () => onCoverShapeChanged!(CoverShape.rect),
               ),
               _DisplayFilterOption(
-                label: context.localeText('1:1 方形', '1:1 Square'),
+                label: context.localeText('1:1 方形（默认）', '1:1 Square (Default)'),
                 selected: coverShape == CoverShape.square,
                 onTap: () => onCoverShapeChanged!(CoverShape.square),
               ),

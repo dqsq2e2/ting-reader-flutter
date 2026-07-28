@@ -41,7 +41,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   final String _searchQuery = '';
   String _sortBy = 'created_at';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
   bool _showFilterMenu = false;
   bool _selectionMode = false;
   bool _deletingBooks = false;

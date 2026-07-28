@@ -139,7 +139,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   bool _chapterGroupsDescending = false;
   List<_ChapterGroupOrderEntry> _chapterGroupOrders = const [];
   bool _tagsExpanded = false;
-  CoverShapePreference _coverShape = CoverShapePreference.rect;
+  CoverShapePreference _coverShape = CoverShapePreference.square;
   final _chapterSectionKey = GlobalKey();
   final Map<String, GlobalKey> _chapterRowKeys = {};
 
@@ -196,9 +196,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
         _chapterGroupsDescending = effectiveGroupOrder == 'desc';
         _chapterGroupOrders = groupOrders;
         _tagsExpanded = false;
-        _coverShape = settings['bookshelf_cover_shape'] == 'square'
-            ? CoverShapePreference.square
-            : CoverShapePreference.rect;
+        _coverShape = settings['bookshelf_cover_shape'] == 'rect'
+            ? CoverShapePreference.rect
+            : CoverShapePreference.square;
         _groupIndex = 0;
       });
       await _loadChapterPage(

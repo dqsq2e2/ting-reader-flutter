@@ -36,7 +36,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   Series? _series;
   String _sortBy = 'default';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
 

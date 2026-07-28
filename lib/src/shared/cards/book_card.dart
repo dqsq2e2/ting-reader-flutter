@@ -12,7 +12,7 @@ enum CoverShape { rect, square }
 enum IconSizeSetting { small, medium, large }
 
 CoverShape coverShapeFromString(String? value) {
-  return value == 'square' ? CoverShape.square : CoverShape.rect;
+  return value == 'rect' ? CoverShape.rect : CoverShape.square;
 }
 
 CoverShape coverShapeFromAppSettings(Map<String, dynamic> settings) {
@@ -111,7 +111,7 @@ class BookCard extends StatelessWidget {
     super.key,
     required this.book,
     required this.onTap,
-    this.coverShape = CoverShape.rect,
+    this.coverShape = CoverShape.square,
     this.selected = false,
     this.selectionMode = false,
   });
@@ -217,7 +217,7 @@ class SeriesCard extends StatelessWidget {
     super.key,
     required this.series,
     required this.onTap,
-    this.coverShape = CoverShape.rect,
+    this.coverShape = CoverShape.square,
     this.selected = false,
     this.selectionMode = false,
   });

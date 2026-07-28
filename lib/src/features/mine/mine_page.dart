@@ -324,7 +324,7 @@ class _HistoryPageState extends State<HistoryPage> {
   bool _deleting = false;
   final Set<String> _expandedBookIds = <String>{};
   final Set<String> _selectedIds = <String>{};
-  CoverShape _coverShape = CoverShape.rect;
+  CoverShape _coverShape = CoverShape.square;
 
   @override
   void initState() {
