@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.5 - 2026-07-29
+
+### 🛠️ 修复与优化
+- **应用包名更新**：将应用包名从 `com.example.ting_reader_flutter` 更改为 `com.tingreader.client`，移除示例包名前缀，使应用标识更加专业。
+
 ## 1.2.4 - 2026-07-28
 
 ### 🛠️ 修复与优化
