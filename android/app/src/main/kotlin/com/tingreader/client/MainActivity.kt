@@ -1,4 +1,4 @@
-package com.example.ting_reader_flutter
+package com.tingreader.client
 
 import android.Manifest
 import android.content.pm.PackageManager
