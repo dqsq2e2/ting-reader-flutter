@@ -10,6 +10,7 @@ import '../../core/state/download_state.dart';
 import '../../core/state/player_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/chapter_sort.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';

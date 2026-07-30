@@ -301,13 +301,6 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (!force && _allChaptersCache != null) return _allChaptersCache!;
     final book = _book;
     if (book == null) return const [];
-    final player = AppScope.playerOf(context);
-    if (!force &&
-        player.currentBook?.id == book.id &&
-        player.chapters.isNotEmpty) {
-      _allChaptersCache = sortChaptersForPlayback(player.chapters);
-      return _allChaptersCache!;
-    }
     final res = await AppScope.appOf(context).api.get(
           '/api/books/${book.id}/chapters',
         );
@@ -438,12 +431,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (book == null) return;
     final allChapters = await _fetchAllChapters();
     if (!mounted) return;
-    final list = allChapters
-        .where((item) => item.isExtra == chapter.isExtra)
-        .toList(growable: false);
     await AppScope.playerOf(context).playChapter(
       book,
-      list.isEmpty ? allChapters : list,
+      allChapters,
       chapter,
     );
   }

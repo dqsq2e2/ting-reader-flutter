@@ -31,6 +31,8 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   late bool _showExtra;
   int _groupIndex = 0;
   bool _ascending = true;
+  List<Chapter>? _catalogChapters;
+  bool _catalogRequested = false;
   final Map<String, GlobalKey> _chapterKeys = {};
   final Map<int, GlobalKey> _groupKeys = {};
 
@@ -40,6 +42,44 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
     _showExtra = _chapterLooksExtra(widget.player.currentChapter);
     _groupIndex = _initialGroupIndex();
     _ensureCurrentVisible();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_catalogRequested) return;
+    _catalogRequested = true;
+    unawaited(_loadChapterCatalog());
+  }
+
+  List<Chapter> get _chapterSource =>
+      _catalogChapters ?? widget.player.chapters;
+
+  Future<void> _loadChapterCatalog() async {
+    final book = widget.player.currentBook;
+    if (book == null) return;
+    try {
+      final response = await AppScope.appOf(context).api.get(
+            '/api/books/${book.id}/chapters',
+          );
+      final chapters = sortChaptersForPlayback(
+        asMapList(response.data).map(Chapter.fromJson),
+      );
+      if (!mounted || widget.player.currentBook?.id != book.id) return;
+      final currentChapterId = widget.player.currentChapter?.id;
+      if (chapters.isEmpty ||
+          (currentChapterId != null &&
+              chapters.every((chapter) => chapter.id != currentChapterId))) {
+        return;
+      }
+      setState(() {
+        _catalogChapters = chapters;
+        _groupIndex = _initialGroupIndex();
+      });
+      _ensureCurrentVisible();
+    } catch (_) {
+      // The player queue remains a usable fallback when the catalog request fails.
+    }
   }
 
   void _ensureCurrentVisible({int attempt = 0}) {
@@ -83,13 +123,11 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   }
 
   bool _chapterLooksExtra(Chapter? chapter) {
-    if (chapter == null) return false;
-    return chapter.isExtra ||
-        RegExp(r'番外|SP|Extra', caseSensitive: false).hasMatch(chapter.title);
+    return chapter?.isExtra ?? false;
   }
 
   List<Chapter> _chaptersForTab(bool extra) {
-    final chapters = widget.player.chapters
+    final chapters = _chapterSource
         .where((chapter) => _chapterLooksExtra(chapter) == extra)
         .toList(growable: false);
     return chapters;
@@ -144,6 +182,12 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
       return;
     }
     downloadState.queueChapter(book, chapter);
+  }
+
+  Future<void> _playChapter(Chapter chapter) async {
+    final book = widget.player.currentBook;
+    if (book == null) return;
+    await widget.player.playChapter(book, _chapterSource, chapter);
   }
 
   @override
@@ -206,90 +250,131 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                     children: [
                       Padding(
                         padding: const EdgeInsets.fromLTRB(22, 18, 18, 16),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.queue_music_rounded,
-                                    color: AppColors.primary600,
-                                    size: 25,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final compact = constraints.maxWidth < 560;
+                            final title = Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.queue_music_rounded,
+                                  color: AppColors.primary600,
+                                  size: 25,
+                                ),
+                                const SizedBox(width: 9),
+                                Text(
+                                  context.localeText('章节列表', 'Chapters'),
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
                                   ),
-                                  const SizedBox(width: 9),
-                                  Text(
-                                    context.localeText('章节列表', 'Chapters'),
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.w700,
+                                ),
+                              ],
+                            );
+                            final tabs = extraChapters.isEmpty
+                                ? null
+                                : Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: context.isDark
+                                          ? AppColors.slate800
+                                          : AppColors.slate100,
+                                      borderRadius: BorderRadius.circular(14),
                                     ),
-                                  ),
-                                  if (extraChapters.isNotEmpty) ...[
-                                    const SizedBox(width: 14),
-                                    Container(
-                                      padding: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: context.isDark
-                                            ? AppColors.slate800
-                                            : AppColors.slate100,
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          _ChapterTabButton(
-                                            label: context.localeText(
-                                              '正文 (${mainChapters.length})',
-                                              'Main (${mainChapters.length})',
-                                            ),
-                                            selected: !activeExtra,
-                                            accent: accent,
-                                            onAccent: onAccent,
-                                            onTap: () => setState(() {
-                                              _showExtra = false;
-                                              _groupIndex = 0;
-                                              _ensureCurrentVisible();
-                                            }),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _ChapterTabButton(
+                                          label: context.localeText(
+                                            '正文 (${mainChapters.length})',
+                                            'Main (${mainChapters.length})',
                                           ),
-                                          _ChapterTabButton(
-                                            label: context.localeText(
-                                              '番外 (${extraChapters.length})',
-                                              'Extra (${extraChapters.length})',
-                                            ),
-                                            selected: activeExtra,
-                                            accent: accent,
-                                            onAccent: onAccent,
-                                            onTap: () => setState(() {
-                                              _showExtra = true;
-                                              _groupIndex = 0;
-                                              _ensureCurrentVisible();
-                                            }),
+                                          selected: !activeExtra,
+                                          accent: accent,
+                                          onAccent: onAccent,
+                                          onTap: () => setState(() {
+                                            _showExtra = false;
+                                            _groupIndex = 0;
+                                            _ensureCurrentVisible();
+                                          }),
+                                        ),
+                                        _ChapterTabButton(
+                                          label: context.localeText(
+                                            '番外 (${extraChapters.length})',
+                                            'Extra (${extraChapters.length})',
                                           ),
-                                        ],
-                                      ),
+                                          selected: activeExtra,
+                                          accent: accent,
+                                          onAccent: onAccent,
+                                          onTap: () => setState(() {
+                                            _showExtra = true;
+                                            _groupIndex = 0;
+                                            _ensureCurrentVisible();
+                                          }),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                  const SizedBox(width: 10),
-                                  _ChapterSortButton(
-                                    ascending: _ascending,
-                                    onTap: () => setState(() {
-                                      _ascending = !_ascending;
-                                      _ensureCurrentVisible();
-                                    }),
+                                  );
+                            final sortButton = _ChapterSortButton(
+                              ascending: _ascending,
+                              onTap: () => setState(() {
+                                _ascending = !_ascending;
+                                _ensureCurrentVisible();
+                              }),
+                            );
+                            final controls = Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (tabs != null) tabs,
+                                sortButton,
+                              ],
+                            );
+
+                            return Row(
+                              crossAxisAlignment: compact
+                                  ? CrossAxisAlignment.start
+                                  : CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: compact
+                                      ? Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            title,
+                                            const SizedBox(height: 10),
+                                            controls,
+                                          ],
+                                        )
+                                      : Row(
+                                          children: [
+                                            title,
+                                            if (tabs != null) ...[
+                                              const SizedBox(width: 14),
+                                              tabs,
+                                            ],
+                                            const SizedBox(width: 10),
+                                            sortButton,
+                                          ],
+                                        ),
+                                ),
+                                IconButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  icon: const Icon(
+                                    Icons.keyboard_arrow_down_rounded,
                                   ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon:
-                                  const Icon(Icons.keyboard_arrow_down_rounded),
-                              tooltip: context.localeText('关闭', 'Close'),
-                            ),
-                          ],
+                                  tooltip: context.localeText('关闭', 'Close'),
+                                ),
+                              ],
+                            );
+                          },
                         ),
                       ),
                       if (groups.length > 1)
                         Container(
+                          width: double.infinity,
                           height: 72,
                           decoration: BoxDecoration(
                             color: context.isDark
@@ -416,11 +501,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                               accent: accent,
                                               onAccent: onAccent,
                                               onTap: () async {
-                                                await widget.player.playChapter(
-                                                  book,
-                                                  widget.player.chapters,
-                                                  chapter,
-                                                );
+                                                await _playChapter(chapter);
                                                 if (context.mounted) {
                                                   Navigator.pop(context);
                                                 }
