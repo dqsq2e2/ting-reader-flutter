@@ -16,6 +16,7 @@ class ApiClient {
   late final Dio _dio;
   String _baseUrl = 'http://localhost:3000';
   String? _token;
+  String? _cookie;
   Map<String, String> _clientHeaders = const {};
   String _languageCode = 'zh';
   final Map<String, Future<Response<dynamic>>> _inFlightMutations = {};
@@ -24,11 +25,13 @@ class ApiClient {
 
   String get baseUrl => _baseUrl;
   String? get token => _token;
+  String? get cookie => _cookie;
   Map<String, String> get clientHeaders => _clientHeaders;
 
-  void configure({required String baseUrl, String? token}) {
+  void configure({required String baseUrl, String? token, String? cookie}) {
     _baseUrl = normalizeServerUrl(baseUrl);
     _token = token;
+    _cookie = cookie;
     _dio.options.baseUrl = _baseUrl;
   }
 
@@ -193,7 +196,7 @@ class ApiClient {
 
       final recovered = await recoverBaseUrl!(_baseUrl);
       if (recovered == null || recovered.isEmpty) rethrow;
-      configure(baseUrl: recovered, token: _token);
+      configure(baseUrl: recovered, token: _token, cookie: _cookie);
       return _send(request, retrying: true);
     }
   }
@@ -212,6 +215,9 @@ class ApiClient {
     };
     if (_token != null && _token!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $_token';
+    }
+    if (_cookie != null && _cookie!.isNotEmpty) {
+      headers['Cookie'] = _cookie;
     }
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;

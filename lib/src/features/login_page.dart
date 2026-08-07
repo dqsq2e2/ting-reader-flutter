@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
+import '../core/auth/fnos_gateway_auth.dart';
 import '../core/state/app_state.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/external_links.dart';
@@ -25,6 +26,9 @@ class _LoginPageState extends State<LoginPage> {
       localServer: profile.localServerUrl,
       username: profile.username,
       password: profile.password,
+      mode: profile.mode,
+      fnId: profile.fnId,
+      gatewayCookie: profile.gatewayCookie,
       replaceProfile: profile,
     );
   }
@@ -34,6 +38,9 @@ class _LoginPageState extends State<LoginPage> {
     required String localServer,
     required String username,
     required String password,
+    ServerProfileMode mode = ServerProfileMode.direct,
+    String fnId = '',
+    String gatewayCookie = '',
     SavedServerProfile? replaceProfile,
   }) async {
     setState(() {
@@ -48,6 +55,12 @@ class _LoginPageState extends State<LoginPage> {
         localServer: localServer,
         username: username,
         password: password,
+        mode: mode,
+        fnId: fnId,
+        gatewayCookie: gatewayCookie,
+        acquireGatewayCookie: mode == ServerProfileMode.fnosGateway
+            ? () => _openFnidLogin(fnId)
+            : null,
         replaceProfile: replaceProfile,
       );
     } on DioException catch (error) {
@@ -64,6 +77,15 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     }
+  }
+
+  Future<String?> _openFnidLogin(String fnId) {
+    return Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => FnidLoginPage(fnId: fnId),
+      ),
+    );
   }
 
   Future<void> _openServerDialog([SavedServerProfile? profile]) async {
@@ -89,6 +111,8 @@ class _LoginPageState extends State<LoginPage> {
       localServer: result.localServerUrl,
       username: result.username,
       password: result.password,
+      mode: result.mode,
+      fnId: result.fnId,
       replaceProfile: profile,
     );
   }
@@ -469,12 +493,17 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _serverController;
   late final TextEditingController _localServerController;
+  late final TextEditingController _fnIdController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
+  late ServerProfileMode _mode;
 
-  bool get _hasAnyServerAddress =>
-      _serverController.text.trim().isNotEmpty ||
-      _localServerController.text.trim().isNotEmpty;
+  bool get _isFnosGateway => _mode == ServerProfileMode.fnosGateway;
+
+  bool get _hasAnyServerAddress => _isFnosGateway
+      ? _fnIdController.text.trim().isNotEmpty
+      : _serverController.text.trim().isNotEmpty ||
+          _localServerController.text.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -483,10 +512,13 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
     _serverController = TextEditingController(text: profile?.serverUrl ?? '');
     _localServerController =
         TextEditingController(text: profile?.localServerUrl ?? '');
+    _fnIdController = TextEditingController(text: profile?.fnId ?? '');
     _usernameController = TextEditingController(text: profile?.username ?? '');
     _passwordController = TextEditingController(text: profile?.password ?? '');
+    _mode = profile?.mode ?? ServerProfileMode.direct;
     _serverController.addListener(_refresh);
     _localServerController.addListener(_refresh);
+    _fnIdController.addListener(_refresh);
   }
 
   @override
@@ -495,6 +527,9 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
       ..removeListener(_refresh)
       ..dispose();
     _localServerController
+      ..removeListener(_refresh)
+      ..dispose();
+    _fnIdController
       ..removeListener(_refresh)
       ..dispose();
     _usernameController.dispose();
@@ -511,10 +546,15 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
     Navigator.pop(
       context,
       _ServerLoginDraft(
-        serverUrl: _serverController.text.trim(),
-        localServerUrl: _localServerController.text.trim(),
+        serverUrl: _isFnosGateway
+            ? FnosGateway.appUri(_fnIdController.text.trim()).toString()
+            : _serverController.text.trim(),
+        localServerUrl:
+            _isFnosGateway ? '' : _localServerController.text.trim(),
         username: _usernameController.text.trim(),
         password: _passwordController.text,
+        mode: _mode,
+        fnId: _fnIdController.text.trim(),
       ),
     );
   }
@@ -577,28 +617,77 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 ],
               ),
               const SizedBox(height: 14),
-              _Field(
-                controller: _serverController,
-                label: l10n.authWanAddress,
-                hint: l10n.authWanHint,
-                icon: Icons.public_rounded,
-                validator: (_) =>
-                    _hasAnyServerAddress ? null : l10n.authRequireAnyServer,
+              DropdownButtonFormField<ServerProfileMode>(
+                initialValue: _mode,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: context.localeText('服务器类型', 'Server type'),
+                  prefixIcon: const Icon(Icons.route_rounded),
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: ServerProfileMode.direct,
+                    child: Text(context.localeText('直接访问', 'Direct access')),
+                  ),
+                  DropdownMenuItem(
+                    value: ServerProfileMode.fnosGateway,
+                    child: Text(context.localeText('飞牛服务', 'fnOS service')),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() => _mode = value);
+                },
               ),
               const SizedBox(height: 14),
-              _Field(
-                controller: _localServerController,
-                label: l10n.authLanAddress,
-                hint: l10n.authLanHint,
-                icon: Icons.router_rounded,
-              ),
-              const SizedBox(height: 12),
-              _InfoBox(
-                icon: Icons.info_outline_rounded,
-                text: _hasAnyServerAddress
-                    ? l10n.authBothAddressHint
-                    : l10n.authOneAddressHint,
-              ),
+              if (_isFnosGateway) ...[
+                _Field(
+                  controller: _fnIdController,
+                  label: context.localeText('FNID', 'FNID'),
+                  hint: context.localeText(
+                    '例如 bdynas 或 bdynas.fnos.net',
+                    'For example, bdynas or bdynas.fnos.net',
+                  ),
+                  icon: Icons.cloud_rounded,
+                  validator: (_) => _hasAnyServerAddress
+                      ? null
+                      : context.localeText(
+                          '请输入 FNID',
+                          'Enter an FNID',
+                        ),
+                ),
+                const SizedBox(height: 12),
+                _InfoBox(
+                  icon: Icons.info_outline_rounded,
+                  text: context.localeText(
+                    '登录时会先打开飞牛登录页，成功后再验证 Ting Reader 账号密码。',
+                    'The fnOS login page opens first, then your Ting Reader credentials are verified.',
+                  ),
+                ),
+              ] else ...[
+                _Field(
+                  controller: _serverController,
+                  label: l10n.authWanAddress,
+                  hint: l10n.authWanHint,
+                  icon: Icons.public_rounded,
+                  validator: (_) =>
+                      _hasAnyServerAddress ? null : l10n.authRequireAnyServer,
+                ),
+                const SizedBox(height: 14),
+                _Field(
+                  controller: _localServerController,
+                  label: l10n.authLanAddress,
+                  hint: l10n.authLanHint,
+                  icon: Icons.router_rounded,
+                ),
+                const SizedBox(height: 12),
+                _InfoBox(
+                  icon: Icons.info_outline_rounded,
+                  text: _hasAnyServerAddress
+                      ? l10n.authBothAddressHint
+                      : l10n.authOneAddressHint,
+                ),
+              ],
               const SizedBox(height: 14),
               _Field(
                 controller: _usernameController,
@@ -668,6 +757,8 @@ class _ServerLoginDraft {
     required this.localServerUrl,
     required this.username,
     required this.password,
+    required this.mode,
+    required this.fnId,
   }) : deleted = false;
 
   const _ServerLoginDraft.deleted()
@@ -675,12 +766,16 @@ class _ServerLoginDraft {
         localServerUrl = '',
         username = '',
         password = '',
+        mode = ServerProfileMode.direct,
+        fnId = '',
         deleted = true;
 
   final String serverUrl;
   final String localServerUrl;
   final String username;
   final String password;
+  final ServerProfileMode mode;
+  final String fnId;
   final bool deleted;
 }
 
@@ -759,6 +854,14 @@ class _ServerLoginActions extends StatelessWidget {
 String _serverProfileSubtitle(
     BuildContext context, SavedServerProfile profile) {
   final l10n = context.l10n;
+  if (profile.isFnosGateway) {
+    final parts = <String>[
+      context.localeText('飞牛服务', 'fnOS service'),
+      if (profile.fnId.isNotEmpty) profile.fnId,
+      if (profile.username.isNotEmpty) profile.username,
+    ];
+    return parts.join(' · ');
+  }
   final parts = <String>[
     if (profile.localServerUrl.isNotEmpty)
       l10n.authLanPrefix(profile.localServerUrl),

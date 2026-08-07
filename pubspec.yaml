@@ -53,7 +53,7 @@ dependencies:
   package_info_plus: ^8.3.1
   network_info_plus: ^6.1.4
   url_launcher: ^6.3.2
-  webview_flutter: ^4.10.0
+  webview_flutter: ^4.14.1
   open_filex: ^4.7.0
   webview_win_floating: ^3.0.3
   lucide_icons_flutter: ^3.1.14+2

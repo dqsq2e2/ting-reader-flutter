@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../auth/fnos_gateway_auth.dart';
 import '../api/plugin_capabilities_api.dart';
 import '../document_reader/document_reader.dart';
 import '../models/models.dart';
@@ -24,6 +25,9 @@ class AppState extends ChangeNotifier {
   static const _cachedSettingsPrefsKey = 'cached_app_settings';
   static const _localSettingsPrefsKey = 'local_app_settings';
   static const _languagePrefsKey = 'language';
+  static const _serverModePrefsKey = 'server_mode';
+  static const _fnIdPrefsKey = 'fn_id';
+  static const _gatewayCookiePrefsKey = 'gateway_cookie';
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'resume_after_interruption',
@@ -40,6 +44,9 @@ class AppState extends ChangeNotifier {
   String serverUrl = 'http://localhost:3000';
   String localServerUrl = '';
   String activeUrl = 'http://localhost:3000';
+  ServerProfileMode serverMode = ServerProfileMode.direct;
+  String fnId = '';
+  String? gatewayCookie;
   Map<String, dynamic> settings = {};
   Locale? locale;
   String? connectionError;
@@ -84,6 +91,9 @@ class AppState extends ChangeNotifier {
     localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
     activeUrl = _prefs!.getString('active_url') ??
         (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
+    serverMode = _serverProfileModeFromPrefs();
+    fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
+    gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
     token = _prefs!.getString('auth_token');
     savedServers = _loadSavedServers();
     _loadLocalLanguage();
@@ -101,11 +111,13 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    if (token != null && user != null && hasPersistedServerConfig) {
+    if (serverMode == ServerProfileMode.fnosGateway && fnId.isNotEmpty) {
+      activeUrl = FnosGateway.appUri(fnId).toString();
+    } else if (token != null && user != null && hasPersistedServerConfig) {
       await _selectActiveUrlForCurrentNetwork(isCancelled: isCancelled);
       checkCancelled();
     }
-    api.configure(baseUrl: activeUrl, token: token);
+    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
 
     if (token != null && user != null) {
       await validateConnection(
@@ -129,6 +141,9 @@ class AppState extends ChangeNotifier {
       localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
       activeUrl = _prefs!.getString('active_url') ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
+      serverMode = _serverProfileModeFromPrefs();
+      fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
+      gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
       savedServers = _loadSavedServers();
       await _prefs?.remove('auth_token');
       await _prefs?.remove('user');
@@ -146,7 +161,7 @@ class AppState extends ChangeNotifier {
     offlineMode = false;
     connectionError = null;
     _loadCachedSettings();
-    api.configure(baseUrl: activeUrl, token: null);
+    api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
     notifyListeners();
   }
 
@@ -172,6 +187,17 @@ class AppState extends ChangeNotifier {
     } on _StartupCancelled {
       rethrow;
     } catch (_) {
+      if (serverMode == ServerProfileMode.fnosGateway) {
+        token = null;
+        user = null;
+        api.configure(
+          baseUrl: activeUrl,
+          token: null,
+          cookie: gatewayCookie,
+        );
+        await _prefs?.remove('auth_token');
+        await _prefs?.remove('user');
+      }
       connectionError = textForLocale(
         '连接服务器失败或登录已过期',
         'Failed to connect or session expired',
@@ -201,7 +227,7 @@ class AppState extends ChangeNotifier {
       final map = asMap(res.data);
       token = map['token']?.toString() ?? currentToken;
       user = User.fromJson(asMap(map['user']));
-      api.configure(baseUrl: activeUrl, token: token);
+      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
       await _prefs?.setString('auth_token', token ?? '');
     } on DioException catch (error) {
       final status = error.response?.statusCode;
@@ -217,33 +243,88 @@ class AppState extends ChangeNotifier {
     String localServer = '',
     required String username,
     required String password,
+    ServerProfileMode mode = ServerProfileMode.direct,
+    String fnId = '',
+    String? gatewayCookie,
+    Future<String?> Function()? acquireGatewayCookie,
     SavedServerProfile? replaceProfile,
   }) async {
     connectionError = null;
-    serverUrl = _normalizeOptionalServerUrl(server);
-    localServerUrl = _normalizeOptionalServerUrl(localServer);
-    final resolution = await resolveBestServerUrl(
-      server: serverUrl,
-      localServer: localServerUrl,
-      force: true,
-    );
-    activeUrl = resolution.resolvedUrl;
-    api.configure(baseUrl: activeUrl, token: null);
     api.setClientHeaders(await buildClientDeviceHeaders());
 
-    final res = await api.post(
-      '/api/auth/login',
-      data: {'username': username, 'password': password},
-    );
-    final map = asMap(res.data);
+    Map<String, dynamic> map;
+    var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
+
+    if (mode == ServerProfileMode.fnosGateway) {
+      final normalizedFnId = FnosGateway.hostForFnId(fnId);
+      serverUrl = FnosGateway.appUri(normalizedFnId).toString();
+      localServerUrl = '';
+      activeUrl = serverUrl;
+      this.fnId = normalizedFnId;
+      api.configure(
+        baseUrl: activeUrl,
+        token: null,
+        cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
+      );
+
+      try {
+        map = await _loginToTingReader(username, password);
+      } catch (error) {
+        if (resolvedGatewayCookie.isNotEmpty &&
+            !_shouldRefreshGatewayCookie(error)) {
+          rethrow;
+        }
+
+        final refreshedCookie = await acquireGatewayCookie?.call();
+        if (refreshedCookie == null || refreshedCookie.trim().isEmpty) {
+          throw StateError(textForLocale(
+            '飞牛登录已取消或未完成',
+            'fnOS login was cancelled or not completed',
+          ));
+        }
+        resolvedGatewayCookie = refreshedCookie.trim();
+        api.configure(
+          baseUrl: activeUrl,
+          token: null,
+          cookie: resolvedGatewayCookie,
+        );
+        map = await _loginToTingReader(username, password);
+      }
+    } else {
+      serverUrl = _normalizeOptionalServerUrl(server);
+      localServerUrl = _normalizeOptionalServerUrl(localServer);
+      final resolution = await resolveBestServerUrl(
+        server: serverUrl,
+        localServer: localServerUrl,
+        force: true,
+      );
+      activeUrl = resolution.resolvedUrl;
+      this.fnId = '';
+      resolvedGatewayCookie = '';
+      api.configure(baseUrl: activeUrl, token: null, cookie: null);
+      map = await _loginToTingReader(username, password);
+    }
 
     token = map['token']?.toString();
     user = User.fromJson(asMap(map['user']));
-    api.configure(baseUrl: activeUrl, token: token);
+    serverMode = mode;
+    gatewayCookie =
+        resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie;
+    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
 
     await _prefs?.setString('server_url', serverUrl);
     await _prefs?.setString('local_server_url', localServerUrl);
     await _prefs?.setString('active_url', activeUrl);
+    await _prefs?.setString(_serverModePrefsKey, mode.name);
+    await _prefs?.setString(_fnIdPrefsKey, this.fnId);
+    if (resolvedGatewayCookie.isEmpty) {
+      await _prefs?.remove(_gatewayCookiePrefsKey);
+    } else {
+      await _prefs?.setString(
+        _gatewayCookiePrefsKey,
+        resolvedGatewayCookie,
+      );
+    }
     await _prefs?.setString('auth_token', token ?? '');
     await _prefs?.setString('user', user!.encode());
     await _saveServerProfile(
@@ -253,13 +334,42 @@ class AppState extends ChangeNotifier {
         activeUrl: activeUrl,
         username: username,
         password: password,
-        label: username,
+        label: mode == ServerProfileMode.fnosGateway
+            ? '${this.fnId} · $username'
+            : username,
+        mode: mode,
+        fnId: this.fnId,
+        gatewayCookie: resolvedGatewayCookie,
+        gatewayCookieAt: resolvedGatewayCookie.isEmpty ? null : DateTime.now(),
         lastLoginAt: DateTime.now(),
       ),
       replaceProfile: replaceProfile,
     );
     await loadSettings(silent: true);
     notifyListeners();
+  }
+
+  Future<Map<String, dynamic>> _loginToTingReader(
+    String username,
+    String password,
+  ) async {
+    final response = await api.post(
+      '/api/auth/login',
+      data: {'username': username, 'password': password},
+    );
+    final map = asMap(response.data);
+    final loginToken = map['token']?.toString().trim() ?? '';
+    if (loginToken.isEmpty || map['user'] is! Map) {
+      throw const _GatewaySessionExpired();
+    }
+    return map;
+  }
+
+  bool _shouldRefreshGatewayCookie(Object error) {
+    if (error is! DioException) return true;
+    final data = error.response?.data;
+    if (data is Map && data['error'] != null) return false;
+    return true;
   }
 
   Future<void> enterOfflineMode() async {
@@ -273,7 +383,7 @@ class AppState extends ChangeNotifier {
     );
     connectionError = null;
     _loadCachedSettings();
-    api.configure(baseUrl: activeUrl, token: null);
+    api.configure(baseUrl: activeUrl, token: null, cookie: null);
     notifyListeners();
   }
 
@@ -370,6 +480,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<String?> _recoverActiveUrl() async {
+    if (serverMode == ServerProfileMode.fnosGateway && fnId.isNotEmpty) {
+      activeUrl = FnosGateway.appUri(fnId).toString();
+      return activeUrl;
+    }
     try {
       final resolution = await resolveBestServerUrl(
         server: serverUrl,
@@ -378,7 +492,7 @@ class AppState extends ChangeNotifier {
       );
       activeUrl = resolution.resolvedUrl;
       await _prefs?.setString('active_url', activeUrl);
-      api.configure(baseUrl: activeUrl, token: token);
+      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
       notifyListeners();
       return activeUrl;
     } catch (_) {
@@ -389,6 +503,7 @@ class AppState extends ChangeNotifier {
   Future<void> _selectActiveUrlForCurrentNetwork({
     bool Function()? isCancelled,
   }) async {
+    if (serverMode == ServerProfileMode.fnosGateway) return;
     try {
       final resolution = await resolveBestServerUrl(
         server: serverUrl,
@@ -422,7 +537,7 @@ class AppState extends ChangeNotifier {
     offlineMode = false;
     connectionError = null;
     settings = {};
-    api.configure(baseUrl: activeUrl, token: null);
+    api.configure(baseUrl: activeUrl, token: null, cookie: null);
     await _prefs?.remove('auth_token');
     await _prefs?.remove('user');
     notifyListeners();
@@ -655,11 +770,15 @@ class AppState extends ChangeNotifier {
       String? server,
       String? local,
       String username,
+      ServerProfileMode mode,
+      String fnId,
     ) {
       if (server == null || local == null) return false;
       return _normalizeOptionalServerUrl(item.serverUrl) == server &&
           _normalizeOptionalServerUrl(item.localServerUrl) == local &&
-          item.username == username;
+          item.username == username &&
+          item.mode == mode &&
+          item.fnId == fnId;
     }
 
     final next = [
@@ -674,6 +793,8 @@ class AppState extends ChangeNotifier {
             normalizedServer,
             normalizedLocal,
             profile.username,
+            profile.mode,
+            profile.fnId,
           )) {
             return false;
           }
@@ -683,6 +804,8 @@ class AppState extends ChangeNotifier {
                 normalizedReplaceServer,
                 normalizedReplaceLocal,
                 replaceProfile.username,
+                replaceProfile.mode,
+                replaceProfile.fnId,
               )) {
             return false;
           }
@@ -706,7 +829,9 @@ class AppState extends ChangeNotifier {
               _normalizeOptionalServerUrl(item.serverUrl) != normalizedServer ||
               _normalizeOptionalServerUrl(item.localServerUrl) !=
                   normalizedLocal ||
-              item.username != profile.username,
+              item.username != profile.username ||
+              item.mode != profile.mode ||
+              item.fnId != profile.fnId,
         )
         .toList();
     await _prefs?.setString(
@@ -734,6 +859,13 @@ class AppState extends ChangeNotifier {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return '';
     return ApiClient.normalizeServerUrl(trimmed);
+  }
+
+  ServerProfileMode _serverProfileModeFromPrefs() {
+    final value = _prefs?.getString(_serverModePrefsKey)?.toLowerCase();
+    return value == ServerProfileMode.fnosGateway.name
+        ? ServerProfileMode.fnosGateway
+        : ServerProfileMode.direct;
   }
 
   Future<RedirectResolution?> _resolveReachableServerUrl(
