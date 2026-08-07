@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -112,6 +113,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   String _currentUrl = '';
   bool _loading = true;
   bool _finishing = false;
+  Timer? _sessionPollTimer;
 
   @override
   void initState() {
@@ -143,6 +145,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
                 _loading = false;
                 _currentUrl = url;
               });
+              _startSessionPolling();
             },
             onWebResourceError: (error) {
               if (!mounted || error.isForMainFrame != true) return;
@@ -167,7 +170,44 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     }
   }
 
-  Future<void> _finishLogin() async {
+  void _startSessionPolling() {
+    if (_sessionPollTimer != null) return;
+    _sessionPollTimer = Timer.periodic(
+      const Duration(milliseconds: 800),
+      (_) {
+        if (!mounted || _finishing) return;
+        unawaited(_finishLogin(automatic: true));
+      },
+    );
+  }
+
+  Future<String> _readGatewayCookie() async {
+    var cookieHeader = '';
+    try {
+      final cookies = await _cookieManager.getCookies(
+        domain: FnosGateway.originUri(widget.fnId),
+      );
+      cookieHeader = FnosGateway.cookieHeader(cookies);
+    } catch (_) {
+      // Desktop WebView adapters may not implement CookieManager.getCookies.
+    }
+
+    try {
+      final rawDocumentCookie =
+          await _controller.runJavaScriptReturningResult('document.cookie');
+      cookieHeader = FnosGateway.mergeCookieHeaders(
+        cookieHeader,
+        FnosGateway.cookieHeaderFromDocumentCookie(
+          rawDocumentCookie.toString(),
+        ),
+      );
+    } catch (_) {
+      // Keep the platform cookie result when JavaScript cookie access fails.
+    }
+    return cookieHeader;
+  }
+
+  Future<void> _finishLogin({bool automatic = false}) async {
     if (_finishing) return;
     final noSessionMessage = context.localeText(
       '没有检测到飞牛登录会话，请先在页面中完成登录。',
@@ -175,44 +215,31 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     );
     setState(() {
       _finishing = true;
-      _error = null;
+      if (!automatic) _error = null;
     });
 
     try {
-      var cookieHeader = '';
-      try {
-        final cookies = await _cookieManager.getCookies(
-          domain: FnosGateway.originUri(widget.fnId),
-        );
-        cookieHeader = FnosGateway.cookieHeader(cookies);
-      } catch (_) {
-        // Desktop WebView adapters may not implement CookieManager.getCookies.
-      }
-
-      try {
-        final rawDocumentCookie =
-            await _controller.runJavaScriptReturningResult('document.cookie');
-        cookieHeader = FnosGateway.mergeCookieHeaders(
-          cookieHeader,
-          FnosGateway.cookieHeaderFromDocumentCookie(
-            rawDocumentCookie.toString(),
-          ),
-        );
-      } catch (_) {
-        // Keep the platform cookie result when JavaScript cookie access fails.
-      }
-
+      final cookieHeader = await _readGatewayCookie();
       if (!FnosGateway.hasGatewaySession(cookieHeader)) {
-        throw StateError(noSessionMessage);
+        if (!automatic) throw StateError(noSessionMessage);
+        return;
       }
       if (!mounted) return;
+      _sessionPollTimer?.cancel();
+      _sessionPollTimer = null;
       Navigator.of(context).pop(cookieHeader);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || automatic) return;
       setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _finishing = false);
     }
+  }
+
+  @override
+  void dispose() {
+    _sessionPollTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -250,8 +277,8 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
           children: [
             Text(
               context.localeText(
-                '完成飞牛登录后点击继续，应用只会接收当前站点的登录会话。',
-                'Complete fnOS login, then continue. Only this site session is used.',
+                '完成飞牛登录后会自动继续；若未自动继续，可点下方按钮。应用只会接收当前站点的登录会话。',
+                'After fnOS login, the app continues automatically. Use the button below if needed. Only this site session is used.',
               ),
               textAlign: TextAlign.center,
               style: TextStyle(color: context.mutedText, fontSize: 12),

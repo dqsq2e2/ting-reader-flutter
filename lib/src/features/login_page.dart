@@ -59,7 +59,23 @@ class _LoginPageState extends State<LoginPage> {
         fnId: fnId,
         gatewayCookie: gatewayCookie,
         acquireGatewayCookie: mode == ServerProfileMode.fnosGateway
-            ? () => _openFnidLogin(fnId)
+            ? () async {
+                if (mounted) {
+                  setState(() {
+                    _loginStage = context.localeText(
+                      '正在等待飞牛登录完成',
+                      'Waiting for fnOS login to complete',
+                    );
+                  });
+                }
+                final cookie = await _openFnidLogin(fnId);
+                if (mounted) {
+                  setState(() {
+                    _loginStage = context.l10n.startupConnecting;
+                  });
+                }
+                return cookie;
+              }
             : null,
         replaceProfile: replaceProfile,
       );
@@ -644,10 +660,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 _Field(
                   controller: _fnIdController,
                   label: context.localeText('FNID', 'FNID'),
-                  hint: context.localeText(
-                    '例如 bdynas 或 bdynas.fnos.net',
-                    'For example, bdynas or bdynas.fnos.net',
-                  ),
+                  hint: context.localeText('填写你的 FNID', 'Enter your FNID'),
                   icon: Icons.cloud_rounded,
                   validator: (_) => _hasAnyServerAddress
                       ? null
