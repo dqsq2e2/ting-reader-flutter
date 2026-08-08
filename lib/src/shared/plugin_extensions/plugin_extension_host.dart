@@ -2093,6 +2093,13 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           NavigationDelegate(
             onNavigationRequest: (request) {
               if (loadAssetAsTopLevel) {
+                // Subresources such as the plugin CSS/JS are not top-level
+                // navigations. Let the WebView fetch them under the same
+                // authenticated origin instead of applying the main-frame
+                // external-link policy to every request.
+                if (!request.isMainFrame) {
+                  return NavigationDecision.navigate;
+                }
                 if (_isPluginAssetUrl(
                   request.url,
                   assetUrl: assetUrl,
@@ -2516,14 +2523,25 @@ bool _isPluginAssetUrl(
       uri.port != assetUri.port) {
     return false;
   }
-  final segments = uri.pathSegments;
-  if (segments.length < 5) return false;
-  final pluginSegment = segments[3];
-  return segments[0] == 'api' &&
-      segments[1] == 'v1' &&
-      segments[2] == 'plugin-assets' &&
-      (pluginSegment == pluginId ||
-          pluginSegment == Uri.encodeComponent(pluginId));
+
+  // The gateway adds a path prefix such as /app/ting-reader before the API
+  // path. Anchor the check to the actual asset URL instead of assuming that
+  // /api/v1 is at the origin root.
+  final assetSegments = assetUri.pathSegments;
+  final requestSegments = uri.pathSegments;
+  final pluginAssetsIndex = assetSegments.indexOf('plugin-assets');
+  if (pluginAssetsIndex < 0 ||
+      pluginAssetsIndex + 1 >= assetSegments.length ||
+      requestSegments.length <= pluginAssetsIndex + 1) {
+    return false;
+  }
+  for (var index = 0; index <= pluginAssetsIndex; index++) {
+    if (requestSegments[index] != assetSegments[index]) return false;
+  }
+
+  final pluginSegment = requestSegments[pluginAssetsIndex + 1];
+  return pluginSegment == pluginId ||
+      pluginSegment == Uri.encodeComponent(pluginId);
 }
 
 String _pluginInitPayloadJson({
