@@ -3,11 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme/app_theme.dart';
 
 const _tingReaderPath = '/app/ting-reader';
+const _webViewCookieChannel = MethodChannel('ting_reader/webview_cookies');
 
 /// Utilities for the fnOS/FN Connect gateway address used by a server profile.
 class FnosGateway {
@@ -230,6 +232,12 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
       } catch (_) {
         // Desktop WebView adapters may not implement CookieManager.getCookies.
       }
+      // Android's adapter splits cookie values on every '=', which truncates
+      // padded Base64 session tokens. Merge the platform's raw header last.
+      cookieHeader = FnosGateway.mergeCookieHeaders(
+        cookieHeader,
+        await _readNativeCookie(domain),
+      );
     }
 
     try {
@@ -245,6 +253,21 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
       // Keep the platform cookie result when JavaScript cookie access fails.
     }
     return cookieHeader;
+  }
+
+  Future<String> _readNativeCookie(Uri domain) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return '';
+    try {
+      final rawCookie = await _webViewCookieChannel.invokeMethod<String>(
+        'getCookie',
+        {'url': domain.toString()},
+      );
+      return FnosGateway.cookieHeaderFromDocumentCookie(rawCookie ?? '');
+    } on MissingPluginException {
+      return '';
+    } catch (_) {
+      return '';
+    }
   }
 
   Future<void> _continueLogin({bool automatic = false}) async {
