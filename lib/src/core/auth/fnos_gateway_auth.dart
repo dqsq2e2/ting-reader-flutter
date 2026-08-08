@@ -7,6 +7,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme/app_theme.dart';
 
+const _tingReaderPath = '/app/ting-reader';
+
 /// Utilities for the fnOS/FN Connect gateway address used by a server profile.
 class FnosGateway {
   const FnosGateway._();
@@ -123,6 +125,8 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   String _currentUrl = '';
   bool _loading = true;
   bool _finishing = false;
+  bool _appRequestStarted = false;
+  String? _gatewayCookie;
   Timer? _sessionPollTimer;
 
   @override
@@ -196,25 +200,40 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     _sessionPollTimer = Timer.periodic(
       const Duration(milliseconds: 800),
       (_) {
-        if (!mounted || _finishing || _loading || !_isFinalFnidPage) return;
-        unawaited(_finishLogin(automatic: true));
+        if (!mounted || _finishing || _loading) return;
+        unawaited(_continueLogin(automatic: true));
       },
     );
   }
 
-  bool get _isFinalFnidPage {
+  bool get _isGatewayHost {
     final uri = Uri.tryParse(_currentUrl);
     if (uri == null) return false;
-    return uri.scheme.toLowerCase() == 'https' &&
+    return (uri.scheme.toLowerCase() == 'http' ||
+            uri.scheme.toLowerCase() == 'https') &&
         uri.host.toLowerCase() == FnosGateway.hostForFnId(widget.fnId);
+  }
+
+  bool get _isTingReaderPage {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri == null || !_isGatewayHost) return false;
+    return uri.path == _tingReaderPath ||
+        uri.path.startsWith('$_tingReaderPath/');
   }
 
   Future<String> _readGatewayCookie() async {
     var cookieHeader = '';
-    for (final domain in [
+    final domains = <Uri>[
       FnosGateway.originUri(widget.fnId),
       FnosGateway.fnosValidationUri(),
-    ]) {
+    ];
+    final currentUri = Uri.tryParse(_currentUrl);
+    if (currentUri != null &&
+        (currentUri.scheme.toLowerCase() == 'http' ||
+            currentUri.scheme.toLowerCase() == 'https')) {
+      domains.insert(0, currentUri);
+    }
+    for (final domain in domains) {
       try {
         final cookies = await _cookieManager.getCookies(domain: domain);
         cookieHeader = FnosGateway.mergeCookieHeaders(
@@ -241,14 +260,65 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     return cookieHeader;
   }
 
+  Future<void> _continueLogin({bool automatic = false}) async {
+    if (_isTingReaderPage) {
+      await _finishLogin(automatic: automatic);
+      return;
+    }
+    if (_isGatewayHost) {
+      await _openTingReaderWithCookie(automatic: automatic);
+      return;
+    }
+    if (!automatic && mounted) {
+      setState(() {
+        _error = context.localeText(
+          '正在等待飞牛完成 FNID 校验，请稍候。',
+          'Waiting for fnOS to finish FNID validation.',
+        );
+      });
+    }
+  }
+
+  Future<void> _openTingReaderWithCookie({bool automatic = false}) async {
+    if (_finishing || _appRequestStarted || !_isGatewayHost) return;
+    final noSessionMessage = context.localeText(
+      '没有检测到飞牛登录会话，请先在页面中完成登录。',
+      'No fnOS login session was found. Complete fnOS login first.',
+    );
+    setState(() {
+      _finishing = true;
+      if (!automatic) _error = null;
+    });
+
+    try {
+      final cookieHeader = await _readGatewayCookie();
+      if (!FnosGateway.hasGatewaySession(cookieHeader)) {
+        if (!automatic) throw StateError(noSessionMessage);
+        return;
+      }
+      _gatewayCookie = cookieHeader;
+      _appRequestStarted = true;
+      await _controller.loadRequest(
+        FnosGateway.appUri(widget.fnId),
+        headers: {'Cookie': cookieHeader},
+      );
+    } catch (error) {
+      _appRequestStarted = false;
+      if (!mounted || automatic) return;
+      setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _finishing = false);
+    }
+  }
+
   Future<void> _finishLogin({bool automatic = false}) async {
     if (_finishing) return;
-    if (!_isFinalFnidPage || _loading) {
+    if (!_isTingReaderPage || _loading) {
       if (!automatic && mounted) {
         setState(() {
           _error = context.localeText(
-            '正在等待飞牛完成 FNID 校验，请稍候。',
-            'Waiting for fnOS to finish FNID validation.',
+            '正在等待飞牛登录完成，请稍候。',
+            'Waiting for fnOS login to finish.',
           );
         });
       }
@@ -264,7 +334,10 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     });
 
     try {
-      final cookieHeader = await _readGatewayCookie();
+      final cookieHeader = FnosGateway.mergeCookieHeaders(
+        _gatewayCookie ?? '',
+        await _readGatewayCookie(),
+      );
       if (!FnosGateway.hasGatewaySession(cookieHeader)) {
         if (!automatic) throw StateError(noSessionMessage);
         return;
@@ -333,7 +406,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
               width: double.infinity,
               child: FilledButton.icon(
                 onPressed:
-                    _controllerReady() && !_finishing ? _finishLogin : null,
+                    _controllerReady() && !_finishing ? _continueLogin : null,
                 icon: _finishing
                     ? const SizedBox(
                         width: 16,
