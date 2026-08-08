@@ -37,6 +37,10 @@ class FnosGateway {
     return Uri.https(hostForFnId(fnId), '/');
   }
 
+  static Uri fnosValidationUri() {
+    return Uri.https('fnos.net', '/');
+  }
+
   static Uri appUri(String fnId) {
     return Uri.https(hostForFnId(fnId), '/app/ting-reader');
   }
@@ -158,6 +162,15 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
               final uri = Uri.tryParse(request.url);
               final scheme = uri?.scheme.toLowerCase();
               if (scheme == 'http' || scheme == 'https') {
+                // FNID login intentionally redirects through fnos.net/fnid
+                // before returning to the user's FNID host. Keep every
+                // HTTP(S) redirect in the WebView.
+                if (mounted) {
+                  setState(() {
+                    _loading = true;
+                    _currentUrl = request.url;
+                  });
+                }
                 return NavigationDecision.navigate;
               }
               return NavigationDecision.prevent;
@@ -175,21 +188,34 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     _sessionPollTimer = Timer.periodic(
       const Duration(milliseconds: 800),
       (_) {
-        if (!mounted || _finishing) return;
+        if (!mounted || _finishing || _loading || !_isFinalFnidPage) return;
         unawaited(_finishLogin(automatic: true));
       },
     );
   }
 
+  bool get _isFinalFnidPage {
+    final uri = Uri.tryParse(_currentUrl);
+    if (uri == null) return false;
+    return uri.scheme.toLowerCase() == 'https' &&
+        uri.host.toLowerCase() == FnosGateway.hostForFnId(widget.fnId);
+  }
+
   Future<String> _readGatewayCookie() async {
     var cookieHeader = '';
-    try {
-      final cookies = await _cookieManager.getCookies(
-        domain: FnosGateway.originUri(widget.fnId),
-      );
-      cookieHeader = FnosGateway.cookieHeader(cookies);
-    } catch (_) {
-      // Desktop WebView adapters may not implement CookieManager.getCookies.
+    for (final domain in [
+      FnosGateway.originUri(widget.fnId),
+      FnosGateway.fnosValidationUri(),
+    ]) {
+      try {
+        final cookies = await _cookieManager.getCookies(domain: domain);
+        cookieHeader = FnosGateway.mergeCookieHeaders(
+          cookieHeader,
+          FnosGateway.cookieHeader(cookies),
+        );
+      } catch (_) {
+        // Desktop WebView adapters may not implement CookieManager.getCookies.
+      }
     }
 
     try {
@@ -209,6 +235,17 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
 
   Future<void> _finishLogin({bool automatic = false}) async {
     if (_finishing) return;
+    if (!_isFinalFnidPage || _loading) {
+      if (!automatic && mounted) {
+        setState(() {
+          _error = context.localeText(
+            '正在等待飞牛完成 FNID 校验，请稍候。',
+            'Waiting for fnOS to finish FNID validation.',
+          );
+        });
+      }
+      return;
+    }
     final noSessionMessage = context.localeText(
       '没有检测到飞牛登录会话，请先在页面中完成登录。',
       'No fnOS login session was found. Complete login first.',
