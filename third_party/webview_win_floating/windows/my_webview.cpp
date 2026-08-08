@@ -52,7 +52,8 @@ public:
     HRESULT loadHtmlString(PCWSTR html);
     HRESULT runJavascript(PCWSTR javaScriptString, bool ignoreResult, std::function<void(std::string)> callback);
 
-    HRESULT addScriptChannelByName(LPCWSTR channelName);
+    HRESULT addScriptChannelByName(
+        LPCWSTR channelName, std::function<void(HRESULT)> callback);
     void removeScriptChannelByName(LPCWSTR channelName);
 
     void enableJavascript(bool bEnable);
@@ -542,29 +543,54 @@ HRESULT MyWebViewImpl::runJavascript(LPCWSTR javaScriptString, bool ignoreResult
         }).Get());
 }
 
-HRESULT MyWebViewImpl::addScriptChannelByName(LPCWSTR channelName)
+HRESULT MyWebViewImpl::addScriptChannelByName(
+    LPCWSTR channelName, std::function<void(HRESULT)> callback)
 {
-    if (!m_hasRegisteredChannel) {
-        m_hasRegisteredChannel = true;
+    if (channelName == nullptr || wcslen(channelName) > 30) return E_INVALIDARG;
 
-        LPCWSTR script = L"class JkChannel { constructor(name) { this.name = name; } postMessage(message) { window.chrome.webview.postMessage({'JkChannelName': this.name, 'msg' : message}); } }";
-        HRESULT hr = m_pWebview->AddScriptToExecuteOnDocumentCreated(script, Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-            [](HRESULT error, PCWSTR id) -> HRESULT {
-                return S_OK; //do nothing
-            }).Get());
-        if (FAILED(hr)) return E_FAIL;
-    }
+    const std::wstring channelNameCopy(channelName);
+    auto addChannelScript = [this, channelNameCopy, callback]() -> HRESULT {
+        const std::wstring script =
+            L"const " + channelNameCopy + L" = new JkChannel('" +
+            channelNameCopy + L"');";
+        return m_pWebview->AddScriptToExecuteOnDocumentCreated(
+            script.c_str(),
+            Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+                [this, channelNameCopy, callback](HRESULT error, PCWSTR id)
+                    -> HRESULT {
+                  if (SUCCEEDED(error) && id != nullptr) {
+                    channelMap[channelNameCopy] = id;
+                  }
+                  if (callback != nullptr) callback(error);
+                  return S_OK;
+                })
+                .Get());
+    };
 
-    WCHAR script[100];
-    if (wcslen(channelName) > 30) return E_FAIL;
-    wsprintf(script, L"const %s = new JkChannel('%s');", channelName, channelName);
+    if (m_hasRegisteredChannel) return addChannelScript();
 
-    return m_pWebview->AddScriptToExecuteOnDocumentCreated(script, Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
-        [=](HRESULT error, PCWSTR id) -> HRESULT {
-            if (FAILED(error)) return error;
-            channelMap[channelName] = id;
-            return S_OK; //do nothing
-        }).Get());
+    LPCWSTR script =
+        L"class JkChannel { constructor(name) { this.name = name; } "
+        L"postMessage(message) { window.chrome.webview.postMessage({"
+        L"'JkChannelName': this.name, 'msg' : message}); } }";
+    HRESULT hr = m_pWebview->AddScriptToExecuteOnDocumentCreated(
+        script,
+        Callback<ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>(
+            [this, addChannelScript, callback](HRESULT error, PCWSTR id)
+                -> HRESULT {
+              if (FAILED(error)) {
+                if (callback != nullptr) callback(error);
+                return S_OK;
+              }
+              m_hasRegisteredChannel = true;
+              const HRESULT channelHr = addChannelScript();
+              if (FAILED(channelHr) && callback != nullptr) {
+                callback(channelHr);
+              }
+              return S_OK;
+            })
+            .Get());
+    return hr;
 }
 
 void MyWebViewImpl::removeScriptChannelByName(LPCWSTR channelName)

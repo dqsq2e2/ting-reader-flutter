@@ -499,6 +499,17 @@ class WinWebViewController {
     await WebviewWinFloatingPlatform.instance.loadUrl(_webviewId, url);
   }
 
+  Future<bool> setCookie(WebViewCookie cookie) async {
+    await _initFuture;
+    return WebviewWinFloatingPlatform.instance.setCookieForWebView(
+      _webviewId,
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+    );
+  }
+
   Future<void> loadHtmlString(String html, {String? baseUrl}) async {
     await _initFuture;
     await WebviewWinFloatingPlatform.instance

@@ -60,7 +60,8 @@ public:
 	virtual HRESULT loadHtmlString(LPCWSTR html) = 0;
 	virtual HRESULT runJavascript(LPCWSTR javaScriptString, bool ignoreResult = true, std::function<void(std::string)> callback = NULL) = 0;
 
-	virtual HRESULT addScriptChannelByName(LPCWSTR channelName) = 0;
+	virtual HRESULT addScriptChannelByName(
+		LPCWSTR channelName, std::function<void(HRESULT)> callback) = 0;
 	virtual void removeScriptChannelByName(LPCWSTR channelName) = 0;
 
 	virtual void enableJavascript(bool bEnable) = 0;

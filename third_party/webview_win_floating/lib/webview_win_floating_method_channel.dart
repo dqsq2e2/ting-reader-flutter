@@ -191,6 +191,24 @@ class MethodChannelWebviewWinFloating extends WebviewWinFloatingPlatform {
   }
 
   @override
+  Future<bool> setCookieForWebView(
+    int webviewId, {
+    required String name,
+    required String value,
+    required String domain,
+    required String path,
+  }) async {
+    return await methodChannel.invokeMethod<bool>('setCookieForWebView', {
+          "webviewId": webviewId,
+          "name": name,
+          "value": value,
+          "domain": domain,
+          "path": path,
+        }) ??
+        false;
+  }
+
+  @override
   Future<void> loadHtmlString(
     int webviewId,
     String html,

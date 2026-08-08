@@ -182,7 +182,7 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
     PlatformNavigationDelegate handler,
   ) async {
     var delegate = handler as WindowsPlatformNavigationDelegate;
-    controller.setNavigationDelegate(
+    return controller.setNavigationDelegate(
       WinNavigationDelegate(
         onNavigationRequest: delegate.onNavigationRequest,
         onPageStarted: delegate.onPageStarted,
@@ -204,7 +204,7 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
   Future<void> addJavaScriptChannel(
     JavaScriptChannelParams javaScriptChannelParams,
   ) async {
-    controller.addJavaScriptChannel(
+    await controller.addJavaScriptChannel(
       javaScriptChannelParams.name,
       onMessageReceived: javaScriptChannelParams.onMessageReceived,
     );
@@ -212,7 +212,7 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
 
   @override
   Future<void> removeJavaScriptChannel(String javaScriptChannelName) async {
-    controller.removeJavaScriptChannel(javaScriptChannelName);
+    await controller.removeJavaScriptChannel(javaScriptChannelName);
   }
 
   @override
@@ -285,6 +285,10 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
       headers: params.headers,
       body: params.body,
     );
+  }
+
+  Future<bool> setCookie(WebViewCookie cookie) {
+    return controller.setCookie(cookie);
   }
 
   @override

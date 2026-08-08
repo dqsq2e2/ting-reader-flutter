@@ -212,6 +212,34 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
 
   flutter::EncodableMap arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
 
+  if (method_call.method_name().compare("setCookieForWebView") == 0) {
+    auto webviewIdIt = arguments.find(flutter::EncodableValue("webviewId"));
+    if (webviewIdIt == arguments.end()) {
+      result->Error("webviewId is required");
+      return;
+    }
+
+    const auto webviewId = static_cast<int>(webviewIdIt->second.LongValue());
+    auto webviewIt = m_webviewMap.find(webviewId);
+    if (webviewIt == m_webviewMap.end() || webviewIt->second == nullptr) {
+      result->Error("webview hasn't created");
+      return;
+    }
+
+    auto name = std::get<std::string>(arguments[flutter::EncodableValue("name")]);
+    auto value = std::get<std::string>(arguments[flutter::EncodableValue("value")]);
+    auto domain = std::get<std::string>(arguments[flutter::EncodableValue("domain")]);
+    auto path = std::get<std::string>(arguments[flutter::EncodableValue("path")]);
+    auto hr = webviewIt->second->setCookie(
+        toWideString(name), toWideString(value), toWideString(domain),
+        toWideString(path));
+    std::cout << "[webview] setCookieForWebView id=" << webviewId
+              << " name=" << name << " domain=" << domain
+              << " hr=" << std::to_string(hr) << std::endl;
+    result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
+    return;
+  }
+
   if (method_call.method_name().compare("getCookies") == 0 ||
       method_call.method_name().compare("setCookie") == 0) {
     MyWebView* webview = nullptr;
@@ -336,8 +364,22 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     if (FAILED(hr)) result->Error("runJavascript() error");
   } else if (method_call.method_name().compare("addScriptChannelByName") == 0) {
     auto channelName = std::get<std::string>(arguments[flutter::EncodableValue("channelName")]);
-    webview->addScriptChannelByName(toWideString(channelName));
-    result->Success();
+    std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared_result =
+        std::move(result);
+    auto hr = webview->addScriptChannelByName(
+        toWideString(channelName),
+        [shared_result](HRESULT callbackResult) {
+          if (FAILED(callbackResult)) {
+            shared_result->Error(
+                "addScriptChannelByName() error", std::to_string(callbackResult));
+            return;
+          }
+          shared_result->Success();
+        });
+    if (FAILED(hr)) {
+      shared_result->Error(
+          "addScriptChannelByName() error", std::to_string(hr));
+    }
   } else if (method_call.method_name().compare("removeScriptChannelByName") == 0) {
     auto channelName = std::get<std::string>(arguments[flutter::EncodableValue("channelName")]);
     webview->removeScriptChannelByName(toWideString(channelName));

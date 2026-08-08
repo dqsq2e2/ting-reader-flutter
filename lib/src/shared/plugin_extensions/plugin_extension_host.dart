@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/test_icons.dart' as lucide_catalog;
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_win_floating/webview_plugin.dart';
 
 import '../../core/document_reader/document_reader.dart';
 import '../../core/models/_helpers.dart' show asMap;
@@ -2085,67 +2086,73 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     _pageLoaded = false;
 
     final WebViewController controller;
+    late final Future<void> controllerSetup;
     try {
       late final WebViewController nextController;
-      nextController = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onNavigationRequest: (request) {
-              if (loadAssetAsTopLevel) {
-                // Subresources such as the plugin CSS/JS are not top-level
-                // navigations. Let the WebView fetch them under the same
-                // authenticated origin instead of applying the main-frame
-                // external-link policy to every request.
-                if (!request.isMainFrame) {
-                  return NavigationDecision.navigate;
-                }
-                if (_isPluginAssetUrl(
-                  request.url,
-                  assetUrl: assetUrl,
-                  pluginId: widget.extension.pluginId,
-                )) {
-                  return NavigationDecision.navigate;
-                }
-                _openPluginExternalUrl(request.url);
-                return NavigationDecision.prevent;
-              }
-              if (request.isMainFrame) {
-                if (_openPluginExternalUrl(request.url)) {
+      nextController = WebViewController();
+      controllerSetup = nextController
+          .setJavaScriptMode(JavaScriptMode.unrestricted)
+          .then<void>(
+            (_) => nextController.setNavigationDelegate(
+              NavigationDelegate(
+                onNavigationRequest: (request) {
+                  if (loadAssetAsTopLevel) {
+                    // Subresources such as the plugin CSS/JS are not top-level
+                    // navigations. Let the WebView fetch them under the same
+                    // authenticated origin instead of applying the main-frame
+                    // external-link policy to every request.
+                    if (!request.isMainFrame) {
+                      return NavigationDecision.navigate;
+                    }
+                    if (_isPluginAssetUrl(
+                      request.url,
+                      assetUrl: assetUrl,
+                      pluginId: widget.extension.pluginId,
+                    )) {
+                      return NavigationDecision.navigate;
+                    }
+                    _openPluginExternalUrl(request.url);
+                    return NavigationDecision.prevent;
+                  }
+                  if (request.isMainFrame) {
+                    if (_openPluginExternalUrl(request.url)) {
+                      return NavigationDecision.prevent;
+                    }
+                    return NavigationDecision.navigate;
+                  }
+                  if (request.url == assetUrl ||
+                      request.url.startsWith('$assetUrl#') ||
+                      request.url.startsWith('$assetUrl?')) {
+                    return NavigationDecision.navigate;
+                  }
+                  _openPluginExternalUrl(request.url);
                   return NavigationDecision.prevent;
-                }
-                return NavigationDecision.navigate;
-              }
-              if (request.url == assetUrl ||
-                  request.url.startsWith('$assetUrl#') ||
-                  request.url.startsWith('$assetUrl?')) {
-                return NavigationDecision.navigate;
-              }
-              _openPluginExternalUrl(request.url);
-              return NavigationDecision.prevent;
-            },
-            onPageFinished: (_) {
-              if (loadAssetAsTopLevel) {
-                _installTopLevelPluginBridge(
-                  nextController,
-                  initPayload: initPayload,
-                  theme: pluginTheme,
-                  assetUrl: assetUrl,
-                );
-                _appliedThemeSignature = _pluginThemeSignature(pluginTheme);
-              }
-              _pageLoaded = true;
-            },
-            onWebResourceError: (error) {
-              if (!mounted || error.isForMainFrame != true) return;
-              setState(() => _error = error.description);
-            },
-          ),
-        )
-        ..addJavaScriptChannel(
-          'TingPluginBridge',
-          onMessageReceived: _handleBridgeMessage,
-        );
+                },
+                onPageFinished: (_) {
+                  if (loadAssetAsTopLevel) {
+                    _installTopLevelPluginBridge(
+                      nextController,
+                      initPayload: initPayload,
+                      theme: pluginTheme,
+                      assetUrl: assetUrl,
+                    );
+                    _appliedThemeSignature = _pluginThemeSignature(pluginTheme);
+                  }
+                  _pageLoaded = true;
+                },
+                onWebResourceError: (error) {
+                  if (!mounted || error.isForMainFrame != true) return;
+                  setState(() => _error = error.description);
+                },
+              ),
+            ),
+          )
+          .then<void>(
+            (_) => nextController.addJavaScriptChannel(
+              'TingPluginBridge',
+              onMessageReceived: _handleBridgeMessage,
+            ),
+          );
       controller = nextController;
     } catch (error) {
       setState(() {
@@ -2170,6 +2177,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
         loadAssetAsTopLevel: loadAssetAsTopLevel,
         initPayload: initPayload,
         generation: generation,
+        setupFuture: controllerSetup,
       ),
     );
   }
@@ -2181,16 +2189,18 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     required bool loadAssetAsTopLevel,
     required String initPayload,
     required int generation,
+    required Future<void> setupFuture,
   }) async {
     try {
-      // The custom Windows/Linux implementation creates the native WebView
-      // asynchronously. Awaiting a controller operation makes sure its cookie
-      // store exists before we inject the fnOS gateway session.
-      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+      // WebView2 registers navigation callbacks and document-created scripts
+      // asynchronously. Do not navigate until all three setup operations have
+      // completed, otherwise the plugin can run before TingPluginBridge exists.
+      await setupFuture;
 
       if (loadAssetAsTopLevel) {
         final assetUri = Uri.parse(assetUrl);
         await _writePluginCookiesToWebView(
+          controller: controller,
           assetUri: assetUri,
           cookieHeader: app.api.cookie,
         );
@@ -2214,29 +2224,41 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   }
 
   Future<void> _writePluginCookiesToWebView({
+    required WebViewController controller,
     required Uri assetUri,
     required String? cookieHeader,
   }) async {
     final rawCookie = cookieHeader?.trim() ?? '';
     if (rawCookie.isEmpty || assetUri.host.isEmpty) return;
 
-    final cookieManager = WebViewCookieManager();
+    final windowsController = defaultTargetPlatform == TargetPlatform.windows &&
+            controller.platform is WindowsPlatformWebViewController
+        ? controller.platform as WindowsPlatformWebViewController
+        : null;
+    final cookieManager =
+        windowsController == null ? WebViewCookieManager() : null;
     for (final pair in rawCookie.split(';')) {
       final separator = pair.indexOf('=');
       if (separator <= 0) continue;
 
       final name = pair.substring(0, separator).trim();
       final value = pair.substring(separator + 1).trim();
-      if (name.isEmpty || value.isEmpty) continue;
+      if (name.isEmpty) continue;
 
-      await cookieManager.setCookie(
-        WebViewCookie(
-          name: name,
-          value: value,
-          domain: assetUri.host,
-          path: '/',
-        ),
+      final cookie = WebViewCookie(
+        name: name,
+        value: value,
+        domain: assetUri.host,
+        path: '/',
       );
+      if (windowsController != null) {
+        final written = await windowsController.setCookie(cookie);
+        if (!written) {
+          throw StateError('Windows WebView2 failed to write plugin cookie');
+        }
+      } else {
+        await cookieManager!.setCookie(cookie);
+      }
     }
   }
 
