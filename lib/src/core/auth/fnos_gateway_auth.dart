@@ -161,6 +161,11 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
               });
               _startSessionPolling();
             },
+            onUrlChange: (change) {
+              final url = change.url;
+              if (!mounted || url == null || url.isEmpty) return;
+              setState(() => _currentUrl = url);
+            },
             onWebResourceError: (error) {
               if (!mounted || error.isForMainFrame != true) return;
               setState(() {
@@ -168,27 +173,9 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
                 _error = error.description;
               });
             },
-            onNavigationRequest: (request) {
-              final uri = Uri.tryParse(request.url);
-              final scheme = uri?.scheme.toLowerCase();
-              if (scheme == 'http' || scheme == 'https') {
-                // FNID login intentionally redirects through fnos.net/fnid
-                // before returning to the user's FNID host. Keep every
-                // HTTP(S) redirect in the WebView.
-                if (mounted) {
-                  setState(() {
-                    _loading = true;
-                    _currentUrl = request.url;
-                  });
-                }
-                return NavigationDecision.navigate;
-              }
-              return NavigationDecision.prevent;
-            },
           ),
         )
-        // Let fnOS validate the FNID and perform its own redirect chain before
-        // the WebView reaches the target gateway host.
+        // Let the native WebView follow fnOS's JavaScript redirect chain.
         ..loadRequest(FnosGateway.fnidLoginUri(widget.fnId));
     } catch (error) {
       _error = error.toString();
