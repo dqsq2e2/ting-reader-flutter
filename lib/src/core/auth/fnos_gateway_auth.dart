@@ -37,6 +37,12 @@ class FnosGateway {
     return Uri.https(hostForFnId(fnId), '/');
   }
 
+  static Uri fnidLoginUri(String fnId) {
+    final host = hostForFnId(fnId);
+    final id = host.substring(0, host.length - '.fnos.net'.length);
+    return Uri.https('fnos.net', '/$id');
+  }
+
   static Uri fnosValidationUri() {
     return Uri.https('fnos.net', '/');
   }
@@ -177,7 +183,9 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
             },
           ),
         )
-        ..loadRequest(FnosGateway.originUri(widget.fnId));
+        // Let fnOS validate the FNID and perform its own redirect chain before
+        // the WebView reaches the target gateway host.
+        ..loadRequest(FnosGateway.fnidLoginUri(widget.fnId));
     } catch (error) {
       _error = error.toString();
     }
