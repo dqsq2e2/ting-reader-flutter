@@ -246,7 +246,7 @@ class AppState extends ChangeNotifier {
     ServerProfileMode mode = ServerProfileMode.direct,
     String fnId = '',
     String? gatewayCookie,
-    Future<String?> Function()? acquireGatewayCookie,
+    Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
   }) async {
     connectionError = null;
@@ -275,20 +275,15 @@ class AppState extends ChangeNotifier {
           rethrow;
         }
 
-        final refreshedCookie = await acquireGatewayCookie?.call();
-        if (refreshedCookie == null || refreshedCookie.trim().isEmpty) {
+        final refreshedLogin = await acquireGatewayLogin?.call();
+        if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
           throw StateError(textForLocale(
             '飞牛登录已取消或未完成',
             'fnOS login was cancelled or not completed',
           ));
         }
-        resolvedGatewayCookie = refreshedCookie.trim();
-        api.configure(
-          baseUrl: activeUrl,
-          token: null,
-          cookie: resolvedGatewayCookie,
-        );
-        map = await _loginToTingReader(username, password);
+        resolvedGatewayCookie = refreshedLogin.cookie.trim();
+        map = refreshedLogin.response;
       }
     } else {
       serverUrl = _normalizeOptionalServerUrl(server);

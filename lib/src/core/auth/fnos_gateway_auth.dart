@@ -110,11 +110,29 @@ class FnosGateway {
   }
 }
 
+/// Authentication data returned after both fnOS and TingReader login succeed.
+class FnosGatewayLoginResult {
+  const FnosGatewayLoginResult({
+    required this.cookie,
+    required this.response,
+  });
+
+  final String cookie;
+  final Map<String, dynamic> response;
+}
+
 /// A short-lived handoff result from the interactive fnOS login page.
 class FnidLoginPage extends StatefulWidget {
-  const FnidLoginPage({required this.fnId, super.key});
+  const FnidLoginPage({
+    required this.fnId,
+    required this.username,
+    required this.password,
+    super.key,
+  });
 
   final String fnId;
+  final String username;
+  final String password;
 
   @override
   State<FnidLoginPage> createState() => _FnidLoginPageState();
@@ -128,7 +146,9 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   bool _loading = true;
   bool _finishing = false;
   bool _appRequestStarted = false;
+  bool _webLoginAttempted = false;
   String? _gatewayCookie;
+  Completer<String>? _webLoginCompleter;
   Timer? _sessionPollTimer;
 
   @override
@@ -146,6 +166,10 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     try {
       _controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..addJavaScriptChannel(
+          'TingReaderLogin',
+          onMessageReceived: _handleWebLoginMessage,
+        )
         ..setNavigationDelegate(
           NavigationDelegate(
             onPageStarted: (url) {
@@ -307,6 +331,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
         return;
       }
       _gatewayCookie = cookieHeader;
+      await _writeGatewayCookiesToWebView(cookieHeader);
       _appRequestStarted = true;
       await _controller.loadRequest(
         FnosGateway.appUri(widget.fnId),
@@ -322,7 +347,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   }
 
   Future<void> _finishLogin({bool automatic = false}) async {
-    if (_finishing) return;
+    if (_finishing || _webLoginAttempted) return;
     if (!_isTingReaderPage || _loading) {
       if (!automatic && mounted) {
         setState(() {
@@ -352,15 +377,129 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
         if (!automatic) throw StateError(noSessionMessage);
         return;
       }
-      if (!mounted) return;
+      _webLoginAttempted = true;
       _sessionPollTimer?.cancel();
       _sessionPollTimer = null;
-      Navigator.of(context).pop(cookieHeader);
+      final response = await _loginToTingReaderInWebView();
+      if (!mounted) return;
+      Navigator.of(context).pop(
+        FnosGatewayLoginResult(cookie: cookieHeader, response: response),
+      );
     } catch (error) {
-      if (!mounted || automatic) return;
+      _webLoginAttempted = false;
+      if (!mounted) return;
       setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _finishing = false);
+    }
+  }
+
+  Future<void> _writeGatewayCookiesToWebView(String cookieHeader) async {
+    final domain = FnosGateway.hostForFnId(widget.fnId);
+    for (final pair in cookieHeader.split(';')) {
+      final separator = pair.indexOf('=');
+      if (separator <= 0) continue;
+      final name = pair.substring(0, separator).trim();
+      final value = pair.substring(separator + 1).trim();
+      if (name.isEmpty || value.isEmpty) continue;
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        try {
+          final written = await _webViewCookieChannel.invokeMethod<bool>(
+            'setCookie',
+            {
+              'url': 'https://$domain/',
+              'cookie': '$name=$value; Path=/',
+            },
+          );
+          if (written == true) continue;
+        } on MissingPluginException {
+          // Fall back to the platform cookie manager below.
+        } catch (_) {
+          // Fall back to the platform cookie manager below.
+        }
+      }
+      try {
+        await _cookieManager.setCookie(
+          WebViewCookie(
+            name: name,
+            value: value,
+            domain: domain,
+            path: '/',
+          ),
+        );
+      } catch (_) {
+        // The initial request still carries the raw Cookie header below.
+      }
+    }
+  }
+
+  void _handleWebLoginMessage(JavaScriptMessage message) {
+    final completer = _webLoginCompleter;
+    if (completer == null || completer.isCompleted) return;
+    completer.complete(message.message);
+  }
+
+  Future<Map<String, dynamic>> _loginToTingReaderInWebView() async {
+    final completer = Completer<String>();
+    _webLoginCompleter = completer;
+    final username = jsonEncode(widget.username);
+    final password = jsonEncode(widget.password);
+    final endpoint = jsonEncode('$_tingReaderPath/api/auth/login');
+
+    try {
+      await _controller.runJavaScript('''
+(async () => {
+  try {
+    const response = await fetch($endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: $username, password: $password}),
+    });
+    const body = await response.text();
+    TingReaderLogin.postMessage(JSON.stringify({status: response.status, body}));
+  } catch (error) {
+    TingReaderLogin.postMessage(JSON.stringify({error: String(error)}));
+  }
+})();
+''');
+
+      final rawMessage = await completer.future.timeout(
+        const Duration(seconds: 20),
+      );
+      final envelope = jsonDecode(rawMessage);
+      if (envelope is! Map) {
+        throw StateError('TingReader 登录返回了无效响应');
+      }
+      final error = envelope['error']?.toString();
+      if (error != null && error.isNotEmpty) {
+        throw StateError('TingReader 登录请求失败：$error');
+      }
+
+      final status = int.tryParse(envelope['status']?.toString() ?? '');
+      final rawBody = envelope['body']?.toString() ?? '';
+      if (status == null || status < 200 || status >= 300) {
+        throw StateError(
+          'TingReader 登录失败（HTTP ${status ?? 'unknown'}）',
+        );
+      }
+
+      final decodedBody = jsonDecode(rawBody);
+      if (decodedBody is! Map) {
+        throw StateError(
+          'WebView 中的飞牛会话未被 TingReader API 接受，请重新登录飞牛。',
+        );
+      }
+      final response = Map<String, dynamic>.from(decodedBody);
+      if (response['token']?.toString().isEmpty ?? true) {
+        throw StateError('TingReader 登录响应缺少 token');
+      }
+      if (response['user'] is! Map) {
+        throw StateError('TingReader 登录响应缺少 user');
+      }
+      return response;
+    } finally {
+      _webLoginCompleter = null;
     }
   }
 

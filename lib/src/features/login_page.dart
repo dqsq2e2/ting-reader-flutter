@@ -58,7 +58,7 @@ class _LoginPageState extends State<LoginPage> {
         mode: mode,
         fnId: fnId,
         gatewayCookie: gatewayCookie,
-        acquireGatewayCookie: mode == ServerProfileMode.fnosGateway
+        acquireGatewayLogin: mode == ServerProfileMode.fnosGateway
             ? () async {
                 if (mounted) {
                   setState(() {
@@ -68,13 +68,17 @@ class _LoginPageState extends State<LoginPage> {
                     );
                   });
                 }
-                final cookie = await _openFnidLogin(fnId);
+                final result = await _openFnidLogin(
+                  fnId,
+                  username: username,
+                  password: password,
+                );
                 if (mounted) {
                   setState(() {
                     _loginStage = context.l10n.startupConnecting;
                   });
                 }
-                return cookie;
+                return result;
               }
             : null,
         replaceProfile: replaceProfile,
@@ -95,11 +99,19 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<String?> _openFnidLogin(String fnId) {
-    return Navigator.of(context).push<String>(
+  Future<FnosGatewayLoginResult?> _openFnidLogin(
+    String fnId, {
+    required String username,
+    required String password,
+  }) {
+    return Navigator.of(context).push<FnosGatewayLoginResult>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => FnidLoginPage(fnId: fnId),
+        builder: (_) => FnidLoginPage(
+          fnId: fnId,
+          username: username,
+          password: password,
+        ),
       ),
     );
   }

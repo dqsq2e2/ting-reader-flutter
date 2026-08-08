@@ -42,6 +42,17 @@ class MainActivity : AudioServiceActivity() {
                         result.success(CookieManager.getInstance().getCookie(url) ?: "")
                     }
                 }
+                "setCookie" -> {
+                    val url = call.argument<String>("url")
+                    val cookie = call.argument<String>("cookie")
+                    if (url.isNullOrBlank() || cookie.isNullOrBlank()) {
+                        result.error("invalid_cookie", "Cookie URL and value are required", null)
+                    } else {
+                        CookieManager.getInstance().setCookie(url, cookie) { success ->
+                            result.success(success)
+                        }
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
