@@ -254,6 +254,7 @@ class AppState extends ChangeNotifier {
 
     Map<String, dynamic> map;
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
+    var usedWebGatewayLogin = false;
 
     if (mode == ServerProfileMode.fnosGateway) {
       final normalizedFnId = FnosGateway.hostForFnId(fnId);
@@ -284,6 +285,7 @@ class AppState extends ChangeNotifier {
         }
         resolvedGatewayCookie = refreshedLogin.cookie.trim();
         map = refreshedLogin.response;
+        usedWebGatewayLogin = true;
       }
     } else {
       serverUrl = _normalizeOptionalServerUrl(server);
@@ -306,6 +308,11 @@ class AppState extends ChangeNotifier {
     gatewayCookie =
         resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie;
     api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+
+    if (usedWebGatewayLogin) {
+      final verifiedUser = await api.get('/api/me');
+      user = User.fromJson(asMap(verifiedUser.data));
+    }
 
     await _prefs?.setString('server_url', serverUrl);
     await _prefs?.setString('local_server_url', localServerUrl);

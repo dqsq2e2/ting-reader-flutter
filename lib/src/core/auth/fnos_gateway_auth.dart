@@ -81,6 +81,22 @@ class FnosGateway {
     ]);
   }
 
+  static String mergeMissingCookieHeaders(String primary, String secondary) {
+    final existingNames = primary
+        .split(';')
+        .map((part) => part.trim().split('=').first.toLowerCase())
+        .where((name) => name.isNotEmpty)
+        .toSet();
+    final missing = secondary.split(';').where((part) {
+      final separator = part.indexOf('=');
+      if (separator <= 0) return false;
+      return !existingNames.contains(
+        part.substring(0, separator).trim().toLowerCase(),
+      );
+    });
+    return mergeCookieHeaders(primary, missing.join(';'));
+  }
+
   static bool hasGatewaySession(String cookieHeader) {
     final names = cookieHeader
         .split(';')
@@ -235,22 +251,22 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   }
 
   Future<String> _readGatewayCookie() async {
-    var cookieHeader = '';
-    final domains = <Uri>[
-      FnosGateway.originUri(widget.fnId),
-      FnosGateway.fnosValidationUri(),
-    ];
+    var targetCookieHeader = '';
+    var validationCookieHeader = '';
+    final targetHost = FnosGateway.hostForFnId(widget.fnId);
+    final targetDomains = <Uri>[FnosGateway.originUri(widget.fnId)];
     final currentUri = Uri.tryParse(_currentUrl);
     if (currentUri != null &&
         (currentUri.scheme.toLowerCase() == 'http' ||
-            currentUri.scheme.toLowerCase() == 'https')) {
-      domains.insert(0, currentUri);
+            currentUri.scheme.toLowerCase() == 'https') &&
+        currentUri.host.toLowerCase() == targetHost) {
+      targetDomains.insert(0, currentUri);
     }
-    for (final domain in domains) {
+    for (final domain in targetDomains) {
       try {
         final cookies = await _cookieManager.getCookies(domain: domain);
-        cookieHeader = FnosGateway.mergeCookieHeaders(
-          cookieHeader,
+        targetCookieHeader = FnosGateway.mergeCookieHeaders(
+          targetCookieHeader,
           FnosGateway.cookieHeader(cookies),
         );
       } catch (_) {
@@ -258,8 +274,8 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
       }
       // Android's adapter splits cookie values on every '=', which truncates
       // padded Base64 session tokens. Merge the platform's raw header last.
-      cookieHeader = FnosGateway.mergeCookieHeaders(
-        cookieHeader,
+      targetCookieHeader = FnosGateway.mergeCookieHeaders(
+        targetCookieHeader,
         await _readNativeCookie(domain),
       );
     }
@@ -267,8 +283,8 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     try {
       final rawDocumentCookie =
           await _controller.runJavaScriptReturningResult('document.cookie');
-      cookieHeader = FnosGateway.mergeCookieHeaders(
-        cookieHeader,
+      targetCookieHeader = FnosGateway.mergeMissingCookieHeaders(
+        targetCookieHeader,
         FnosGateway.cookieHeaderFromDocumentCookie(
           rawDocumentCookie.toString(),
         ),
@@ -276,7 +292,28 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     } catch (_) {
       // Keep the platform cookie result when JavaScript cookie access fails.
     }
-    return cookieHeader;
+
+    try {
+      final validationUri = FnosGateway.fnosValidationUri();
+      final cookies = await _cookieManager.getCookies(domain: validationUri);
+      validationCookieHeader = FnosGateway.mergeCookieHeaders(
+        validationCookieHeader,
+        FnosGateway.cookieHeader(cookies),
+      );
+      validationCookieHeader = FnosGateway.mergeCookieHeaders(
+        validationCookieHeader,
+        await _readNativeCookie(validationUri),
+      );
+    } catch (_) {
+      // The target FNID host is the authoritative cookie source.
+    }
+
+    // fnos.net may carry only relay metadata. It must never overwrite a
+    // token already issued for the concrete FNID host.
+    return FnosGateway.mergeMissingCookieHeaders(
+      targetCookieHeader,
+      validationCookieHeader,
+    );
   }
 
   Future<String> _readNativeCookie(Uri domain) async {
