@@ -56,9 +56,28 @@ class FnosGateway {
   }
 
   static String cookieHeader(Iterable<WebViewCookie> cookies) {
+    final selected = <String, WebViewCookie>{};
+    for (final cookie in cookies) {
+      if (!_isAcceptedCookieName(cookie.name) || cookie.value.isEmpty) {
+        continue;
+      }
+      final key = cookie.name.toLowerCase();
+      final current = selected[key];
+      if (current == null ||
+          _cookieSpecificity(cookie) > _cookieSpecificity(current)) {
+        selected[key] = cookie;
+      }
+    }
     return _filterCookiePairs(
-      cookies.map((cookie) => '${cookie.name}=${cookie.value}'),
+      selected.values.map((cookie) => '${cookie.name}=${cookie.value}'),
     );
+  }
+
+  static int _cookieSpecificity(WebViewCookie cookie) {
+    final domain = cookie.domain.startsWith('.')
+        ? cookie.domain.substring(1)
+        : cookie.domain;
+    return domain.length * 1000 + cookie.path.length;
   }
 
   static String cookieHeaderFromDocumentCookie(String rawCookie) {
@@ -106,23 +125,27 @@ class FnosGateway {
   }
 
   static String _filterCookiePairs(Iterable<String> pairs) {
-    const acceptedNames = {
-      'mode',
-      'language',
-      'fnos-token',
-      'entry-token',
-    };
     final values = <String, String>{};
     for (final pair in pairs) {
       final separator = pair.indexOf('=');
       if (separator <= 0) continue;
       final name = pair.substring(0, separator).trim();
       final value = pair.substring(separator + 1).trim();
-      if (acceptedNames.contains(name.toLowerCase()) && value.isNotEmpty) {
+      if (_isAcceptedCookieName(name) && value.isNotEmpty) {
         values[name.toLowerCase()] = '$name=$value';
       }
     }
     return values.values.join('; ');
+  }
+
+  static bool _isAcceptedCookieName(String name) {
+    const acceptedNames = {
+      'mode',
+      'language',
+      'fnos-token',
+      'entry-token',
+    };
+    return acceptedNames.contains(name.toLowerCase());
   }
 }
 

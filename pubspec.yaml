@@ -55,7 +55,9 @@ dependencies:
   url_launcher: ^6.3.2
   webview_flutter: ^4.14.1
   open_filex: ^4.7.0
-  webview_win_floating: ^3.0.3
+  # The local fork exposes WebView2 cookies for fnOS gateway API handoff.
+  webview_win_floating:
+    path: third_party/webview_win_floating
   lucide_icons_flutter: ^3.1.14+2
 
 dev_dependencies:
