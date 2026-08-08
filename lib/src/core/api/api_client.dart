@@ -208,7 +208,16 @@ class ApiClient {
     bool retrying = false,
   }) async {
     try {
-      return await request();
+      final response = await request();
+      if (_isHtmlFallbackForApi(response)) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+          message: 'API endpoint returned an HTML page',
+        );
+      }
+      return response;
     } on DioException catch (error) {
       if (retrying || !_shouldTryRecover(error) || recoverBaseUrl == null) {
         rethrow;
@@ -219,6 +228,21 @@ class ApiClient {
       configure(baseUrl: recovered, token: _token, cookie: _cookie);
       return _send(request, retrying: true);
     }
+  }
+
+  bool _isHtmlFallbackForApi(Response<dynamic> response) {
+    if (!response.requestOptions.uri.path.contains('/api/')) return false;
+
+    final contentType =
+        response.headers.value(Headers.contentTypeHeader)?.toLowerCase() ?? '';
+    if (contentType.contains('text/html')) return true;
+
+    final body = response.data;
+    if (body is! String) return false;
+    final trimmed = body.trimLeft().toLowerCase();
+    return trimmed.startsWith('<!doctype html') ||
+        trimmed.startsWith('<html') ||
+        trimmed.startsWith('<head');
   }
 
   bool _shouldTryRecover(DioException error) {

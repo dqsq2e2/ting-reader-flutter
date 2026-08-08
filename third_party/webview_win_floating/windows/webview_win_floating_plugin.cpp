@@ -333,6 +333,20 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     bounds.bottom = std::get<int>(arguments[flutter::EncodableValue("bottom")]);
     webview->updateBounds(bounds);
     result->Success(flutter::EncodableValue(true));
+  } else if (method_call.method_name().compare("setRequestHeaders") == 0) {
+    auto origin = std::get<std::string>(
+        arguments[flutter::EncodableValue("origin")]);
+    const auto encodedHeaders = std::get<flutter::EncodableMap>(
+        arguments[flutter::EncodableValue("headers")]);
+    std::map<std::wstring, std::wstring> headers;
+    for (const auto& entry : encodedHeaders) {
+      const auto name = std::get<std::string>(entry.first);
+      const auto value = std::get<std::string>(entry.second);
+      headers[utf8ToUtf16(name)] = utf8ToUtf16(value);
+    }
+    const auto originWide = utf8ToUtf16(origin);
+    auto hr = webview->setRequestHeaders(originWide.c_str(), headers);
+    result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
   } else if (method_call.method_name().compare("loadUrl") == 0) {
     auto url = std::get<std::string>(arguments[flutter::EncodableValue("url")]);
     auto hr = webview->loadUrl(toWideString(url));

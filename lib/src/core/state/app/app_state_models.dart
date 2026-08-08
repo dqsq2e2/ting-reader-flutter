@@ -37,7 +37,8 @@ class SavedServerProfile {
   bool get isFnosGateway => mode == ServerProfileMode.fnosGateway;
 
   factory SavedServerProfile.fromJson(Map<String, dynamic> json) {
-    final modeValue = json['mode']?.toString().toLowerCase();
+    final rawFnId = json['fn_id']?.toString().trim() ?? '';
+    final modeValue = json['mode']?.toString();
     return SavedServerProfile(
       serverUrl: json['server_url']?.toString() ?? '',
       localServerUrl: json['local_server_url']?.toString() ?? '',
@@ -45,10 +46,11 @@ class SavedServerProfile {
       username: json['username']?.toString() ?? '',
       password: json['password']?.toString() ?? '',
       label: json['label']?.toString() ?? '',
-      mode: modeValue == ServerProfileMode.fnosGateway.name
+      mode: _isFnosGatewayModeValue(modeValue) ||
+              (modeValue == null && rawFnId.isNotEmpty)
           ? ServerProfileMode.fnosGateway
           : ServerProfileMode.direct,
-      fnId: json['fn_id']?.toString() ?? '',
+      fnId: rawFnId,
       gatewayCookie: json['gateway_cookie']?.toString() ?? '',
       gatewayCookieAt:
           DateTime.tryParse(json['gateway_cookie_at']?.toString() ?? ''),

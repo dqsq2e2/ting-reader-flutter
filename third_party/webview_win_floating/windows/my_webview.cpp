@@ -5,6 +5,7 @@
 #include <map>
 #include <utility> // std::pair
 #include <regex>
+#include <cwchar>
 
 #include <windows.h>
 #include <WebView2.h>
@@ -49,6 +50,9 @@ public:
     void allowNavigationRequest(int requestId, bool isAllowed);
 
     HRESULT loadUrl(PCWSTR url);
+    HRESULT setRequestHeaders(
+        LPCWSTR origin,
+        const std::map<std::wstring, std::wstring>& headers);
     HRESULT loadHtmlString(PCWSTR html);
     HRESULT runJavascript(PCWSTR javaScriptString, bool ignoreResult, std::function<void(std::string)> callback);
 
@@ -95,6 +99,10 @@ private:
     MyWebViewCreateParams m_params;
     bool m_isNowGoBackForward = false;
 
+    bool isSameOriginRequest(const std::wstring& requestUri) const;
+    HRESULT applyRequestHeaders(
+        ICoreWebView2HttpRequestHeaders* requestHeaders) const;
+
     void __sendOnNavigationRequest(std::wstring utf16Url, std::string utf8Url, bool isNewWindow);
     void __sendOnPageStarted(std::string url, UINT64 navigationId);
 
@@ -104,6 +112,11 @@ private:
   	bool m_hasNavigationDecision = false;
 
     std::wstring nowLoadingUrl;
+
+    std::wstring m_requestHeaderOrigin;
+    std::map<std::wstring, std::wstring> m_requestHeaders;
+    bool m_hasRequestHeaderHandler = false;
+    EventRegistrationToken m_webResourceRequestedToken = {};
 
     template<class T> wil::com_ptr<T> getProfile();
 
@@ -196,7 +209,7 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                             args->get_IsRedirected(&isRedirected);
 
                             BOOL isPostMethod = FALSE;
-                            ICoreWebView2HttpRequestHeaders* headers = NULL;
+                            wil::com_ptr<ICoreWebView2HttpRequestHeaders> headers;
                             args->get_RequestHeaders(&headers);
                             if (headers != nullptr) {
                                 // http POST method always set "Content-Type" header,
@@ -205,6 +218,20 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                                 // If we skip the POST request below, all the headers will be discard,
                                 // so the POST request will be failed, and this makes most of the html login-form failed.
                                 headers->Contains(L"Content-Type", &isPostMethod);
+                                if (isSameOriginRequest(utf16Url)) {
+                                    const auto headerHr =
+                                        applyRequestHeaders(headers.get());
+                                    const auto queryPosition =
+                                        utf16Url.find_first_of(L"?#");
+                                    const auto safeUrl = utf16Url.substr(
+                                        0, queryPosition == std::wstring::npos
+                                               ? std::wstring::npos
+                                               : queryPosition);
+                                    std::cout
+                                        << "[webview_win_floating] navigation headers applied"
+                                        << " url=" << utf8_encode(safeUrl)
+                                        << " hr=" << headerHr << std::endl;
+                                }
                             }
 
                             bool userInitiated = true;
@@ -268,27 +295,36 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                             std::string url = m_navigationMap[navigationId];
                             m_navigationMap.erase(navigationId);
 
+                            int httpStatusCode = 0;
+                            wil::com_ptr<ICoreWebView2NavigationCompletedEventArgs> baseArgs = args;
+                            auto args2 = baseArgs.try_query<ICoreWebView2NavigationCompletedEventArgs2>();
+                            if (args2 != nullptr) {
+                                args2->get_HttpStatusCode(&httpStatusCode);
+                            }
                             BOOL success = FALSE;
                             args->get_IsSuccess(&success);
+                            COREWEBVIEW2_WEB_ERROR_STATUS webErrorStatus =
+                                COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+                            args->get_WebErrorStatus(&webErrorStatus);
+                            std::cout
+                                << "[webview_win_floating] navigation completed"
+                                << " url=" << url
+                                << " status=" << httpStatusCode
+                                << " success=" << (success ? 1 : 0)
+                                << " web_error=" << static_cast<int>(webErrorStatus)
+                                << std::endl;
+                            if (httpStatusCode >= 400) {
+                                params.onHttpError(url, httpStatusCode);
+                                params.onPageFinished(url);
+                                return S_OK;
+                            }
+
                             if (success) {
                                 params.onPageFinished(url);
                                 return S_OK;
                             }
 
-                            int errCode = 0;
-                            wil::com_ptr<ICoreWebView2NavigationCompletedEventArgs> _args = args;
-                            auto args2 = _args.query<ICoreWebView2NavigationCompletedEventArgs2>();
-                            args2->get_HttpStatusCode(&errCode);
-
-                            if (errCode != 0) { // no http status code found
-                                params.onHttpError(url, errCode);                                    
-                                params.onPageFinished(url);
-                                return S_OK;
-                            }
-
-                            COREWEBVIEW2_WEB_ERROR_STATUS webErrorStatus;
-                            args->get_WebErrorStatus(&webErrorStatus);
-                            errCode = webErrorStatus;
+                            int errCode = webErrorStatus;
 
                             // SSL certification error
                             switch (errCode) {
@@ -486,7 +522,13 @@ void MyWebViewImpl::grantPermission(int deferralId, BOOL isGranted)
 
 MyWebViewImpl::~MyWebViewImpl()
 {
-    m_pController->Close();
+    if (m_pWebview != nullptr && m_hasRequestHeaderHandler) {
+        m_pWebview->remove_WebResourceRequested(m_webResourceRequestedToken);
+        m_pWebview->RemoveWebResourceRequestedFilter(
+            L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+        m_hasRequestHeaderHandler = false;
+    }
+    if (m_pController != nullptr) m_pController->Close();
     std::cout << "[webview_win_floating] MyWebViewImpl::~MyWebViewImpl()" << std::endl;
 }
 
@@ -524,6 +566,107 @@ HRESULT MyWebViewImpl::loadUrl(LPCWSTR url)
 {
     nowLoadingUrl = url;
     return m_pWebview->Navigate(url);
+}
+
+bool MyWebViewImpl::isSameOriginRequest(
+    const std::wstring& requestUri) const
+{
+    if (m_requestHeaderOrigin.empty()) return false;
+
+    const size_t originLength = m_requestHeaderOrigin.length();
+    return requestUri == m_requestHeaderOrigin ||
+        (requestUri.length() > originLength &&
+         requestUri.compare(0, originLength, m_requestHeaderOrigin) == 0 &&
+         (requestUri[originLength] == L'/' ||
+          requestUri[originLength] == L'?'));
+}
+
+HRESULT MyWebViewImpl::applyRequestHeaders(
+    ICoreWebView2HttpRequestHeaders* requestHeaders) const
+{
+    if (requestHeaders == nullptr || m_requestHeaders.empty()) return S_OK;
+
+    HRESULT firstFailure = S_OK;
+    for (const auto& header : m_requestHeaders) {
+        const auto hr = requestHeaders->SetHeader(
+            header.first.c_str(), header.second.c_str());
+        if (FAILED(hr)) {
+            if (SUCCEEDED(firstFailure)) firstFailure = hr;
+            std::cerr << "[webview_win_floating] failed to set request header "
+                      << utf8_encode(header.first) << ", hr=" << hr << std::endl;
+        }
+    }
+    return firstFailure;
+}
+
+HRESULT MyWebViewImpl::setRequestHeaders(
+    LPCWSTR origin,
+    const std::map<std::wstring, std::wstring>& headers)
+{
+    m_requestHeaderOrigin = origin == nullptr ? L"" : origin;
+    m_requestHeaders = headers;
+    std::cout << "[webview_win_floating] setRequestHeaders origin="
+              << utf8_encode(m_requestHeaderOrigin)
+              << " count=" << m_requestHeaders.size() << " names=";
+    bool firstHeader = true;
+    for (const auto& header : m_requestHeaders) {
+        if (!firstHeader) std::cout << ",";
+        std::cout << utf8_encode(header.first);
+        firstHeader = false;
+    }
+    std::cout << std::endl;
+    if (m_hasRequestHeaderHandler) return S_OK;
+
+    HRESULT hr = m_pWebview->AddWebResourceRequestedFilter(
+        L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+    if (FAILED(hr)) return hr;
+
+    hr = m_pWebview->add_WebResourceRequested(
+        Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+            [this](ICoreWebView2* sender,
+                   ICoreWebView2WebResourceRequestedEventArgs* args)
+                -> HRESULT {
+              if (m_requestHeaderOrigin.empty() || m_requestHeaders.empty()) {
+                return S_OK;
+              }
+
+              wil::com_ptr<ICoreWebView2WebResourceRequest> request;
+              HRESULT requestHr = args->get_Request(&request);
+              if (FAILED(requestHr) || request == nullptr) return S_OK;
+
+              wil::unique_cotaskmem_string uri;
+              requestHr = request->get_Uri(&uri);
+              if (FAILED(requestHr) || uri.get() == nullptr) return S_OK;
+
+              const std::wstring requestUri(uri.get());
+              if (!isSameOriginRequest(requestUri)) return S_OK;
+
+              wil::com_ptr<ICoreWebView2HttpRequestHeaders> requestHeaders;
+              requestHr = request->get_Headers(&requestHeaders);
+              if (FAILED(requestHr) || requestHeaders == nullptr) return S_OK;
+
+              const auto headerHr = applyRequestHeaders(requestHeaders.get());
+              BOOL hasCookie = FALSE;
+              BOOL hasAuthorization = FALSE;
+              requestHeaders->Contains(L"Cookie", &hasCookie);
+              requestHeaders->Contains(L"Authorization", &hasAuthorization);
+              const auto queryPosition = requestUri.find_first_of(L"?#");
+              const auto safeUri = requestUri.substr(
+                  0, queryPosition == std::wstring::npos
+                         ? std::wstring::npos
+                         : queryPosition);
+              std::cout << "[webview_win_floating] web resource headers applied"
+                        << " url=" << utf8_encode(safeUri)
+                        << " hr=" << headerHr
+                        << " cookie=" << (hasCookie ? 1 : 0)
+                        << " authorization=" << (hasAuthorization ? 1 : 0)
+                        << std::endl;
+              return S_OK;
+            })
+            .Get(),
+        &m_webResourceRequestedToken);
+    if (SUCCEEDED(hr)) m_hasRequestHeaderHandler = true;
+    return hr;
 }
 
 HRESULT MyWebViewImpl::loadHtmlString(LPCWSTR html)
@@ -812,7 +955,47 @@ HRESULT MyWebViewImpl::setCookie(LPCWSTR name, LPCWSTR value, LPCWSTR domain,
     wil::com_ptr<ICoreWebView2Cookie> cookie;
     hr = cookieManager->CreateCookie(name, value, domain, path, &cookie);
     if (FAILED(hr) || cookie == nullptr) return FAILED(hr) ? hr : E_FAIL;
-    return cookieManager->AddOrUpdateCookie(cookie.get());
+
+    const std::wstring domainValue =
+        domain == nullptr ? std::wstring() : std::wstring(domain);
+    const std::wstring fnosSuffix = L".fnos.net";
+    const bool isFnosDomain =
+        domainValue == L"fnos.net" ||
+        (domainValue.length() > fnosSuffix.length() &&
+         domainValue.compare(
+             domainValue.length() - fnosSuffix.length(),
+             fnosSuffix.length(),
+             fnosSuffix) == 0);
+    if (isFnosDomain) {
+        // fnOS hands these cookies across the fnos.net / <fnid>.fnos.net
+        // redirect chain. Match the browser cookie attributes instead of
+        // leaving WebView2's default Lax/insecure session attributes.
+        cookie->put_IsSecure(TRUE);
+        cookie->put_SameSite(COREWEBVIEW2_COOKIE_SAME_SITE_KIND_NONE);
+    }
+
+    const auto addHr = cookieManager->AddOrUpdateCookie(cookie.get());
+    if (SUCCEEDED(addHr)) {
+        const std::wstring cookieUri =
+            L"https://" + std::wstring(domain == nullptr ? L"" : domain) +
+            L"/";
+        cookieManager->GetCookies(
+            cookieUri.c_str(),
+            Callback<ICoreWebView2GetCookiesCompletedHandler>(
+                [](HRESULT result, ICoreWebView2CookieList* cookieList)
+                    -> HRESULT {
+                  UINT count = 0;
+                  if (SUCCEEDED(result) && cookieList != nullptr) {
+                    cookieList->get_Count(&count);
+                  }
+                  std::cout << "[webview_win_floating] cookie manager verify"
+                            << " hr=" << result << " count=" << count
+                            << std::endl;
+                  return S_OK;
+                })
+                .Get());
+    }
+    return addHr;
 }
 
 HRESULT MyWebViewImpl::suspend()

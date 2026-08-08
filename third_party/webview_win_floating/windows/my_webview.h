@@ -2,6 +2,7 @@
 
 #include <string>
 #include <functional>
+#include <map>
 #include <vector>
 
 #include <windows.h>
@@ -57,6 +58,9 @@ public:
 	virtual void allowNavigationRequest(int requestId, bool isAllowed) = 0;	
 
 	virtual HRESULT loadUrl(LPCWSTR url) = 0;
+	virtual HRESULT setRequestHeaders(
+		LPCWSTR origin,
+		const std::map<std::wstring, std::wstring>& headers) = 0;
 	virtual HRESULT loadHtmlString(LPCWSTR html) = 0;
 	virtual HRESULT runJavascript(LPCWSTR javaScriptString, bool ignoreResult = true, std::function<void(std::string)> callback = NULL) = 0;
 

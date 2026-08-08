@@ -19,6 +19,32 @@ class _LoginPageState extends State<LoginPage> {
   bool _loading = false;
   String? _error;
   String? _loginStage;
+  bool _automaticGatewayLoginStarted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tryAutomaticGatewayLogin();
+    });
+  }
+
+  Future<void> _tryAutomaticGatewayLogin() async {
+    if (!mounted || _automaticGatewayLoginStarted) return;
+    final appState = AppScope.appOf(context);
+    if (!appState.needsGatewayLogin) return;
+    final profile = appState.savedGatewayProfile;
+    if (profile == null) return;
+    _automaticGatewayLoginStarted = true;
+    // The marker is set only after the cached gateway session has failed
+    // validation. Do not send that same stale cookie once more; go straight
+    // into the fnOS login flow and obtain a fresh session.
+    await _loginWithProfile(
+      appState.needsGatewayLogin
+          ? profile.copyWith(gatewayCookie: '')
+          : profile,
+    );
+  }
 
   Future<void> _loginWithProfile(SavedServerProfile profile) async {
     await _login(

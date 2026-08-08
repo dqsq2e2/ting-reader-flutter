@@ -2140,6 +2140,15 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                   }
                   _pageLoaded = true;
                 },
+                onHttpError: (error) {
+                  if (!mounted) return;
+                  final statusCode = error.response?.statusCode;
+                  setState(() {
+                    _error = statusCode == null
+                        ? 'Plugin UI request failed'
+                        : 'Plugin UI request failed: HTTP $statusCode';
+                  });
+                },
                 onWebResourceError: (error) {
                   if (!mounted || error.isForMainFrame != true) return;
                   setState(() => _error = error.description);

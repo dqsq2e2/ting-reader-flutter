@@ -84,7 +84,8 @@ class MethodChannelWebviewWinFloating extends WebviewWinFloatingPlatform {
             url: url,
             errorCode: errCode,
             description: errType,
-            errorType: WebResourceErrorType.values.byName(errType));
+            errorType: WebResourceErrorType.values.byName(errType),
+            isForMainFrame: true);
         controller.notifyOnWebResourceError_(error);
       } else if (call.method == "onUrlChange") {
         String url = call.arguments["url"]!;
@@ -188,6 +189,20 @@ class MethodChannelWebviewWinFloating extends WebviewWinFloatingPlatform {
       "webviewId": webviewId,
       "url": url,
     });
+  }
+
+  @override
+  Future<bool> setRequestHeaders(
+    int webviewId, {
+    required String origin,
+    required Map<String, String> headers,
+  }) async {
+    return await methodChannel.invokeMethod<bool>('setRequestHeaders', {
+          "webviewId": webviewId,
+          "origin": origin,
+          "headers": headers,
+        }) ??
+        false;
   }
 
   @override

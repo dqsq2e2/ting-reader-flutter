@@ -15,6 +15,17 @@ import '../utils/local_network.dart';
 
 part 'app/app_state_models.dart';
 
+bool _isFnosGatewayModeValue(Object? value) {
+  final normalized = value
+          ?.toString()
+          .trim()
+          .toLowerCase()
+          .replaceAll('_', '')
+          .replaceAll('-', '') ??
+      '';
+  return normalized == 'fnosgateway' || normalized == 'gateway';
+}
+
 class AppState extends ChangeNotifier {
   final ApiClient api = ApiClient();
   late final PluginCapabilitiesApi pluginCapabilities =
@@ -28,6 +39,7 @@ class AppState extends ChangeNotifier {
   static const _serverModePrefsKey = 'server_mode';
   static const _fnIdPrefsKey = 'fn_id';
   static const _gatewayCookiePrefsKey = 'gateway_cookie';
+  static const _gatewayReloginRequiredPrefsKey = 'gateway_relogin_required';
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'resume_after_interruption',
@@ -47,6 +59,7 @@ class AppState extends ChangeNotifier {
   ServerProfileMode serverMode = ServerProfileMode.direct;
   String fnId = '';
   String? gatewayCookie;
+  bool needsGatewayLogin = false;
   Map<String, dynamic> settings = {};
   Locale? locale;
   String? connectionError;
@@ -56,9 +69,32 @@ class AppState extends ChangeNotifier {
   bool resolvingRedirect = false;
   int _pluginExtensionRevision = 0;
 
-  bool get isAuthenticated => (token != null && user != null) || offlineMode;
+  bool get isAuthenticated {
+    final currentToken = token?.trim() ?? '';
+    final currentUser = user;
+    final hasValidUser = currentUser != null &&
+        currentUser.id.trim().isNotEmpty &&
+        currentUser.username.trim().isNotEmpty &&
+        currentUser.role.trim().isNotEmpty;
+    return (currentToken.isNotEmpty && hasValidUser) || offlineMode;
+  }
+
   bool get isAdmin => user?.isAdmin ?? false;
   int get pluginExtensionRevision => _pluginExtensionRevision;
+
+  SavedServerProfile? get savedGatewayProfile {
+    final normalizedFnId = fnId.trim().toLowerCase();
+    if (serverMode != ServerProfileMode.fnosGateway || normalizedFnId.isEmpty) {
+      return null;
+    }
+    for (final profile in savedServers) {
+      if (profile.mode == ServerProfileMode.fnosGateway &&
+          profile.fnId.trim().toLowerCase() == normalizedFnId) {
+        return profile;
+      }
+    }
+    return null;
+  }
 
   ThemeMode get themeMode {
     final theme = (settings['theme'] ?? '').toString();
@@ -94,6 +130,8 @@ class AppState extends ChangeNotifier {
     serverMode = _serverProfileModeFromPrefs();
     fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
     gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
+    needsGatewayLogin =
+        _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
     token = _prefs!.getString('auth_token');
     savedServers = _loadSavedServers();
     _loadLocalLanguage();
@@ -105,10 +143,20 @@ class AppState extends ChangeNotifier {
     final rawUser = _prefs!.getString('user');
     if (rawUser != null) {
       try {
-        user = User.fromJson(asMap(jsonDecode(rawUser)));
+        user = _requireAuthenticatedUser(jsonDecode(rawUser));
       } catch (_) {
         user = null;
       }
+    }
+
+    if (serverMode == ServerProfileMode.fnosGateway &&
+        fnId.trim().isNotEmpty &&
+        (token == null || user == null) &&
+        (gatewayCookie?.trim().isNotEmpty ?? false)) {
+      // Migrate installations that lost the login marker before automatic
+      // gateway re-authentication was persisted.
+      needsGatewayLogin = true;
+      await _prefs!.setBool(_gatewayReloginRequiredPrefsKey, true);
     }
 
     if (serverMode == ServerProfileMode.fnosGateway && fnId.isNotEmpty) {
@@ -144,6 +192,8 @@ class AppState extends ChangeNotifier {
       serverMode = _serverProfileModeFromPrefs();
       fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
       gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
+      needsGatewayLogin =
+          serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty;
       savedServers = _loadSavedServers();
       await _prefs?.remove('auth_token');
       await _prefs?.remove('user');
@@ -160,6 +210,11 @@ class AppState extends ChangeNotifier {
     user = null;
     offlineMode = false;
     connectionError = null;
+    if (needsGatewayLogin) {
+      await _prefs?.setBool(_gatewayReloginRequiredPrefsKey, true);
+    } else {
+      await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
+    }
     _loadCachedSettings();
     api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
     notifyListeners();
@@ -180,14 +235,17 @@ class AppState extends ChangeNotifier {
       } else {
         final res = await api.get('/api/me');
         checkCancelled();
-        user = User.fromJson(asMap(res.data));
+        user = _requireAuthenticatedUser(res.data);
       }
       checkCancelled();
       await _prefs?.setString('user', user!.encode());
+      needsGatewayLogin = false;
+      await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
     } on _StartupCancelled {
       rethrow;
     } catch (_) {
       if (serverMode == ServerProfileMode.fnosGateway) {
+        needsGatewayLogin = fnId.trim().isNotEmpty;
         token = null;
         user = null;
         api.configure(
@@ -197,6 +255,12 @@ class AppState extends ChangeNotifier {
         );
         await _prefs?.remove('auth_token');
         await _prefs?.remove('user');
+        if (needsGatewayLogin) {
+          await _prefs?.setBool(_gatewayReloginRequiredPrefsKey, true);
+        }
+      } else {
+        needsGatewayLogin = false;
+        await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
       }
       connectionError = textForLocale(
         '连接服务器失败或登录已过期',
@@ -226,7 +290,7 @@ class AppState extends ChangeNotifier {
       checkCancelled();
       final map = asMap(res.data);
       token = map['token']?.toString() ?? currentToken;
-      user = User.fromJson(asMap(map['user']));
+      user = _requireAuthenticatedUser(map['user']);
       api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
       await _prefs?.setString('auth_token', token ?? '');
     } on DioException catch (error) {
@@ -234,7 +298,7 @@ class AppState extends ChangeNotifier {
       if (status != 404 && status != 405) rethrow;
       final res = await api.get('/api/me');
       checkCancelled();
-      user = User.fromJson(asMap(res.data));
+      user = _requireAuthenticatedUser(res.data);
     }
   }
 
@@ -303,21 +367,16 @@ class AppState extends ChangeNotifier {
     }
 
     token = map['token']?.toString();
-    user = User.fromJson(asMap(map['user']));
+    user = _requireAuthenticatedUser(map['user']);
     serverMode = mode;
     gatewayCookie =
         resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie;
     api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+    needsGatewayLogin = false;
 
     if (usedWebGatewayLogin) {
       final verifiedUser = await api.get('/api/me');
-      final verifiedMap = asMap(verifiedUser.data);
-      if (verifiedMap['id'] == null ||
-          verifiedMap['username'] == null ||
-          verifiedMap['role'] == null) {
-        throw StateError('网关会话返回了无效的用户信息');
-      }
-      user = User.fromJson(verifiedMap);
+      user = _requireAuthenticatedUser(verifiedUser.data);
     }
 
     await _prefs?.setString('server_url', serverUrl);
@@ -335,6 +394,7 @@ class AppState extends ChangeNotifier {
     }
     await _prefs?.setString('auth_token', token ?? '');
     await _prefs?.setString('user', user!.encode());
+    await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
     await _saveServerProfile(
       SavedServerProfile(
         serverUrl: serverUrl,
@@ -367,14 +427,39 @@ class AppState extends ChangeNotifier {
     );
     final map = asMap(response.data);
     final loginToken = map['token']?.toString().trim() ?? '';
-    if (loginToken.isEmpty || map['user'] is! Map) {
+    if (loginToken.isEmpty) {
       throw const _GatewaySessionExpired();
     }
+    _requireAuthenticatedUser(map['user']);
     return map;
+  }
+
+  User _requireAuthenticatedUser(Object? value) {
+    final map = asMap(value);
+    final id = map['id']?.toString().trim() ?? '';
+    final username = map['username']?.toString().trim() ?? '';
+    final role = map['role']?.toString().trim() ?? '';
+    if (id.isEmpty || username.isEmpty || role.isEmpty) {
+      // fnOS Connect can return the frontend HTML with HTTP 200 when its
+      // gateway session has expired. Do not turn that HTML into an empty User;
+      // it must follow the normal gateway re-login path.
+      throw const _GatewaySessionExpired();
+    }
+    return User.fromJson(map);
   }
 
   bool _shouldRefreshGatewayCookie(Object error) {
     if (error is! DioException) return true;
+    final status = error.response?.statusCode;
+    if (status == 301 ||
+        status == 302 ||
+        status == 303 ||
+        status == 307 ||
+        status == 308 ||
+        status == 401 ||
+        status == 403) {
+      return true;
+    }
     final data = error.response?.data;
     if (data is Map && data['error'] != null) return false;
     return true;
@@ -545,9 +630,12 @@ class AppState extends ChangeNotifier {
     offlineMode = false;
     connectionError = null;
     settings = {};
+    needsGatewayLogin = false;
     api.configure(baseUrl: activeUrl, token: null, cookie: null);
     await _prefs?.remove('auth_token');
     await _prefs?.remove('user');
+    await _prefs?.remove(_gatewayCookiePrefsKey);
+    await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
     notifyListeners();
   }
 
@@ -870,8 +958,8 @@ class AppState extends ChangeNotifier {
   }
 
   ServerProfileMode _serverProfileModeFromPrefs() {
-    final value = _prefs?.getString(_serverModePrefsKey)?.toLowerCase();
-    return value == ServerProfileMode.fnosGateway.name
+    final value = _prefs?.getString(_serverModePrefsKey);
+    return _isFnosGatewayModeValue(value)
         ? ServerProfileMode.fnosGateway
         : ServerProfileMode.direct;
   }

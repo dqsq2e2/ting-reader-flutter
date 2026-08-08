@@ -72,6 +72,14 @@ abstract class WebviewWinFloatingPlatform extends PlatformInterface {
     throw UnimplementedError();
   }
 
+  Future<bool> setRequestHeaders(
+    int webviewId, {
+    required String origin,
+    required Map<String, String> headers,
+  }) {
+    throw UnimplementedError();
+  }
+
   Future<bool> setCookieForWebView(
     int webviewId, {
     required String name,

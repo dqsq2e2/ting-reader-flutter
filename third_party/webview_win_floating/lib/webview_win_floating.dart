@@ -349,7 +349,7 @@ class WinWebViewController {
   }
 
   void notifyOnHttpError_(String url, int errorCode) {
-    if (_navigationDelegate.onPageFinished != null) {
+    if (_navigationDelegate.onHttpError != null) {
       var uri = Uri.parse(url);
       var request = WebResourceRequest(uri: uri);
       var response = WebResourceResponse(uri: uri, statusCode: errorCode);
@@ -490,12 +490,30 @@ class WinWebViewController {
     Map<String, String> headers = const <String, String>{},
     Uint8List? body,
   }) async {
-    if (method != LoadRequestMethod.get || headers.isNotEmpty || body != null) {
+    if (method != LoadRequestMethod.get || body != null) {
       log(
-        "[webview_win_floating] loadRequest() doesn't support headers / body / post / update / delete",
+        "[webview_win_floating] loadRequest() doesn't support body / post / update / delete",
       );
     }
     await _initFuture;
+
+    final uri = Uri.tryParse(url);
+    final isHttpOrigin = uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https') &&
+        uri.host.isNotEmpty;
+    if (isHttpOrigin) {
+      final configured =
+          await WebviewWinFloatingPlatform.instance.setRequestHeaders(
+        _webviewId,
+        origin: uri.origin,
+        headers: headers,
+      );
+      if (!configured) {
+        throw StateError(
+            'Windows WebView2 failed to configure request headers');
+      }
+    }
+
     await WebviewWinFloatingPlatform.instance.loadUrl(_webviewId, url);
   }
 
