@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,7 @@ import '../../core/document_reader/document_reader.dart';
 import '../../core/models/_helpers.dart' show asMap;
 import '../../core/plugin_extensions/registry.dart';
 import '../../core/plugin_extensions/types.dart';
+import '../../core/state/app_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/external_links.dart';
 import '../../core/utils/locale.dart';
@@ -2024,6 +2026,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   bool _unsupported = false;
   bool _pageLoaded = false;
   String? _appliedThemeSignature;
+  int _loadGeneration = 0;
 
   @override
   void initState() {
@@ -2046,6 +2049,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   }
 
   void _initialize() {
+    final generation = ++_loadGeneration;
     final entry = widget.extension.entry;
     if (entry == null) {
       setState(() {
@@ -2136,17 +2140,6 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           onMessageReceived: _handleBridgeMessage,
         );
       controller = nextController;
-      if (loadAssetAsTopLevel) {
-        controller.loadRequest(Uri.parse(assetUrl));
-      } else {
-        controller.loadHtmlString(
-          _pluginWebContainerHtml(
-            initPayload: initPayload,
-            assetUrl: assetUrl,
-          ),
-          baseUrl: app.api.baseUrl,
-        );
-      }
     } catch (error) {
       setState(() {
         _controller = null;
@@ -2161,6 +2154,83 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       _error = null;
       _unsupported = false;
     });
+
+    unawaited(
+      _loadPluginWebView(
+        controller: controller,
+        assetUrl: assetUrl,
+        app: app,
+        loadAssetAsTopLevel: loadAssetAsTopLevel,
+        initPayload: initPayload,
+        generation: generation,
+      ),
+    );
+  }
+
+  Future<void> _loadPluginWebView({
+    required WebViewController controller,
+    required String assetUrl,
+    required AppState app,
+    required bool loadAssetAsTopLevel,
+    required String initPayload,
+    required int generation,
+  }) async {
+    try {
+      // The custom Windows/Linux implementation creates the native WebView
+      // asynchronously. Awaiting a controller operation makes sure its cookie
+      // store exists before we inject the fnOS gateway session.
+      await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+
+      if (loadAssetAsTopLevel) {
+        final assetUri = Uri.parse(assetUrl);
+        await _writePluginCookiesToWebView(
+          assetUri: assetUri,
+          cookieHeader: app.api.cookie,
+        );
+        await controller.loadRequest(
+          assetUri,
+          headers: app.api.authHeaders,
+        );
+      } else {
+        await controller.loadHtmlString(
+          _pluginWebContainerHtml(
+            initPayload: initPayload,
+            assetUrl: assetUrl,
+          ),
+          baseUrl: app.api.baseUrl,
+        );
+      }
+    } catch (error) {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _writePluginCookiesToWebView({
+    required Uri assetUri,
+    required String? cookieHeader,
+  }) async {
+    final rawCookie = cookieHeader?.trim() ?? '';
+    if (rawCookie.isEmpty || assetUri.host.isEmpty) return;
+
+    final cookieManager = WebViewCookieManager();
+    for (final pair in rawCookie.split(';')) {
+      final separator = pair.indexOf('=');
+      if (separator <= 0) continue;
+
+      final name = pair.substring(0, separator).trim();
+      final value = pair.substring(separator + 1).trim();
+      if (name.isEmpty || value.isEmpty) continue;
+
+      await cookieManager.setCookie(
+        WebViewCookie(
+          name: name,
+          value: value,
+          domain: assetUri.host,
+          path: '/',
+        ),
+      );
+    }
   }
 
   void _syncPluginTheme() {
