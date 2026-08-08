@@ -7,6 +7,7 @@
 #include <functional>
 #include <string>
 #include <map>
+#include <vector>
 
 typedef struct RECT {
     int left, top, right, bottom;
@@ -35,6 +36,17 @@ typedef struct _JsChannelInfo {
 	MyWebViewCreateParams *params;
 	WebKitUserScript *initScript;
 } _JsChannelInfo;
+
+struct WebViewCookieData {
+    std::string name;
+    std::string value;
+    std::string domain;
+    std::string path;
+};
+
+using WebViewCookieCallback =
+    std::function<void(bool, std::vector<WebViewCookieData>)>;
+using WebViewCookieWriteCallback = std::function<void(bool)>;
 
 class MyWebView {
 public:
@@ -78,6 +90,9 @@ public:
 
 	void clearCache();
 	void clearCookies();
+	void getCookies(const gchar *url, WebViewCookieCallback callback);
+	void setCookie(const gchar *name, const gchar *value, const gchar *domain,
+	               const gchar *path, WebViewCookieWriteCallback callback);
 
 	void suspend();
 	void resume();

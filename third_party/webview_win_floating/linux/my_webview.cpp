@@ -1,5 +1,7 @@
 #include "my_webview.h"
 
+#include <libsoup/soup.h>
+
 GtkWidget* MyWebView::getWidget() {
     return m_webview;
 }
@@ -478,6 +480,101 @@ void MyWebView::clearCookies() {
     // no api to clear cookies only in webkt2gtk...
     // webkit_cookie_manager_delete_all_cookies() is deprecated
     clearCache();
+}
+
+namespace {
+
+WebKitCookieManager *cookieManagerFor(WebKitWebView *webview) {
+    auto *context = webkit_web_view_get_context(webview);
+    auto *data_manager = webkit_web_context_get_website_data_manager(context);
+    return webkit_website_data_manager_get_cookie_manager(data_manager);
+}
+
+struct CookieReadContext {
+    WebKitCookieManager *manager;
+    WebViewCookieCallback callback;
+};
+
+void onCookiesReady(GObject *source, GAsyncResult *result, gpointer user_data) {
+    auto *context = static_cast<CookieReadContext *>(user_data);
+    GError *error = nullptr;
+    auto *cookies = webkit_cookie_manager_get_cookies_finish(
+        context->manager, result, &error);
+    std::vector<WebViewCookieData> values;
+
+    if (error == nullptr && cookies != nullptr) {
+        for (auto *item = cookies; item != nullptr; item = item->next) {
+            auto *cookie = static_cast<SoupCookie *>(item->data);
+            if (cookie == nullptr) continue;
+            values.push_back({
+                soup_cookie_get_name(cookie),
+                soup_cookie_get_value(cookie),
+                soup_cookie_get_domain(cookie),
+                soup_cookie_get_path(cookie),
+            });
+        }
+    }
+
+    if (cookies != nullptr) {
+        g_list_free_full(cookies, reinterpret_cast<GDestroyNotify>(soup_cookie_free));
+    }
+    const auto success = error == nullptr;
+    if (error != nullptr) g_error_free(error);
+
+    context->callback(success, std::move(values));
+    delete context;
+}
+
+struct CookieWriteContext {
+    WebKitCookieManager *manager;
+    SoupCookie *cookie;
+    WebViewCookieWriteCallback callback;
+};
+
+void onCookieAdded(GObject *source, GAsyncResult *result, gpointer user_data) {
+    auto *context = static_cast<CookieWriteContext *>(user_data);
+    GError *error = nullptr;
+    const auto success = webkit_cookie_manager_add_cookie_finish(
+        context->manager, result, &error);
+    const auto completed = success && error == nullptr;
+    if (error != nullptr) g_error_free(error);
+    soup_cookie_free(context->cookie);
+    context->callback(completed);
+    delete context;
+}
+
+} // namespace
+
+void MyWebView::getCookies(const gchar *url, WebViewCookieCallback callback) {
+    auto *manager = cookieManagerFor(WEBKIT_WEB_VIEW(m_webview));
+    if (manager == nullptr) {
+        callback(false, {});
+        return;
+    }
+
+    auto *context = new CookieReadContext{manager, std::move(callback)};
+    webkit_cookie_manager_get_cookies(
+        manager, url, nullptr, onCookiesReady, context);
+}
+
+void MyWebView::setCookie(const gchar *name, const gchar *value,
+                          const gchar *domain, const gchar *path,
+                          WebViewCookieWriteCallback callback) {
+    auto *manager = cookieManagerFor(WEBKIT_WEB_VIEW(m_webview));
+    auto *cookie = soup_cookie_new(name, value, domain, path, -1);
+    if (manager == nullptr || cookie == nullptr) {
+        if (cookie != nullptr) soup_cookie_free(cookie);
+        callback(false);
+        return;
+    }
+
+    auto *context = new CookieWriteContext{
+        manager,
+        cookie,
+        std::move(callback),
+    };
+    webkit_cookie_manager_add_cookie(
+        manager, cookie, nullptr, onCookieAdded, context);
 }
 
 void MyWebView::suspend() {

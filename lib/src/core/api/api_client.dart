@@ -30,6 +30,24 @@ class ApiClient {
   String? get cookie => _cookie;
   Map<String, String> get clientHeaders => _clientHeaders;
 
+  /// Headers required by native media clients as well as ordinary API calls.
+  ///
+  /// Unlike Dio, native audio backends do not share its default headers or
+  /// cookie jar, so expose the complete authenticated set explicitly.
+  Map<String, String> get authHeaders {
+    final headers = <String, String>{
+      'Accept-Language': _languageCode,
+      ..._clientHeaders,
+    };
+    if (_token != null && _token!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    if (_cookie != null && _cookie!.isNotEmpty) {
+      headers['Cookie'] = _cookie!;
+    }
+    return Map.unmodifiable(headers);
+  }
+
   void configure({required String baseUrl, String? token, String? cookie}) {
     _baseUrl = normalizeServerUrl(baseUrl);
     _token = token;

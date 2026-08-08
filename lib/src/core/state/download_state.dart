@@ -585,8 +585,7 @@ class DownloadState extends ChangeNotifier {
     var receivedThisRequest = 0;
     try {
       final headers = <String, dynamic>{
-        if (appState.token != null && appState.token!.isNotEmpty)
-          'Authorization': 'Bearer ${appState.token}',
+        ...appState.api.authHeaders,
         if (existingBytes > 0) 'Range': 'bytes=$existingBytes-',
       };
       final response = await _dio.get<ResponseBody>(
@@ -830,8 +829,7 @@ class DownloadState extends ChangeNotifier {
 
     try {
       final headers = <String, dynamic>{
-        if (appState.token != null && appState.token!.isNotEmpty)
-          'Authorization': 'Bearer ${appState.token}',
+        ...appState.api.authHeaders,
       };
       final response = await _dio.get<List<int>>(
         source,

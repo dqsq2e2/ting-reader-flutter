@@ -71,6 +71,45 @@ void setNotImplementedResult(FlMethodCall* method_call) {
   fl_method_call_respond(method_call, response, NULL);
 }
 
+MyWebView* findWebview(WebviewWinFloatingPlugin* self, FlValue* args) {
+  auto *id_value = fl_value_lookup_string(args, "webviewId");
+  if (id_value != nullptr) {
+    const auto webview_id = fl_value_get_int(id_value);
+    auto *webview = static_cast<MyWebView *>(g_hash_table_lookup(
+        self->webviewMap, GINT_TO_POINTER(webview_id)));
+    if (webview != nullptr) return webview;
+  }
+
+  GHashTableIter iter;
+  gpointer key = nullptr;
+  gpointer value = nullptr;
+  g_hash_table_iter_init(&iter, self->webviewMap);
+  if (g_hash_table_iter_next(&iter, &key, &value)) {
+    return static_cast<MyWebView *>(value);
+  }
+  return nullptr;
+}
+
+void setCookieListResult(FlMethodCall* method_call,
+                         const std::vector<WebViewCookieData>& cookies) {
+  g_autoptr(FlValue) list = fl_value_new_list();
+  for (const auto& cookie : cookies) {
+    auto *map = fl_value_new_map();
+    fl_value_set(map, fl_value_new_string("name"),
+                 fl_value_new_string(cookie.name.c_str()));
+    fl_value_set(map, fl_value_new_string("value"),
+                 fl_value_new_string(cookie.value.c_str()));
+    fl_value_set(map, fl_value_new_string("domain"),
+                 fl_value_new_string(cookie.domain.c_str()));
+    fl_value_set(map, fl_value_new_string("path"),
+                 fl_value_new_string(cookie.path.c_str()));
+    fl_value_append(list, map);
+  }
+  g_autoptr(FlMethodResponse) response =
+      FL_METHOD_RESPONSE(fl_method_success_response_new(list));
+  fl_method_call_respond(method_call, response, NULL);
+}
+
 // --------
 
 GtkWindow* get_window(WebviewWinFloatingPlugin* self) {
@@ -355,6 +394,57 @@ static void webview_win_floating_plugin_handle_method_call(
     // called when hot-restart in debug mode, and clear all the old webviews which created before hot-restart
     onInit(self);
     setVoidResult(method_call); // result->Success();
+    return;
+  }
+
+  // CookieManager calls do not carry a webviewId. Use the active WebView,
+  // matching the Windows implementation, so Linux can hand the FNOS session
+  // back to the Flutter HTTP and audio clients.
+  if (strcmp(method, "getCookies") == 0 || strcmp(method, "setCookie") == 0) {
+    auto *webview = findWebview(self, args);
+    if (webview == nullptr) {
+      setErrorResult(method_call, "webview hasn't created");
+      return;
+    }
+
+    if (strcmp(method, "getCookies") == 0) {
+      const auto *url = fl_value_get_string(
+          fl_value_lookup_string(args, "url"));
+      if (url == nullptr) {
+        setErrorResult(method_call, "cookie URL is required");
+        return;
+      }
+      g_object_ref(method_call);
+      webview->getCookies(url, [method_call](bool success,
+                                             std::vector<WebViewCookieData> cookies) {
+        if (success) {
+          setCookieListResult(method_call, cookies);
+        } else {
+          setErrorResult(method_call, "getCookies failed");
+        }
+        g_object_unref(method_call);
+      });
+      return;
+    }
+
+    const auto *name = fl_value_get_string(
+        fl_value_lookup_string(args, "name"));
+    const auto *value = fl_value_get_string(
+        fl_value_lookup_string(args, "value"));
+    const auto *domain = fl_value_get_string(
+        fl_value_lookup_string(args, "domain"));
+    const auto *path = fl_value_get_string(
+        fl_value_lookup_string(args, "path"));
+    if (name == nullptr || value == nullptr || domain == nullptr ||
+        path == nullptr) {
+      setErrorResult(method_call, "cookie fields are required");
+      return;
+    }
+    g_object_ref(method_call);
+    webview->setCookie(name, value, domain, path, [method_call](bool success) {
+      setBoolResult(method_call, success);
+      g_object_unref(method_call);
+    });
     return;
   }
 

@@ -829,11 +829,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         audio.AudioSource.uri(Uri.parse(url), tag: mediaItem),
       );
     }
-    final headers = <String, String>{
-      ...appState.api.clientHeaders,
-      if (appState.token != null && appState.token!.isNotEmpty)
-        'Authorization': 'Bearer ${appState.token}',
-    };
+    final headers = appState.api.authHeaders;
     return _audio.setAudioSource(
       audio.AudioSource.uri(
         Uri.parse(url),
@@ -929,11 +925,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   Map<String, String> get _streamHeaders {
     if (kIsWeb) return const {};
-    return {
-      ...appState.api.clientHeaders,
-      if (appState.token != null && appState.token!.isNotEmpty)
-        'Authorization': 'Bearer ${appState.token}',
-    };
+    return appState.api.authHeaders;
   }
 
   String? _localFilePathFromChapter(Chapter chapter) {
