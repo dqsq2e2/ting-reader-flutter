@@ -8,6 +8,8 @@ class ApiClient {
       BaseOptions(
         connectTimeout: const Duration(seconds: 12),
         receiveTimeout: const Duration(seconds: 30),
+        followRedirects: false,
+        maxRedirects: 0,
         headers: {'Content-Type': 'application/json'},
       ),
     );

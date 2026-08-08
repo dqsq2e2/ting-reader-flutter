@@ -311,7 +311,13 @@ class AppState extends ChangeNotifier {
 
     if (usedWebGatewayLogin) {
       final verifiedUser = await api.get('/api/me');
-      user = User.fromJson(asMap(verifiedUser.data));
+      final verifiedMap = asMap(verifiedUser.data);
+      if (verifiedMap['id'] == null ||
+          verifiedMap['username'] == null ||
+          verifiedMap['role'] == null) {
+        throw StateError('网关会话返回了无效的用户信息');
+      }
+      user = User.fromJson(verifiedMap);
     }
 
     await _prefs?.setString('server_url', serverUrl);
