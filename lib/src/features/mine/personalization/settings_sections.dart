@@ -143,10 +143,16 @@ class _LanguageSection extends StatelessWidget {
   const _LanguageSection({
     required this.language,
     required this.onLanguage,
+    this.applicationTimeZone,
+    this.timeZoneSaving = false,
+    this.onTimeZoneChanged,
   });
 
   final String language;
   final ValueChanged<String> onLanguage;
+  final String? applicationTimeZone;
+  final bool timeZoneSaving;
+  final ValueChanged<String>? onTimeZoneChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -155,42 +161,76 @@ class _LanguageSection extends StatelessWidget {
       icon: Icons.language_rounded,
       iconColor: Colors.cyan,
       title: l10n.settingsLanguage,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 620;
-          final copy = Text(
-            l10n.settingsLanguageDescription,
-            style: TextStyle(color: context.mutedText, fontSize: 13),
-          );
-          final dropdown = _LanguageDropdown(
-            value: language,
-            onChanged: onLanguage,
-          );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                copy,
-                const SizedBox(height: 14),
-                dropdown,
-              ],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: copy),
-              const SizedBox(width: 20),
-              SizedBox(width: 240, child: dropdown),
-            ],
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _LanguageSettingRow(
+            language: language,
+            onLanguage: onLanguage,
+          ),
+          if (applicationTimeZone != null && onTimeZoneChanged != null) ...[
+            const SizedBox(height: 22),
+            _SettingDivider(),
+            const SizedBox(height: 22),
+            _ApplicationTimeZoneSettingRow(
+              value: applicationTimeZone!,
+              saving: timeZoneSaving,
+              onChanged: onTimeZoneChanged!,
+            ),
+          ],
+        ],
       ),
     );
   }
 }
 
-class _ApplicationTimeZoneSection extends StatelessWidget {
-  const _ApplicationTimeZoneSection({
+class _LanguageSettingRow extends StatelessWidget {
+  const _LanguageSettingRow({
+    required this.language,
+    required this.onLanguage,
+  });
+
+  final String language;
+  final ValueChanged<String> onLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        final copy = Text(
+          l10n.settingsLanguageDescription,
+          style: TextStyle(color: context.mutedText, fontSize: 13),
+        );
+        final dropdown = _LanguageDropdown(
+          value: language,
+          onChanged: onLanguage,
+        );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              copy,
+              const SizedBox(height: 14),
+              dropdown,
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: copy),
+            const SizedBox(width: 20),
+            SizedBox(width: 240, child: dropdown),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _ApplicationTimeZoneSettingRow extends StatelessWidget {
+  const _ApplicationTimeZoneSettingRow({
     required this.value,
     required this.saving,
     required this.onChanged,
@@ -206,63 +246,68 @@ class _ApplicationTimeZoneSection extends StatelessWidget {
     final options = applicationTimeZoneOptions;
     final selected =
         options.contains(value) ? value : defaultApplicationTimeZone;
-    return _SettingsSection(
-      icon: Icons.public_rounded,
-      iconColor: Colors.indigo,
-      title: l10n.settingsTimeZone,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 620;
-          final copy = Text(
-            l10n.settingsTimeZoneDescription,
-            style: TextStyle(color: context.mutedText, fontSize: 13),
-          );
-          final dropdown = DropdownButtonFormField<String>(
-            initialValue: selected,
-            isExpanded: true,
-            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-            decoration: InputDecoration(
-              prefixIcon: const Icon(Icons.public_rounded, size: 19),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.faintBorder),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.faintBorder),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    const BorderSide(color: AppColors.primary600, width: 1.5),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        final copy = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              l10n.settingsTimeZone,
+              style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            items: options
-                .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
-                .toList(),
-            onChanged: saving
-                ? null
-                : (next) {
-                    if (next != null) onChanged(next);
-                  },
+            const SizedBox(height: 4),
+            Text(
+              l10n.settingsTimeZoneDescription,
+              style: TextStyle(color: context.mutedText, fontSize: 13),
+            ),
+          ],
+        );
+        final dropdown = DropdownButtonFormField<String>(
+          initialValue: selected,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.public_rounded, size: 19),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: context.faintBorder),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: context.faintBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide:
+                  const BorderSide(color: AppColors.primary600, width: 1.5),
+            ),
+          ),
+          items: options
+              .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
+              .toList(),
+          onChanged: saving
+              ? null
+              : (next) {
+                  if (next != null) onChanged(next);
+                },
+        );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [copy, const SizedBox(height: 14), dropdown],
           );
-          if (compact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [copy, const SizedBox(height: 14), dropdown],
-            );
-          }
-          return Row(
-            children: [
-              Expanded(child: copy),
-              const SizedBox(width: 20),
-              SizedBox(width: 280, child: dropdown),
-            ],
-          );
-        },
-      ),
+        }
+        return Row(
+          children: [
+            Expanded(child: copy),
+            const SizedBox(width: 20),
+            SizedBox(width: 280, child: dropdown),
+          ],
+        );
+      },
     );
   }
 }

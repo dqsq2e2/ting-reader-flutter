@@ -398,15 +398,12 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
                 setState(() => _language = value);
                 _saveSettings({'language': value});
               },
+              applicationTimeZone:
+                  appState.isAdmin ? _applicationTimeZone : null,
+              timeZoneSaving: _timeZoneSaving,
+              onTimeZoneChanged:
+                  appState.isAdmin ? _saveApplicationTimeZone : null,
             ),
-            if (appState.isAdmin) ...[
-              const SizedBox(height: 24),
-              _ApplicationTimeZoneSection(
-                value: _applicationTimeZone,
-                saving: _timeZoneSaving,
-                onChanged: _saveApplicationTimeZone,
-              ),
-            ],
             const SizedBox(height: 24),
             _HomeLayoutSection(
               value: _homeLayout,
