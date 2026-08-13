@@ -8,14 +8,18 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme/app_theme.dart';
 
-const _tingReaderPath = '/app/ting-reader';
 const _webViewCookieChannel = MethodChannel('ting_reader/webview_cookies');
 
 /// Utilities for the fnOS/FN Connect gateway address used by a server profile.
 class FnosGateway {
   const FnosGateway._();
 
-  static String hostForFnId(String rawFnId) {
+  static const _gatewaySuffixes = <String>[
+    '.fnos.net',
+    '.5ddd.com',
+  ];
+
+  static String _normalizedHostOrLabel(String rawFnId) {
     var value = rawFnId.trim();
     if (value.isEmpty) {
       throw const FormatException('Missing fnOS ID');
@@ -30,21 +34,70 @@ class FnosGateway {
       value = value.split('/').first;
     }
 
-    value = value.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
-    if (!value.endsWith('.fnos.net')) {
-      value = '$value.fnos.net';
+    return value.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  static String fnIdLabel(String rawFnId) {
+    final value = _normalizedHostOrLabel(rawFnId);
+    for (final suffix in _gatewaySuffixes) {
+      if (value.endsWith(suffix)) {
+        return value.substring(0, value.length - suffix.length);
+      }
     }
-    return value;
+    return value.split('.').first;
+  }
+
+  static String hostForFnId(String rawFnId) {
+    final value = _normalizedHostOrLabel(rawFnId);
+    if (_gatewaySuffixes.any(value.endsWith)) return value;
+    return '${fnIdLabel(value)}.fnos.net';
+  }
+
+  /// Detects an FNID entered in a WAN address field and returns its canonical
+  /// gateway host. Ordinary HTTP(S) server URLs are intentionally ignored.
+  ///
+  /// Supported inputs include `fnid`, `fnid.fnos.net`,
+  /// `fnid.5ddd.com`, and their HTTP(S) URL forms.
+  static String? tryGatewayHostFromInput(String rawValue) {
+    final value = rawValue.trim();
+    if (value.isEmpty) return null;
+
+    final hasScheme = value.contains('://');
+    final parsed = Uri.tryParse(hasScheme ? value : 'https://$value');
+    final host = parsed?.host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+    if (host == null || host.isEmpty) return null;
+
+    for (final suffix in _gatewaySuffixes) {
+      if (!host.endsWith(suffix)) continue;
+      final label = host.substring(0, host.length - suffix.length);
+      if (_isValidFnIdLabel(label)) return host;
+      return null;
+    }
+
+    if (hasScheme ||
+        value.contains('/') ||
+        value.contains('.') ||
+        value.contains(':') ||
+        host == 'localhost') {
+      return null;
+    }
+    return _isValidFnIdLabel(host) ? '$host.fnos.net' : null;
+  }
+
+  static bool _isValidFnIdLabel(String value) {
+    return RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$').hasMatch(value);
   }
 
   static Uri originUri(String fnId) {
     return Uri.https(hostForFnId(fnId), '/');
   }
 
+  static Uri originUriForHost(String host) {
+    return Uri.https(_normalizeGatewayHost(host), '/');
+  }
+
   static Uri fnidLoginUri(String fnId) {
-    final host = hostForFnId(fnId);
-    final id = host.substring(0, host.length - '.fnos.net'.length);
-    return Uri.https('fnos.net', '/$id');
+    return Uri.https('fnos.net', '/${fnIdLabel(fnId)}');
   }
 
   static Uri fnosValidationUri() {
@@ -53,6 +106,46 @@ class FnosGateway {
 
   static Uri appUri(String fnId) {
     return Uri.https(hostForFnId(fnId), '/app/ting-reader');
+  }
+
+  static Uri appUriForHost(String host) {
+    return Uri.https(_normalizeGatewayHost(host), '/app/ting-reader');
+  }
+
+  static bool isGatewayHostForFnId(String rawFnId, String rawHost) {
+    final host = rawHost.trim().toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+    if (host.isEmpty || host == 'fnos.net') return false;
+    final label = fnIdLabel(rawFnId);
+    return _gatewaySuffixes.any((suffix) => host == '$label$suffix');
+  }
+
+  static String? gatewayHostFromAppUrl(String rawUrl, String rawFnId) {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null || uri.host.isEmpty) return null;
+    final path = uri.path;
+    if (path != '/app/ting-reader' && !path.startsWith('/app/ting-reader/')) {
+      return null;
+    }
+    return isGatewayHostForFnId(rawFnId, uri.host) ? uri.host : null;
+  }
+
+  static String _normalizeGatewayHost(String rawHost) {
+    return rawHost.trim().toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  /// Returns the cookie domain that survives the fnOS relay redirect chain.
+  ///
+  /// Cookies collected from an FNID host are later used on both
+  /// `<fnid>.fnos.net`, `<fnid>.5ddd.com`, and their relay parent domains. A
+  /// host-only cookie works for the first request but disappears when fnOS
+  /// performs its validation redirect.
+  static String cookieDomainForHost(String rawHost) {
+    final host = _normalizeGatewayHost(rawHost);
+    if (host == 'fnos.net') return 'fnos.net';
+    for (final suffix in _gatewaySuffixes) {
+      if (host.endsWith(suffix)) return suffix.substring(1);
+    }
+    return host;
   }
 
   static String cookieHeader(Iterable<WebViewCookie> cookies) {
@@ -117,11 +210,33 @@ class FnosGateway {
   }
 
   static bool hasGatewaySession(String cookieHeader) {
-    final names = cookieHeader
-        .split(';')
-        .map((part) => part.trim().split('=').first.toLowerCase())
-        .toSet();
-    return names.contains('fnos-token') && names.contains('entry-token');
+    final values = _cookieValues(cookieHeader);
+    return values.containsKey('fnos-token') &&
+        values.containsKey('entry-token');
+  }
+
+  static bool sameGatewaySession(String first, String second) {
+    final firstValues = _cookieValues(first);
+    final secondValues = _cookieValues(second);
+    final firstFnosToken = firstValues['fnos-token'];
+    final firstEntryToken = firstValues['entry-token'];
+    if (firstFnosToken == null || firstEntryToken == null) return false;
+    return firstFnosToken == secondValues['fnos-token'] &&
+        firstEntryToken == secondValues['entry-token'];
+  }
+
+  static Map<String, String> _cookieValues(String cookieHeader) {
+    final values = <String, String>{};
+    for (final part in cookieHeader.split(';')) {
+      final separator = part.indexOf('=');
+      if (separator <= 0) continue;
+      final name = part.substring(0, separator).trim().toLowerCase();
+      final value = part.substring(separator + 1).trim();
+      if (_isAcceptedCookieName(name) && value.isNotEmpty) {
+        values[name] = value;
+      }
+    }
+    return values;
   }
 
   static String _filterCookiePairs(Iterable<String> pairs) {
@@ -149,29 +264,29 @@ class FnosGateway {
   }
 }
 
-/// Authentication data returned after both fnOS and TingReader login succeed.
+/// Authentication data returned after the fnOS WebView session is acquired.
+/// Ting Reader login is completed by [AppState] through its authenticated API
+/// client after this page closes.
 class FnosGatewayLoginResult {
   const FnosGatewayLoginResult({
     required this.cookie,
-    required this.response,
+    required this.gatewayHost,
   });
 
   final String cookie;
-  final Map<String, dynamic> response;
+  final String gatewayHost;
 }
 
 /// A short-lived handoff result from the interactive fnOS login page.
 class FnidLoginPage extends StatefulWidget {
   const FnidLoginPage({
     required this.fnId,
-    required this.username,
-    required this.password,
+    this.rejectedCookie = '',
     super.key,
   });
 
   final String fnId;
-  final String username;
-  final String password;
+  final String rejectedCookie;
 
   @override
   State<FnidLoginPage> createState() => _FnidLoginPageState();
@@ -184,10 +299,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   String _currentUrl = '';
   bool _loading = true;
   bool _finishing = false;
-  bool _appRequestStarted = false;
-  bool _webLoginAttempted = false;
-  String? _gatewayCookie;
-  Completer<String>? _webLoginCompleter;
+  String? _gatewayHost;
   Timer? _sessionPollTimer;
 
   @override
@@ -205,14 +317,11 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     try {
       _controller = WebViewController()
         ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..addJavaScriptChannel(
-          'TingReaderLogin',
-          onMessageReceived: _handleWebLoginMessage,
-        )
         ..setNavigationDelegate(
           NavigationDelegate(
             onPageStarted: (url) {
               if (!mounted) return;
+              _recordGatewayHost(url);
               setState(() {
                 _loading = true;
                 _currentUrl = url;
@@ -220,6 +329,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
             },
             onPageFinished: (url) {
               if (!mounted) return;
+              _recordGatewayHost(url);
               setState(() {
                 _loading = false;
                 _currentUrl = url;
@@ -229,6 +339,7 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
             onUrlChange: (change) {
               final url = change.url;
               if (!mounted || url == null || url.isEmpty) return;
+              _recordGatewayHost(url);
               setState(() => _currentUrl = url);
             },
             onWebResourceError: (error) {
@@ -263,26 +374,37 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     if (uri == null) return false;
     return (uri.scheme.toLowerCase() == 'http' ||
             uri.scheme.toLowerCase() == 'https') &&
-        uri.host.toLowerCase() == FnosGateway.hostForFnId(widget.fnId);
+        FnosGateway.isGatewayHostForFnId(widget.fnId, uri.host);
   }
 
-  bool get _isTingReaderPage {
-    final uri = Uri.tryParse(_currentUrl);
-    if (uri == null || !_isGatewayHost) return false;
-    return uri.path == _tingReaderPath ||
-        uri.path.startsWith('$_tingReaderPath/');
+  String get _resolvedGatewayHost {
+    final currentUri = Uri.tryParse(_currentUrl);
+    if (currentUri != null &&
+        FnosGateway.isGatewayHostForFnId(widget.fnId, currentUri.host)) {
+      return currentUri.host.toLowerCase();
+    }
+    return _gatewayHost ?? FnosGateway.hostForFnId(widget.fnId);
+  }
+
+  void _recordGatewayHost(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        !FnosGateway.isGatewayHostForFnId(widget.fnId, uri.host)) {
+      return;
+    }
+    _gatewayHost = uri.host.toLowerCase();
   }
 
   Future<String> _readGatewayCookie() async {
     var targetCookieHeader = '';
     var validationCookieHeader = '';
-    final targetHost = FnosGateway.hostForFnId(widget.fnId);
-    final targetDomains = <Uri>[FnosGateway.originUri(widget.fnId)];
+    final targetHost = _resolvedGatewayHost;
+    final targetDomains = <Uri>[FnosGateway.originUriForHost(targetHost)];
     final currentUri = Uri.tryParse(_currentUrl);
     if (currentUri != null &&
         (currentUri.scheme.toLowerCase() == 'http' ||
             currentUri.scheme.toLowerCase() == 'https') &&
-        currentUri.host.toLowerCase() == targetHost) {
+        FnosGateway.isGatewayHostForFnId(widget.fnId, currentUri.host)) {
       targetDomains.insert(0, currentUri);
     }
     for (final domain in targetDomains) {
@@ -355,12 +477,8 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
   }
 
   Future<void> _continueLogin({bool automatic = false}) async {
-    if (_isTingReaderPage) {
-      await _finishLogin(automatic: automatic);
-      return;
-    }
     if (_isGatewayHost) {
-      await _openTingReaderWithCookie(automatic: automatic);
+      await _finishGatewayLogin(automatic: automatic);
       return;
     }
     if (!automatic && mounted) {
@@ -373,55 +491,15 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     }
   }
 
-  Future<void> _openTingReaderWithCookie({bool automatic = false}) async {
-    if (_finishing || _appRequestStarted || !_isGatewayHost) return;
+  Future<void> _finishGatewayLogin({bool automatic = false}) async {
+    if (_finishing || !_isGatewayHost || _loading) return;
     final noSessionMessage = context.localeText(
       '没有检测到飞牛登录会话，请先在页面中完成登录。',
       'No fnOS login session was found. Complete fnOS login first.',
     );
-    setState(() {
-      _finishing = true;
-      if (!automatic) _error = null;
-    });
-
-    try {
-      final cookieHeader = await _readGatewayCookie();
-      if (!FnosGateway.hasGatewaySession(cookieHeader)) {
-        if (!automatic) throw StateError(noSessionMessage);
-        return;
-      }
-      _gatewayCookie = cookieHeader;
-      await _writeGatewayCookiesToWebView(cookieHeader);
-      _appRequestStarted = true;
-      await _controller.loadRequest(
-        FnosGateway.appUri(widget.fnId),
-        headers: {'Cookie': cookieHeader},
-      );
-    } catch (error) {
-      _appRequestStarted = false;
-      if (!mounted || automatic) return;
-      setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _finishing = false);
-    }
-  }
-
-  Future<void> _finishLogin({bool automatic = false}) async {
-    if (_finishing || _webLoginAttempted) return;
-    if (!_isTingReaderPage || _loading) {
-      if (!automatic && mounted) {
-        setState(() {
-          _error = context.localeText(
-            '正在等待飞牛登录完成，请稍候。',
-            'Waiting for fnOS login to finish.',
-          );
-        });
-      }
-      return;
-    }
-    final noSessionMessage = context.localeText(
-      '没有检测到飞牛登录会话，请先在页面中完成登录。',
-      'No fnOS login session was found. Complete login first.',
+    final staleSessionMessage = context.localeText(
+      '仍检测到已失效的飞牛会话，请完成重新登录。',
+      'The rejected fnOS session is still active. Complete sign-in again.',
     );
     setState(() {
       _finishing = true;
@@ -429,137 +507,56 @@ class _FnidLoginPageState extends State<FnidLoginPage> {
     });
 
     try {
-      final cookieHeader = FnosGateway.mergeCookieHeaders(
-        _gatewayCookie ?? '',
-        await _readGatewayCookie(),
-      );
-      if (!FnosGateway.hasGatewaySession(cookieHeader)) {
+      final firstCookieHeader = await _readGatewayCookie();
+      if (!FnosGateway.hasGatewaySession(firstCookieHeader)) {
         if (!automatic) throw StateError(noSessionMessage);
         return;
       }
-      _webLoginAttempted = true;
+      if (widget.rejectedCookie.isNotEmpty &&
+          FnosGateway.sameGatewaySession(
+            firstCookieHeader,
+            widget.rejectedCookie,
+          )) {
+        if (!automatic) throw StateError(staleSessionMessage);
+        return;
+      }
+
+      // Android may expose the new FNOS cookies before both values have been
+      // committed. Confirm the same complete session twice before handing it
+      // to the background API client.
+      await Future<void>.delayed(const Duration(milliseconds: 350));
+      if (!mounted || !_isGatewayHost) return;
+      final confirmedCookieHeader = await _readGatewayCookie();
+      if (!FnosGateway.hasGatewaySession(confirmedCookieHeader) ||
+          !FnosGateway.sameGatewaySession(
+            firstCookieHeader,
+            confirmedCookieHeader,
+          )) {
+        return;
+      }
+      if (widget.rejectedCookie.isNotEmpty &&
+          FnosGateway.sameGatewaySession(
+            confirmedCookieHeader,
+            widget.rejectedCookie,
+          )) {
+        if (!automatic) throw StateError(staleSessionMessage);
+        return;
+      }
+
       _sessionPollTimer?.cancel();
       _sessionPollTimer = null;
-      final response = await _loginToTingReaderInWebView();
       if (!mounted) return;
       Navigator.of(context).pop(
-        FnosGatewayLoginResult(cookie: cookieHeader, response: response),
+        FnosGatewayLoginResult(
+          cookie: confirmedCookieHeader,
+          gatewayHost: _resolvedGatewayHost,
+        ),
       );
     } catch (error) {
-      _webLoginAttempted = false;
-      if (!mounted) return;
+      if (!mounted || automatic) return;
       setState(() => _error = error.toString());
     } finally {
       if (mounted) setState(() => _finishing = false);
-    }
-  }
-
-  Future<void> _writeGatewayCookiesToWebView(String cookieHeader) async {
-    final domain = FnosGateway.hostForFnId(widget.fnId);
-    for (final pair in cookieHeader.split(';')) {
-      final separator = pair.indexOf('=');
-      if (separator <= 0) continue;
-      final name = pair.substring(0, separator).trim();
-      final value = pair.substring(separator + 1).trim();
-      if (name.isEmpty || value.isEmpty) continue;
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        try {
-          final written = await _webViewCookieChannel.invokeMethod<bool>(
-            'setCookie',
-            {
-              'url': 'https://$domain/',
-              'cookie': '$name=$value; Path=/',
-            },
-          );
-          if (written == true) continue;
-        } on MissingPluginException {
-          // Fall back to the platform cookie manager below.
-        } catch (_) {
-          // Fall back to the platform cookie manager below.
-        }
-      }
-      try {
-        await _cookieManager.setCookie(
-          WebViewCookie(
-            name: name,
-            value: value,
-            domain: domain,
-            path: '/',
-          ),
-        );
-      } catch (_) {
-        // The initial request still carries the raw Cookie header below.
-      }
-    }
-  }
-
-  void _handleWebLoginMessage(JavaScriptMessage message) {
-    final completer = _webLoginCompleter;
-    if (completer == null || completer.isCompleted) return;
-    completer.complete(message.message);
-  }
-
-  Future<Map<String, dynamic>> _loginToTingReaderInWebView() async {
-    final completer = Completer<String>();
-    _webLoginCompleter = completer;
-    final username = jsonEncode(widget.username);
-    final password = jsonEncode(widget.password);
-    final endpoint = jsonEncode('$_tingReaderPath/api/auth/login');
-
-    try {
-      await _controller.runJavaScript('''
-(async () => {
-  try {
-    const response = await fetch($endpoint, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({username: $username, password: $password}),
-    });
-    const body = await response.text();
-    TingReaderLogin.postMessage(JSON.stringify({status: response.status, body}));
-  } catch (error) {
-    TingReaderLogin.postMessage(JSON.stringify({error: String(error)}));
-  }
-})();
-''');
-
-      final rawMessage = await completer.future.timeout(
-        const Duration(seconds: 20),
-      );
-      final envelope = jsonDecode(rawMessage);
-      if (envelope is! Map) {
-        throw StateError('TingReader 登录返回了无效响应');
-      }
-      final error = envelope['error']?.toString();
-      if (error != null && error.isNotEmpty) {
-        throw StateError('TingReader 登录请求失败：$error');
-      }
-
-      final status = int.tryParse(envelope['status']?.toString() ?? '');
-      final rawBody = envelope['body']?.toString() ?? '';
-      if (status == null || status < 200 || status >= 300) {
-        throw StateError(
-          'TingReader 登录失败（HTTP ${status ?? 'unknown'}）',
-        );
-      }
-
-      final decodedBody = jsonDecode(rawBody);
-      if (decodedBody is! Map) {
-        throw StateError(
-          'WebView 中的飞牛会话未被 TingReader API 接受，请重新登录飞牛。',
-        );
-      }
-      final response = Map<String, dynamic>.from(decodedBody);
-      if (response['token']?.toString().isEmpty ?? true) {
-        throw StateError('TingReader 登录响应缺少 token');
-      }
-      if (response['user'] is! Map) {
-        throw StateError('TingReader 登录响应缺少 user');
-      }
-      return response;
-    } finally {
-      _webLoginCompleter = null;
     }
   }
 

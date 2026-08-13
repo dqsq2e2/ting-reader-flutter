@@ -5,6 +5,7 @@ import '../../core/models/models.dart';
 import '../../core/state/download_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/chapter_sort.dart';
+import '../../core/utils/application_time_zone.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
@@ -1425,7 +1426,7 @@ class _DownloadChapterRow extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${formatBytes(item.fileSize)}  ·  ${_formatLocalTime(item.createdAt)}',
+        '${formatBytes(item.fileSize)}  ·  ${_formatLocalTime(context, item.createdAt)}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
@@ -1596,8 +1597,11 @@ String _compactError(String value) {
   return '${line.substring(0, 60)}...';
 }
 
-String _formatLocalTime(DateTime time) {
-  final local = time.toLocal();
+String _formatLocalTime(BuildContext context, DateTime time) {
+  final local = toApplicationTimeZone(
+    time,
+    AppScope.appOf(context).applicationTimeZone,
+  );
   final year = local.year.toString().padLeft(4, '0');
   final month = local.month.toString().padLeft(2, '0');
   final day = local.day.toString().padLeft(2, '0');

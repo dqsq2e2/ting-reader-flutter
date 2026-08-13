@@ -995,7 +995,7 @@ class _LogTrailing extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            _formatLogTime(log.timestamp),
+            _formatLogTime(context, log.timestamp),
             style: TextStyle(
               color: context.tertiaryText,
               fontSize: 12,
@@ -1052,7 +1052,7 @@ class _LogTrailing extends StatelessWidget {
           const SizedBox(height: 18),
         ],
         Text(
-          _formatLogTime(log.timestamp),
+          _formatLogTime(context, log.timestamp),
           textAlign: TextAlign.right,
           style: TextStyle(
             color: context.tertiaryText,
@@ -1677,8 +1677,11 @@ String _taskStatusText(BuildContext context, String status) {
   }
 }
 
-String _formatLogTime(String raw) {
-  final parsed = DateTime.tryParse(raw)?.toLocal();
+String _formatLogTime(BuildContext context, String raw) {
+  final parsed = backendDateTimeInApplicationTimeZone(
+    raw,
+    AppScope.appOf(context).applicationTimeZone,
+  );
   if (parsed == null) return raw;
   String two(int value) => value.toString().padLeft(2, '0');
   return '${parsed.year}-${two(parsed.month)}-${two(parsed.day)} '

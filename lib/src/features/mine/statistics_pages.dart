@@ -499,7 +499,7 @@ class _TrendChart extends StatelessWidget {
                   children: [
                     for (final item in items.take(8))
                       Text(
-                        _formatDay((item['date'] ?? '').toString()),
+                        _formatDay((item['date'] ?? '').toString(), context),
                         style: TextStyle(
                           color: context.tertiaryText,
                           fontSize: compact ? 10 : 11,
@@ -937,7 +937,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  _formatDateTime(item['last_scanned_at']?.toString()),
+                  _formatDateTime(item['last_scanned_at']?.toString(), context),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   textAlign: TextAlign.right,
@@ -1412,13 +1412,19 @@ String _formatDateTime(String? value, [BuildContext? context]) {
   if (value == null || value.isEmpty) {
     return context?.localeText('暂无记录', 'No record') ?? 'No record';
   }
-  final date = DateTime.tryParse(value)?.toLocal();
+  final date = backendDateTimeInApplicationTimeZone(
+    value,
+    context == null ? null : AppScope.appOf(context).applicationTimeZone,
+  );
   if (date == null) return value;
   return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
 }
 
-String _formatDay(String value) {
-  final date = DateTime.tryParse(value)?.toLocal();
+String _formatDay(String value, [BuildContext? context]) {
+  final date = backendDateTimeInApplicationTimeZone(
+    value,
+    context == null ? null : AppScope.appOf(context).applicationTimeZone,
+  );
   if (date == null) return value.length > 5 ? value.substring(5) : value;
   return '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
 }

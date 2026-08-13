@@ -12,6 +12,9 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - third_party/**/example/**
+    # This vendored plugin ignores its own stale template tests. They target a
+    # removed API and are not part of this application's tracked sources.
+    - third_party/webview_win_floating/test/**
 
 linter:
   # The lint rules applied to this project can be customized in the

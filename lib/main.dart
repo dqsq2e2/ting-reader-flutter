@@ -173,7 +173,11 @@ class _StartupGateState extends State<StartupGate> {
   Future<void> _cancelStartup() async {
     if (!_booting || _cancelled) return;
     setState(() => _cancelled = true);
-    await AppScope.appOf(context).resetToLoginAfterStartupFailure();
+    final appState = AppScope.appOf(context);
+    appState.cancelStartup();
+    await appState.resetToLoginAfterStartupFailure(
+      requireGatewayLogin: false,
+    );
     if (!mounted) return;
     setState(() => _booting = false);
   }

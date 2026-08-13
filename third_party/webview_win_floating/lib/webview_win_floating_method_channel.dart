@@ -1,6 +1,5 @@
 import 'dart:developer';
 import 'dart:convert';
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -388,7 +387,7 @@ class MethodChannelWebviewWinFloating extends WebviewWinFloatingPlatform {
   Future<void> setBackgroundColor(int webviewId, Color color) async {
     await methodChannel.invokeMethod<void>('setBackgroundColor', {
       "webviewId": webviewId,
-      "color": color.value,
+      "color": color.toARGB32(),
     });
   }
 

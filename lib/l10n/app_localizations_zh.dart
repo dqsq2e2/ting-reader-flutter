@@ -151,6 +151,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLanguageEn => 'English';
 
   @override
+  String get settingsTimeZone => '应用时区';
+
+  @override
+  String get settingsTimeZoneDescription => '仅管理员可设置全站时间显示；服务端和数据库仍统一使用 UTC。';
+
+  @override
   String get settingsHomeLayout => '首页调整';
 
   @override

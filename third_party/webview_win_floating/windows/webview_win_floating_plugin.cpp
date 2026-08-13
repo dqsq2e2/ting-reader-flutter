@@ -12,14 +12,14 @@
 
 #include <memory>
 #include <sstream>
+#include <vector>
 
 // Jacky {
 #include "my_webview.h"
 
-// toWideString(): convert utf8 to utf16, without calling MultiByteToWideChar()
-#define toWideString(str) std::wstring(str.begin(), str.end()).c_str()
-
-// utf8ToUtf16(): convert utf8 to utf16, with MultiByteToWideChar()
+// Flutter's Windows standard codec exposes Dart strings as UTF-8. WebView2
+// accepts UTF-16, so every string crossing into the native WebView must use a
+// real UTF-8 conversion instead of widening bytes one by one.
 std::wstring utf8ToUtf16(const std::string& utf8Str) {
   if (utf8Str.empty()) return std::wstring();
     
@@ -80,7 +80,10 @@ void WebviewWinFloatingPlugin::createWebview(const flutter::MethodCall<flutter::
     if (webview != NULL) {
       m_webviewMap[webviewId] = webview;
       std::cout << "[webview] native create: id = " << webviewId << std::endl;
-      if (!url.empty()) webview->loadUrl(toWideString(url));
+      if (!url.empty()) {
+        const auto urlWide = utf8ToUtf16(url);
+        webview->loadUrl(urlWide.c_str());
+      }
       shared_result->Success(flutter::EncodableValue(true));
     } else {
       std::cerr << "[webview] native create failed. result = " << hr << std::endl;
@@ -186,7 +189,11 @@ void WebviewWinFloatingPlugin::createWebview(const flutter::MethodCall<flutter::
     m_MethodChannel->InvokeMethod("onAskPermission", std::make_unique<flutter::EncodableValue>(arguments));
   };
 
-  MyWebView::Create(m_nativeHWND, params, utf8ToUtf16(userDataFolder).c_str(), toWideString(profileName));
+  MyWebView::Create(
+      m_nativeHWND,
+      params,
+      utf8ToUtf16(userDataFolder).c_str(),
+      utf8ToUtf16(profileName).c_str());
 }
 
 void WebviewWinFloatingPlugin::destroyAllWebViews() {
@@ -231,8 +238,10 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     auto domain = std::get<std::string>(arguments[flutter::EncodableValue("domain")]);
     auto path = std::get<std::string>(arguments[flutter::EncodableValue("path")]);
     auto hr = webviewIt->second->setCookie(
-        toWideString(name), toWideString(value), toWideString(domain),
-        toWideString(path));
+        utf8ToUtf16(name).c_str(),
+        utf8ToUtf16(value).c_str(),
+        utf8ToUtf16(domain).c_str(),
+        utf8ToUtf16(path).c_str());
     std::cout << "[webview] setCookieForWebView id=" << webviewId
               << " name=" << name << " domain=" << domain
               << " hr=" << std::to_string(hr) << std::endl;
@@ -262,7 +271,7 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
       std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared_result =
           std::move(result);
       auto hr = webview->getCookies(
-          toWideString(url),
+          utf8ToUtf16(url).c_str(),
           [shared_result](HRESULT callbackResult,
                          std::vector<WebViewCookieData> cookies) {
             if (FAILED(callbackResult)) {
@@ -296,8 +305,10 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     auto domain = std::get<std::string>(arguments[flutter::EncodableValue("domain")]);
     auto path = std::get<std::string>(arguments[flutter::EncodableValue("path")]);
     auto hr = webview->setCookie(
-        toWideString(name), toWideString(value), toWideString(domain),
-        toWideString(path));
+        utf8ToUtf16(name).c_str(),
+        utf8ToUtf16(value).c_str(),
+        utf8ToUtf16(domain).c_str(),
+        utf8ToUtf16(path).c_str());
     result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
     return;
   }
@@ -349,11 +360,18 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
   } else if (method_call.method_name().compare("loadUrl") == 0) {
     auto url = std::get<std::string>(arguments[flutter::EncodableValue("url")]);
-    auto hr = webview->loadUrl(toWideString(url));
+    const auto urlWide = utf8ToUtf16(url);
+    auto hr = webview->loadUrl(urlWide.c_str());
     result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
   } else if (method_call.method_name().compare("loadHtmlString") == 0) {
     auto html = std::get<std::string>(arguments[flutter::EncodableValue("html")]);
-    auto hr = webview->loadHtmlString(toWideString(html));
+    // Method-channel strings are UTF-8. Do not widen bytes one by one, or
+    // Chinese plugin UI text becomes mojibake before WebView2 sees it.
+    const auto htmlWide = utf8ToUtf16(html);
+    std::cout << "[webview_win_floating] loadHtmlString encoding=utf8->utf16"
+              << " utf8_bytes=" << html.size()
+              << " utf16_units=" << htmlWide.size() << std::endl;
+    auto hr = webview->loadHtmlString(htmlWide.c_str());
     result->Success(flutter::EncodableValue(SUCCEEDED(hr)));
 
     if (!arguments[flutter::EncodableValue("baseUrl")].IsNull()) {
@@ -381,7 +399,7 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>> shared_result =
         std::move(result);
     auto hr = webview->addScriptChannelByName(
-        toWideString(channelName),
+        utf8ToUtf16(channelName).c_str(),
         [shared_result](HRESULT callbackResult) {
           if (FAILED(callbackResult)) {
             shared_result->Error(
@@ -396,7 +414,7 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
     }
   } else if (method_call.method_name().compare("removeScriptChannelByName") == 0) {
     auto channelName = std::get<std::string>(arguments[flutter::EncodableValue("channelName")]);
-    webview->removeScriptChannelByName(toWideString(channelName));
+    webview->removeScriptChannelByName(utf8ToUtf16(channelName).c_str());
     result->Success();
   } else if (method_call.method_name().compare("setFullScreen") == 0) {
     auto isFullScreen = std::get<bool>(arguments[flutter::EncodableValue("isFullScreen")]);
@@ -424,7 +442,7 @@ void WebviewWinFloatingPlugin::HandleMethodCall(
          result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name().compare("setUserAgent") == 0) {
     auto userAgent = std::get<std::string>(arguments[flutter::EncodableValue("userAgent")]);
-    HRESULT hr = webview->setUserAgent(toWideString(userAgent));
+    HRESULT hr = webview->setUserAgent(utf8ToUtf16(userAgent).c_str());
     result->Success(flutter::EncodableValue(SUCCEEDED(hr) ? true : false));
   } else if (method_call.method_name().compare("canGoBack") == 0) {
     bool allow = webview->canGoBack();

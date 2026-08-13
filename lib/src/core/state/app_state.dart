@@ -10,6 +10,7 @@ import '../api/plugin_capabilities_api.dart';
 import '../document_reader/document_reader.dart';
 import '../models/models.dart';
 import '../utils/client_device_headers.dart';
+import '../utils/application_time_zone.dart' as app_time_zone;
 import '../utils/locale.dart';
 import '../utils/local_network.dart';
 
@@ -27,6 +28,13 @@ bool _isFnosGatewayModeValue(Object? value) {
 }
 
 class AppState extends ChangeNotifier {
+  AppState() {
+    app_time_zone.initializeApplicationTimeZones();
+    api.isGatewaySession = () =>
+        serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty;
+    api.onGatewaySessionExpired = _handleGatewaySessionExpired;
+  }
+
   final ApiClient api = ApiClient();
   late final PluginCapabilitiesApi pluginCapabilities =
       PluginCapabilitiesApi(api);
@@ -36,6 +44,7 @@ class AppState extends ChangeNotifier {
   static const _cachedSettingsPrefsKey = 'cached_app_settings';
   static const _localSettingsPrefsKey = 'local_app_settings';
   static const _languagePrefsKey = 'language';
+  static const _applicationTimeZonePrefsKey = 'application_time_zone';
   static const _serverModePrefsKey = 'server_mode';
   static const _fnIdPrefsKey = 'fn_id';
   static const _gatewayCookiePrefsKey = 'gateway_cookie';
@@ -51,6 +60,11 @@ class AppState extends ChangeNotifier {
   SharedPreferences? _prefs;
   Map<String, String> _redirectCache = {};
   Future<String?>? _activeUrlRecovery;
+  Future<void>? _gatewaySessionRecovery;
+  Future<void> Function()? onGatewayLoginRequired;
+  Future<void> Function()? onGatewayLoginRestored;
+  CancelToken? _startupCancelToken;
+  int _startupGeneration = 0;
   User? user;
   String? token;
   String serverUrl = 'http://localhost:3000';
@@ -80,16 +94,16 @@ class AppState extends ChangeNotifier {
   }
 
   bool get isAdmin => user?.isAdmin ?? false;
+  String get applicationTimeZone => app_time_zone.applicationTimeZone;
   int get pluginExtensionRevision => _pluginExtensionRevision;
 
   SavedServerProfile? get savedGatewayProfile {
-    final normalizedFnId = fnId.trim().toLowerCase();
-    if (serverMode != ServerProfileMode.fnosGateway || normalizedFnId.isEmpty) {
+    final normalizedFnId = _normalizedGatewayIdentity(fnId);
+    if (normalizedFnId.isEmpty) {
       return null;
     }
     for (final profile in savedServers) {
-      if (profile.mode == ServerProfileMode.fnosGateway &&
-          profile.fnId.trim().toLowerCase() == normalizedFnId) {
+      if (_normalizedGatewayIdentity(profile.fnId) == normalizedFnId) {
         return profile;
       }
     }
@@ -110,78 +124,216 @@ class AppState extends ChangeNotifier {
   String textForLocale(String zh, String en) => isEnglish ? en : zh;
 
   void notifyPluginExtensionsChanged() {
+    pluginCapabilities.invalidateClientExtensionsCache();
     _pluginExtensionRevision++;
     notifyListeners();
   }
 
-  Future<void> initialize({bool Function()? isCancelled}) async {
-    void checkCancelled() {
-      if (isCancelled?.call() ?? false) throw const _StartupCancelled();
+  Future<void> handleGatewaySessionExpired() {
+    return _handleGatewaySessionExpired();
+  }
+
+  Future<void> _handleGatewaySessionExpired() async {
+    if (serverMode != ServerProfileMode.fnosGateway ||
+        fnId.trim().isEmpty ||
+        token == null ||
+        token!.trim().isEmpty ||
+        offlineMode) {
+      return;
     }
 
-    _prefs = await SharedPreferences.getInstance();
-    checkCancelled();
-    _loadRedirectCache();
-    api.recoverBaseUrl = (_) => recoverActiveUrl();
-    serverUrl = _prefs!.getString('server_url') ?? serverUrl;
-    localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
-    activeUrl = _prefs!.getString('active_url') ??
-        (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
-    serverMode = _serverProfileModeFromPrefs();
-    fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
-    gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
-    needsGatewayLogin =
-        _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
-    token = _prefs!.getString('auth_token');
-    savedServers = _loadSavedServers();
-    _loadLocalLanguage();
-    api.setClientHeaders(await buildClientDeviceHeaders());
-    checkCancelled();
-    final hasPersistedServerConfig = _prefs!.containsKey('server_url') ||
-        _prefs!.containsKey('local_server_url');
+    final activeRecovery = _gatewaySessionRecovery;
+    if (activeRecovery != null) {
+      await activeRecovery;
+      return;
+    }
 
-    final rawUser = _prefs!.getString('user');
-    if (rawUser != null) {
-      try {
-        user = _requireAuthenticatedUser(jsonDecode(rawUser));
-      } catch (_) {
-        user = null;
+    final recovery = _markGatewayLoginRequired();
+    _gatewaySessionRecovery = recovery;
+    try {
+      await recovery;
+    } finally {
+      if (identical(_gatewaySessionRecovery, recovery)) {
+        _gatewaySessionRecovery = null;
       }
-    }
-
-    if (serverMode == ServerProfileMode.fnosGateway &&
-        fnId.trim().isNotEmpty &&
-        (token == null || user == null) &&
-        (gatewayCookie?.trim().isNotEmpty ?? false)) {
-      // Migrate installations that lost the login marker before automatic
-      // gateway re-authentication was persisted.
-      needsGatewayLogin = true;
-      await _prefs!.setBool(_gatewayReloginRequiredPrefsKey, true);
-    }
-
-    if (serverMode == ServerProfileMode.fnosGateway && fnId.isNotEmpty) {
-      activeUrl = FnosGateway.appUri(fnId).toString();
-    } else if (token != null && user != null && hasPersistedServerConfig) {
-      await _selectActiveUrlForCurrentNetwork(isCancelled: isCancelled);
-      checkCancelled();
-    }
-    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
-
-    if (token != null && user != null) {
-      await validateConnection(
-        recordLogin: true,
-        isCancelled: isCancelled,
-      );
-      checkCancelled();
-      if (connectionError == null && user != null) {
-        await loadSettings(silent: true, isCancelled: isCancelled);
-      }
-    } else {
-      _loadCachedSettings();
     }
   }
 
-  Future<void> resetToLoginAfterStartupFailure() async {
+  Future<void> _markGatewayLoginRequired() async {
+    await _notifyGatewayLoginRequired();
+    needsGatewayLogin = true;
+    token = null;
+    user = null;
+    connectionError = textForLocale(
+      '飞牛登录会话已失效，正在重新登录',
+      'The fnOS login session expired. Signing in again',
+    );
+    api.configure(
+      baseUrl: activeUrl,
+      token: null,
+      cookie: gatewayCookie,
+    );
+    await _prefs?.remove('auth_token');
+    await _prefs?.remove('user');
+    await _prefs?.setBool(_gatewayReloginRequiredPrefsKey, true);
+    notifyListeners();
+  }
+
+  Future<void> _notifyGatewayLoginRequired() async {
+    final callback = onGatewayLoginRequired;
+    if (callback == null) return;
+    try {
+      await callback();
+    } catch (_) {
+      // A playback pause must not prevent the user from recovering fnOS auth.
+    }
+  }
+
+  Future<void> _notifyGatewayLoginRestored() async {
+    final callback = onGatewayLoginRestored;
+    if (callback == null) return;
+    try {
+      await callback();
+    } catch (_) {
+      // Authentication has already succeeded; playback can remain paused.
+    }
+  }
+
+  void cancelStartup() {
+    _startupGeneration++;
+    final cancelToken = _startupCancelToken;
+    if (cancelToken != null && !cancelToken.isCancelled) {
+      cancelToken.cancel('Startup cancelled');
+    }
+  }
+
+  Future<void> initialize({bool Function()? isCancelled}) async {
+    final startupGeneration = ++_startupGeneration;
+    final cancelToken = CancelToken();
+    _startupCancelToken = cancelToken;
+
+    bool isStartupCancelled() {
+      return (isCancelled?.call() ?? false) ||
+          cancelToken.isCancelled ||
+          startupGeneration != _startupGeneration;
+    }
+
+    void checkCancelled() {
+      if (isStartupCancelled()) throw const _StartupCancelled();
+    }
+
+    try {
+      _prefs = await SharedPreferences.getInstance();
+      checkCancelled();
+      _loadRedirectCache();
+      api.recoverBaseUrl = (_, requestCancelToken) =>
+          recoverActiveUrl(cancelToken: requestCancelToken);
+      serverUrl = _prefs!.getString('server_url') ?? serverUrl;
+      localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
+      activeUrl = _prefs!.getString('active_url') ??
+          (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
+      serverMode = _serverProfileModeFromPrefs();
+      fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
+      gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
+      needsGatewayLogin =
+          _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
+      token = _prefs!.getString('auth_token');
+      savedServers = _loadSavedServers();
+      _loadLocalLanguage();
+      _loadLocalApplicationTimeZone();
+      api.setClientHeaders(await buildClientDeviceHeaders());
+      checkCancelled();
+      final hasPersistedServerConfig = _prefs!.containsKey('server_url') ||
+          _prefs!.containsKey('local_server_url');
+
+      final rawUser = _prefs!.getString('user');
+      if (rawUser != null) {
+        try {
+          user = _requireAuthenticatedUser(jsonDecode(rawUser));
+        } catch (_) {
+          user = null;
+        }
+      }
+
+      final persistedGatewayHost = _gatewayHostForProfile(
+        server: serverUrl,
+        fnId: fnId,
+        mode: serverMode,
+      );
+      if (persistedGatewayHost != null) {
+        fnId = persistedGatewayHost;
+      }
+
+      if (persistedGatewayHost != null &&
+          fnId.trim().isNotEmpty &&
+          (token == null || user == null) &&
+          (gatewayCookie?.trim().isNotEmpty ?? false)) {
+        // Migrate installations that lost the login marker before automatic
+        // gateway re-authentication was persisted.
+        needsGatewayLogin = true;
+        await _prefs!.setBool(_gatewayReloginRequiredPrefsKey, true);
+      }
+
+      if (persistedGatewayHost != null) {
+        await _selectGatewayProfileRoute(
+          gatewayHost: persistedGatewayHost,
+          quick: true,
+          isCancelled: isStartupCancelled,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
+      } else if (token != null && user != null && hasPersistedServerConfig) {
+        await _selectActiveUrlForCurrentNetwork(
+          isCancelled: isStartupCancelled,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
+      }
+      api.configure(
+        baseUrl: activeUrl,
+        token: token,
+        cookie:
+            serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+      );
+
+      if (token != null && user != null) {
+        await validateConnection(
+          recordLogin: true,
+          isCancelled: isStartupCancelled,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
+        if (connectionError == null && user != null) {
+          await loadSettings(
+            silent: true,
+            isCancelled: isStartupCancelled,
+            cancelToken: cancelToken,
+          );
+          checkCancelled();
+          await loadApplicationTimeZone(
+            silent: true,
+            cancelToken: cancelToken,
+          );
+          checkCancelled();
+        }
+      } else {
+        _loadCachedSettings();
+      }
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && isStartupCancelled()) {
+        throw const _StartupCancelled();
+      }
+      rethrow;
+    } finally {
+      if (identical(_startupCancelToken, cancelToken)) {
+        _startupCancelToken = null;
+      }
+    }
+  }
+
+  Future<void> resetToLoginAfterStartupFailure({
+    bool requireGatewayLogin = true,
+  }) async {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       _loadRedirectCache();
@@ -192,15 +344,21 @@ class AppState extends ChangeNotifier {
       serverMode = _serverProfileModeFromPrefs();
       fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
       gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
-      needsGatewayLogin =
-          serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty;
+      final persistedGatewayHost = _gatewayHostForProfile(
+        server: serverUrl,
+        fnId: fnId,
+        mode: serverMode,
+      );
+      if (persistedGatewayHost != null) fnId = persistedGatewayHost;
+      needsGatewayLogin = requireGatewayLogin && persistedGatewayHost != null;
       savedServers = _loadSavedServers();
       await _prefs?.remove('auth_token');
       await _prefs?.remove('user');
     } catch (_) {
       // Keep a clean login screen even when persisted startup state is broken.
     }
-    api.recoverBaseUrl = (_) => recoverActiveUrl();
+    api.recoverBaseUrl = (_, requestCancelToken) =>
+        recoverActiveUrl(cancelToken: requestCancelToken);
     try {
       api.setClientHeaders(await buildClientDeviceHeaders());
     } catch (_) {
@@ -216,24 +374,36 @@ class AppState extends ChangeNotifier {
       await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
     }
     _loadCachedSettings();
-    api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
+    api.configure(
+      baseUrl: activeUrl,
+      token: null,
+      cookie:
+          serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+    );
     notifyListeners();
   }
 
   Future<void> validateConnection({
     bool recordLogin = false,
     bool Function()? isCancelled,
+    CancelToken? cancelToken,
   }) async {
     void checkCancelled() {
-      if (isCancelled?.call() ?? false) throw const _StartupCancelled();
+      if ((isCancelled?.call() ?? false) ||
+          (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
     }
 
     connectionError = null;
     try {
       if (recordLogin) {
-        await _restoreSessionWithLoginAudit(isCancelled: isCancelled);
+        await _restoreSessionWithLoginAudit(
+          isCancelled: isCancelled,
+          cancelToken: cancelToken,
+        );
       } else {
-        final res = await api.get('/api/me');
+        final res = await api.get('/api/me', cancelToken: cancelToken);
         checkCancelled();
         user = _requireAuthenticatedUser(res.data);
       }
@@ -243,7 +413,12 @@ class AppState extends ChangeNotifier {
       await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
     } on _StartupCancelled {
       rethrow;
-    } catch (_) {
+    } catch (error) {
+      if (error is DioException &&
+          CancelToken.isCancel(error) &&
+          (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
       if (serverMode == ServerProfileMode.fnosGateway) {
         needsGatewayLogin = fnId.trim().isNotEmpty;
         token = null;
@@ -272,9 +447,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> _restoreSessionWithLoginAudit({
     bool Function()? isCancelled,
+    CancelToken? cancelToken,
   }) async {
     void checkCancelled() {
-      if (isCancelled?.call() ?? false) throw const _StartupCancelled();
+      if ((isCancelled?.call() ?? false) ||
+          (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
     }
 
     final currentToken = token;
@@ -286,20 +465,178 @@ class AppState extends ChangeNotifier {
       final res = await api.post(
         '/api/auth/token-login',
         data: {'token': currentToken},
+        cancelToken: cancelToken,
       );
       checkCancelled();
       final map = asMap(res.data);
       token = map['token']?.toString() ?? currentToken;
       user = _requireAuthenticatedUser(map['user']);
-      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+      api.configure(
+        baseUrl: activeUrl,
+        token: token,
+        cookie:
+            serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+      );
       await _prefs?.setString('auth_token', token ?? '');
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
       final status = error.response?.statusCode;
       if (status != 404 && status != 405) rethrow;
-      final res = await api.get('/api/me');
+      final res = await api.get('/api/me', cancelToken: cancelToken);
       checkCancelled();
       user = _requireAuthenticatedUser(res.data);
     }
+  }
+
+  String? _gatewayHostForProfile({
+    required String server,
+    required String fnId,
+    required ServerProfileMode mode,
+  }) {
+    final detected = FnosGateway.tryGatewayHostFromInput(server);
+    if (detected != null) return detected;
+
+    final stored = FnosGateway.tryGatewayHostFromInput(fnId);
+    if (stored != null) return stored;
+
+    if (mode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty) {
+      return FnosGateway.hostForFnId(fnId);
+    }
+    return null;
+  }
+
+  String _normalizedGatewayIdentity(String rawFnId) {
+    final value = rawFnId.trim();
+    if (value.isEmpty) return '';
+    final gatewayHost = FnosGateway.tryGatewayHostFromInput(value);
+    if (gatewayHost != null) return FnosGateway.fnIdLabel(gatewayHost);
+    return value.toLowerCase();
+  }
+
+  Future<RedirectResolution?> _tryResolveLocalServer(
+    String localServer, {
+    bool quick = true,
+    bool Function()? isCancelled,
+    CancelToken? cancelToken,
+  }) async {
+    if ((isCancelled?.call() ?? false) || (cancelToken?.isCancelled ?? false)) {
+      throw const _StartupCancelled();
+    }
+    bool? sameSubnet;
+    try {
+      sameSubnet = await isServerOnCurrentIpv4Subnet(localServer);
+    } catch (_) {
+      sameSubnet = null;
+    }
+    if ((isCancelled?.call() ?? false) || (cancelToken?.isCancelled ?? false)) {
+      throw const _StartupCancelled();
+    }
+    if (sameSubnet == false) return null;
+
+    try {
+      return await resolveBestServerUrl(
+        server: '',
+        localServer: localServer,
+        force: true,
+        quick: quick,
+        cancelToken: cancelToken,
+      );
+    } on _StartupCancelled {
+      rethrow;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<SavedServerProfile> rememberServerProfile({
+    required String server,
+    String localServer = '',
+    required String username,
+    required String password,
+    ServerProfileMode mode = ServerProfileMode.direct,
+    String fnId = '',
+    String gatewayCookie = '',
+    SavedServerProfile? replaceProfile,
+  }) async {
+    final gatewayHost = _gatewayHostForProfile(
+      server: server,
+      fnId: fnId,
+      mode: mode,
+    );
+    final normalizedLocal = _normalizeOptionalServerUrl(localServer);
+    final normalizedServer = gatewayHost == null
+        ? _normalizeOptionalServerUrl(server)
+        : FnosGateway.originUriForHost(gatewayHost).toString();
+    final resolvedMode = gatewayHost == null
+        ? ServerProfileMode.direct
+        : ServerProfileMode.fnosGateway;
+    final profile = SavedServerProfile(
+      serverUrl: normalizedServer,
+      localServerUrl: normalizedLocal,
+      activeUrl: gatewayHost == null
+          ? (normalizedLocal.isNotEmpty ? normalizedLocal : normalizedServer)
+          : FnosGateway.appUriForHost(gatewayHost).toString(),
+      username: username,
+      password: password,
+      label: username,
+      mode: resolvedMode,
+      fnId: gatewayHost ?? '',
+      gatewayCookie: gatewayCookie,
+    );
+    await _saveServerProfile(profile, replaceProfile: replaceProfile);
+    notifyListeners();
+    return profile;
+  }
+
+  Future<void> _selectGatewayProfileRoute({
+    required String gatewayHost,
+    bool quick = false,
+    bool Function()? isCancelled,
+    CancelToken? cancelToken,
+  }) async {
+    fnId = gatewayHost;
+    localServerUrl = _normalizeOptionalServerUrl(localServerUrl);
+
+    if (localServerUrl.isNotEmpty) {
+      final localResolution = await _tryResolveLocalServer(
+        localServerUrl,
+        quick: quick,
+        isCancelled: isCancelled,
+        cancelToken: cancelToken,
+      );
+      if (localResolution != null) {
+        if ((isCancelled?.call() ?? false) ||
+            (cancelToken?.isCancelled ?? false)) {
+          throw const _StartupCancelled();
+        }
+        activeUrl = localResolution.resolvedUrl;
+        serverMode = ServerProfileMode.direct;
+        needsGatewayLogin = false;
+        await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
+        api.configure(baseUrl: activeUrl, token: token, cookie: null);
+        return;
+      }
+    }
+
+    if ((isCancelled?.call() ?? false) || (cancelToken?.isCancelled ?? false)) {
+      throw const _StartupCancelled();
+    }
+
+    serverMode = ServerProfileMode.fnosGateway;
+    final activeGatewayHost =
+        FnosGateway.gatewayHostFromAppUrl(activeUrl, gatewayHost) ??
+            FnosGateway.gatewayHostFromAppUrl(serverUrl, gatewayHost) ??
+            gatewayHost;
+    activeUrl = FnosGateway.appUriForHost(activeGatewayHost).toString();
+    serverUrl = FnosGateway.originUriForHost(activeGatewayHost).toString();
+    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
   }
 
   Future<void> login({
@@ -316,40 +653,79 @@ class AppState extends ChangeNotifier {
     connectionError = null;
     api.setClientHeaders(await buildClientDeviceHeaders());
 
+    final detectedGatewayHost = _gatewayHostForProfile(
+      server: server,
+      fnId: fnId,
+      mode: mode,
+    );
+    final hasGatewayProfile = detectedGatewayHost != null;
+    final resumePlaybackAfterGatewayLogin =
+        hasGatewayProfile && needsGatewayLogin;
     Map<String, dynamic> map;
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
     var usedWebGatewayLogin = false;
 
-    if (mode == ServerProfileMode.fnosGateway) {
-      final normalizedFnId = FnosGateway.hostForFnId(fnId);
-      serverUrl = FnosGateway.appUri(normalizedFnId).toString();
-      localServerUrl = '';
-      activeUrl = serverUrl;
-      this.fnId = normalizedFnId;
-      api.configure(
-        baseUrl: activeUrl,
-        token: null,
-        cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
-      );
+    if (hasGatewayProfile) {
+      final gatewayHost = detectedGatewayHost;
+      this.fnId = gatewayHost;
+      serverUrl = FnosGateway.originUriForHost(gatewayHost).toString();
+      localServerUrl = _normalizeOptionalServerUrl(localServer);
 
-      try {
+      final localResolution = localServerUrl.isEmpty
+          ? null
+          : await _tryResolveLocalServer(localServerUrl, quick: true);
+      if (localResolution != null) {
+        // A FNID in the WAN field is a gateway fallback, not a forced route.
+        // Use the reachable LAN backend directly when the current network
+        // can reach it.
+        serverMode = ServerProfileMode.direct;
+        activeUrl = localResolution.resolvedUrl;
+        api.configure(baseUrl: activeUrl, token: null, cookie: null);
         map = await _loginToTingReader(username, password);
-      } catch (error) {
-        if (resolvedGatewayCookie.isNotEmpty &&
-            !_shouldRefreshGatewayCookie(error)) {
-          rethrow;
-        }
+      } else {
+        serverMode = ServerProfileMode.fnosGateway;
+        activeUrl = FnosGateway.appUriForHost(gatewayHost).toString();
+        api.configure(
+          baseUrl: activeUrl,
+          token: null,
+          cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
+        );
 
-        final refreshedLogin = await acquireGatewayLogin?.call();
-        if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
-          throw StateError(textForLocale(
-            '飞牛登录已取消或未完成',
-            'fnOS login was cancelled or not completed',
-          ));
+        try {
+          map = await _loginToTingReader(username, password);
+        } catch (error) {
+          if (resolvedGatewayCookie.isNotEmpty &&
+              !_shouldRefreshGatewayCookie(error)) {
+            rethrow;
+          }
+
+          final refreshedLogin = await acquireGatewayLogin?.call();
+          if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
+            throw StateError(textForLocale(
+              '飞牛登录已取消或未完成',
+              'fnOS login was cancelled or not completed',
+            ));
+          }
+          resolvedGatewayCookie = refreshedLogin.cookie.trim();
+          if (FnosGateway.isGatewayHostForFnId(
+            this.fnId,
+            refreshedLogin.gatewayHost,
+          )) {
+            final refreshedHost = refreshedLogin.gatewayHost;
+            activeUrl = FnosGateway.appUriForHost(refreshedHost).toString();
+            serverUrl = FnosGateway.originUriForHost(refreshedHost).toString();
+            this.fnId = refreshedHost;
+          }
+          // The WebView only acquires the fnOS session cookie. Complete the
+          // Ting Reader login through the normal API client after it closes.
+          api.configure(
+            baseUrl: activeUrl,
+            token: null,
+            cookie: resolvedGatewayCookie,
+          );
+          map = await _loginToTingReader(username, password);
+          usedWebGatewayLogin = true;
         }
-        resolvedGatewayCookie = refreshedLogin.cookie.trim();
-        map = refreshedLogin.response;
-        usedWebGatewayLogin = true;
       }
     } else {
       serverUrl = _normalizeOptionalServerUrl(server);
@@ -360,6 +736,7 @@ class AppState extends ChangeNotifier {
         force: true,
       );
       activeUrl = resolution.resolvedUrl;
+      serverMode = ServerProfileMode.direct;
       this.fnId = '';
       resolvedGatewayCookie = '';
       api.configure(baseUrl: activeUrl, token: null, cookie: null);
@@ -368,10 +745,15 @@ class AppState extends ChangeNotifier {
 
     token = map['token']?.toString();
     user = _requireAuthenticatedUser(map['user']);
-    serverMode = mode;
-    gatewayCookie =
-        resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie;
-    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+    gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
+        ? resolvedGatewayCookie
+        : null;
+    api.configure(
+      baseUrl: activeUrl,
+      token: token,
+      cookie:
+          serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+    );
     needsGatewayLogin = false;
 
     if (usedWebGatewayLogin) {
@@ -382,7 +764,7 @@ class AppState extends ChangeNotifier {
     await _prefs?.setString('server_url', serverUrl);
     await _prefs?.setString('local_server_url', localServerUrl);
     await _prefs?.setString('active_url', activeUrl);
-    await _prefs?.setString(_serverModePrefsKey, mode.name);
+    await _prefs?.setString(_serverModePrefsKey, serverMode.name);
     await _prefs?.setString(_fnIdPrefsKey, this.fnId);
     if (resolvedGatewayCookie.isEmpty) {
       await _prefs?.remove(_gatewayCookiePrefsKey);
@@ -402,19 +784,22 @@ class AppState extends ChangeNotifier {
         activeUrl: activeUrl,
         username: username,
         password: password,
-        label: mode == ServerProfileMode.fnosGateway
-            ? '${this.fnId} · $username'
-            : username,
-        mode: mode,
-        fnId: this.fnId,
-        gatewayCookie: resolvedGatewayCookie,
-        gatewayCookieAt: resolvedGatewayCookie.isEmpty ? null : DateTime.now(),
+        label: username,
+        mode: serverMode,
+        fnId: hasGatewayProfile ? this.fnId : '',
+        gatewayCookie: hasGatewayProfile ? (gatewayCookie ?? '') : '',
+        gatewayCookieAt:
+            hasGatewayProfile && gatewayCookie != null ? DateTime.now() : null,
         lastLoginAt: DateTime.now(),
       ),
       replaceProfile: replaceProfile,
     );
     await loadSettings(silent: true);
+    await loadApplicationTimeZone(silent: true);
     notifyListeners();
+    if (resumePlaybackAfterGatewayLogin) {
+      await _notifyGatewayLoginRestored();
+    }
   }
 
   Future<Map<String, dynamic>> _loginToTingReader(
@@ -526,11 +911,19 @@ class AppState extends ChangeNotifier {
     required String localServer,
     bool force = false,
     bool quick = false,
+    CancelToken? cancelToken,
   }) async {
+    void checkCancelled() {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const _StartupCancelled();
+      }
+    }
+
     final candidates = await _serverCandidates(
       server: server,
       localServer: localServer,
     );
+    checkCancelled();
     if (candidates.isEmpty) {
       throw StateError(textForLocale(
         '请填写广域网地址或局域网地址',
@@ -542,11 +935,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     try {
       for (final candidate in candidates) {
+        checkCancelled();
         final resolution = await _resolveReachableServerUrl(
           candidate,
           force: force,
           quick: quick,
+          cancelToken: cancelToken,
         );
+        checkCancelled();
         if (resolution != null) {
           lastRedirectResolution = resolution;
           return resolution;
@@ -562,9 +958,9 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> recoverActiveUrl() async {
+  Future<String?> recoverActiveUrl({CancelToken? cancelToken}) async {
     if (_activeUrlRecovery != null) return _activeUrlRecovery;
-    _activeUrlRecovery = _recoverActiveUrl();
+    _activeUrlRecovery = _recoverActiveUrl(cancelToken: cancelToken);
     try {
       return await _activeUrlRecovery;
     } finally {
@@ -572,9 +968,29 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> _recoverActiveUrl() async {
-    if (serverMode == ServerProfileMode.fnosGateway && fnId.isNotEmpty) {
-      activeUrl = FnosGateway.appUri(fnId).toString();
+  Future<String?> _recoverActiveUrl({CancelToken? cancelToken}) async {
+    final gatewayHost = _gatewayHostForProfile(
+      server: serverUrl,
+      fnId: fnId,
+      mode: serverMode,
+    );
+    if (gatewayHost != null) {
+      await _selectGatewayProfileRoute(
+        gatewayHost: gatewayHost,
+        cancelToken: cancelToken,
+      );
+      if (cancelToken?.isCancelled ?? false) {
+        throw const _StartupCancelled();
+      }
+      await _prefs?.setString('active_url', activeUrl);
+      await _prefs?.setString(_serverModePrefsKey, serverMode.name);
+      api.configure(
+        baseUrl: activeUrl,
+        token: token,
+        cookie:
+            serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+      );
+      notifyListeners();
       return activeUrl;
     }
     try {
@@ -582,12 +998,23 @@ class AppState extends ChangeNotifier {
         server: serverUrl,
         localServer: localServerUrl,
         force: true,
+        cancelToken: cancelToken,
       );
+      if (cancelToken?.isCancelled ?? false) {
+        throw const _StartupCancelled();
+      }
       activeUrl = resolution.resolvedUrl;
       await _prefs?.setString('active_url', activeUrl);
       api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
       notifyListeners();
       return activeUrl;
+    } on _StartupCancelled {
+      rethrow;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
+      return null;
     } catch (_) {
       return null;
     }
@@ -595,19 +1022,43 @@ class AppState extends ChangeNotifier {
 
   Future<void> _selectActiveUrlForCurrentNetwork({
     bool Function()? isCancelled,
+    CancelToken? cancelToken,
   }) async {
+    final gatewayHost = _gatewayHostForProfile(
+      server: serverUrl,
+      fnId: fnId,
+      mode: serverMode,
+    );
+    if (gatewayHost != null) {
+      await _selectGatewayProfileRoute(
+        gatewayHost: gatewayHost,
+        quick: true,
+        isCancelled: isCancelled,
+        cancelToken: cancelToken,
+      );
+      return;
+    }
     if (serverMode == ServerProfileMode.fnosGateway) return;
     try {
       final resolution = await resolveBestServerUrl(
         server: serverUrl,
         localServer: localServerUrl,
         quick: true,
+        cancelToken: cancelToken,
       );
-      if (isCancelled?.call() ?? false) throw const _StartupCancelled();
+      if ((isCancelled?.call() ?? false) ||
+          (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
       activeUrl = resolution.resolvedUrl;
       await _prefs?.setString('active_url', activeUrl);
     } on _StartupCancelled {
       rethrow;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
+      // Keep the last working URL; validation/recovery will handle hard failures.
     } catch (_) {
       // Keep the last working URL; validation/recovery will handle hard failures.
     }
@@ -642,20 +1093,76 @@ class AppState extends ChangeNotifier {
   Future<void> loadSettings({
     bool silent = false,
     bool Function()? isCancelled,
+    CancelToken? cancelToken,
   }) async {
     try {
-      final res = await api.get('/api/settings');
-      if (isCancelled?.call() ?? false) throw const _StartupCancelled();
+      final res = await api.get('/api/settings', cancelToken: cancelToken);
+      if ((isCancelled?.call() ?? false) ||
+          (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
       settings = asMap(res.data);
       _applyLocalSettings();
       await _applyLanguageFromSettings();
       await _cacheSettings(settings);
     } on _StartupCancelled {
       rethrow;
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
+      if (!silent) rethrow;
     } catch (_) {
       if (!silent) rethrow;
     }
     notifyListeners();
+  }
+
+  /// Reads the administrator-controlled display time zone. The server keeps
+  /// timestamps in UTC; this value only changes how the client renders them.
+  Future<void> loadApplicationTimeZone({
+    bool silent = false,
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final response = await api.get(
+        '/api/system/time-zone',
+        cancelToken: cancelToken,
+      );
+      final value = asMap(response.data)['time_zone']?.toString();
+      if (value == null ||
+          !app_time_zone.isSupportedApplicationTimeZone(value)) {
+        return;
+      }
+      final changed = await _setApplicationTimeZone(value);
+      if (changed) notifyListeners();
+    } on DioException catch (error) {
+      if (CancelToken.isCancel(error) && (cancelToken?.isCancelled ?? false)) {
+        throw const _StartupCancelled();
+      }
+      if (!silent) rethrow;
+    } catch (_) {
+      if (!silent) rethrow;
+    }
+  }
+
+  /// Updates the application-wide display time zone. Only the server's admin
+  /// authorization decides who may persist this value.
+  Future<void> updateApplicationTimeZone(String value) async {
+    final normalized = value.trim();
+    if (!app_time_zone.isSupportedApplicationTimeZone(normalized)) {
+      throw ArgumentError.value(value, 'value', 'Unsupported IANA time zone');
+    }
+    final response = await api.put(
+      '/api/system/time-zone',
+      data: {'time_zone': normalized},
+    );
+    final stored = asMap(response.data)['time_zone']?.toString();
+    final next = app_time_zone.isSupportedApplicationTimeZone(stored ?? '')
+        ? stored!
+        : normalized;
+    final changed = await _setApplicationTimeZone(next);
+    if (changed) notifyListeners();
   }
 
   Future<void> updateSettings(Map<String, dynamic> patch) async {
@@ -703,6 +1210,28 @@ class AppState extends ChangeNotifier {
     final stored = _prefs?.getString(_languagePrefsKey);
     locale = Locale(normalizeLanguage(stored));
     api.setLanguage(languageCode);
+  }
+
+  void _loadLocalApplicationTimeZone() {
+    app_time_zone.setApplicationTimeZone(
+      _prefs?.getString(_applicationTimeZonePrefsKeyForServer),
+    );
+  }
+
+  Future<bool> _setApplicationTimeZone(String value) async {
+    final normalized = app_time_zone.normalizeApplicationTimeZone(value);
+    final changed = normalized != applicationTimeZone;
+    app_time_zone.setApplicationTimeZone(normalized);
+    await _prefs?.setString(_applicationTimeZonePrefsKeyForServer, normalized);
+    return changed;
+  }
+
+  String get _applicationTimeZonePrefsKeyForServer {
+    final gatewayIdentity = _normalizedGatewayIdentity(fnId);
+    final identity = gatewayIdentity.isNotEmpty
+        ? 'fnos:$gatewayIdentity'
+        : 'server:${_normalizeOptionalServerUrl(serverUrl)}';
+    return '$_applicationTimeZonePrefsKey:${base64Url.encode(utf8.encode(identity))}';
   }
 
   Future<void> setLanguage(String value, {bool syncRemote = true}) async {
@@ -870,11 +1399,20 @@ class AppState extends ChangeNotifier {
       String fnId,
     ) {
       if (server == null || local == null) return false;
-      return _normalizeOptionalServerUrl(item.serverUrl) == server &&
-          _normalizeOptionalServerUrl(item.localServerUrl) == local &&
-          item.username == username &&
+      final gatewayIdentity = _normalizedGatewayIdentity(fnId);
+      final itemGatewayIdentity = _normalizedGatewayIdentity(item.fnId);
+      if (_normalizeOptionalServerUrl(item.localServerUrl) != local ||
+          item.username != username) {
+        return false;
+      }
+      if (gatewayIdentity.isNotEmpty) {
+        // Gateway profiles are one logical server; fnos.net and 5ddd.com
+        // are only relay hosts chosen by fnOS, not different profiles.
+        return itemGatewayIdentity == gatewayIdentity;
+      }
+      return itemGatewayIdentity.isEmpty &&
           item.mode == mode &&
-          item.fnId == fnId;
+          _normalizeOptionalServerUrl(item.serverUrl) == server;
     }
 
     final next = [
@@ -919,17 +1457,23 @@ class AppState extends ChangeNotifier {
   Future<void> deleteSavedServerProfile(SavedServerProfile profile) async {
     final normalizedServer = _normalizeOptionalServerUrl(profile.serverUrl);
     final normalizedLocal = _normalizeOptionalServerUrl(profile.localServerUrl);
-    savedServers = savedServers
-        .where(
-          (item) =>
-              _normalizeOptionalServerUrl(item.serverUrl) != normalizedServer ||
-              _normalizeOptionalServerUrl(item.localServerUrl) !=
-                  normalizedLocal ||
-              item.username != profile.username ||
-              item.mode != profile.mode ||
-              item.fnId != profile.fnId,
-        )
-        .toList();
+    final gatewayIdentity = _normalizedGatewayIdentity(profile.fnId);
+    savedServers = savedServers.where(
+      (item) {
+        final itemGatewayIdentity = _normalizedGatewayIdentity(item.fnId);
+        if (_normalizeOptionalServerUrl(item.localServerUrl) !=
+                normalizedLocal ||
+            item.username != profile.username) {
+          return true;
+        }
+        if (gatewayIdentity.isNotEmpty) {
+          return itemGatewayIdentity != gatewayIdentity;
+        }
+        return itemGatewayIdentity.isNotEmpty ||
+            item.mode != profile.mode ||
+            _normalizeOptionalServerUrl(item.serverUrl) != normalizedServer;
+      },
+    ).toList();
     await _prefs?.setString(
       'saved_servers',
       jsonEncode(savedServers.map((item) => item.toJson()).toList()),
@@ -968,7 +1512,14 @@ class AppState extends ChangeNotifier {
     String normalizedSource, {
     required bool force,
     bool quick = false,
+    CancelToken? cancelToken,
   }) async {
+    void checkCancelled() {
+      if (cancelToken?.isCancelled ?? false) {
+        throw const _StartupCancelled();
+      }
+    }
+
     if (normalizedSource.isEmpty) return null;
 
     final cached = _redirectCache[normalizedSource];
@@ -976,7 +1527,9 @@ class AppState extends ChangeNotifier {
       final resolved = await _probeRedirectTarget(
         normalizedSource,
         quick: quick,
+        cancelToken: cancelToken,
       );
+      checkCancelled();
       if (resolved != null) {
         _redirectCache[normalizedSource] = resolved;
         await _saveRedirectCache();
@@ -988,7 +1541,12 @@ class AppState extends ChangeNotifier {
       }
 
       if (cached != normalizedSource) {
-        final reachable = await _probeRedirectTarget(cached, quick: quick);
+        final reachable = await _probeRedirectTarget(
+          cached,
+          quick: quick,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
         if (reachable != null) {
           return RedirectResolution(
             sourceUrl: normalizedSource,
@@ -1003,7 +1561,12 @@ class AppState extends ChangeNotifier {
       return null;
     }
 
-    final resolved = await _probeRedirectTarget(normalizedSource, quick: quick);
+    final resolved = await _probeRedirectTarget(
+      normalizedSource,
+      quick: quick,
+      cancelToken: cancelToken,
+    );
+    checkCancelled();
     if (resolved == null) return null;
     _redirectCache[normalizedSource] = resolved;
     await _saveRedirectCache();
@@ -1017,7 +1580,11 @@ class AppState extends ChangeNotifier {
   Future<String?> _probeRedirectTarget(
     String sourceUrl, {
     bool quick = false,
+    CancelToken? cancelToken,
   }) async {
+    if (cancelToken?.isCancelled ?? false) {
+      throw const _StartupCancelled();
+    }
     final dio = Dio(
       BaseOptions(
         connectTimeout:
@@ -1035,10 +1602,14 @@ class AppState extends ChangeNotifier {
         final response = await dio.getUri<dynamic>(
           Uri.parse('$sourceUrl$path'),
           options: Options(responseType: ResponseType.plain),
+          cancelToken: cancelToken,
         );
         if (_isBackendProbeResponse(path, response)) {
-          return _originFromUri(response.realUri);
+          return ApiClient.originFromUri(response.realUri);
         }
+      } on DioException catch (error) {
+        if (CancelToken.isCancel(error)) rethrow;
+        // Try the next probe path.
       } catch (_) {
         // Try the next probe path.
       }
@@ -1059,12 +1630,5 @@ class AppState extends ChangeNotifier {
       return text.contains('"status"') && text.contains('healthy');
     }
     return status == 401 || status == 403;
-  }
-
-  String _originFromUri(Uri uri) {
-    final needsPort = uri.hasPort &&
-        !((uri.scheme == 'http' && uri.port == 80) ||
-            (uri.scheme == 'https' && uri.port == 443));
-    return '${uri.scheme}://${uri.host}${needsPort ? ':${uri.port}' : ''}';
   }
 }

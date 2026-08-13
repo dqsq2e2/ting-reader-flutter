@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_win_floating/webview_plugin.dart';
 
 import '../../core/document_reader/document_reader.dart';
+import '../../core/auth/fnos_gateway_auth.dart';
 import '../../core/models/_helpers.dart' show asMap;
 import '../../core/plugin_extensions/registry.dart';
 import '../../core/plugin_extensions/types.dart';
@@ -49,6 +50,10 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
     super.didChangeDependencies();
     final app = AppScope.appOf(context);
     final revision = app.pluginExtensionRevision;
+    final cached = app.pluginCapabilities.cachedClientExtensions;
+    if (cached != null) {
+      _registry = buildClientExtensionRegistry(cached);
+    }
     if (app.offlineMode || app.token == null) {
       _loadedToken = null;
       _loadedRevision = null;
@@ -71,10 +76,7 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
     setState(() => _loading = true);
     try {
       final api = AppScope.appOf(context).pluginCapabilities;
-      final registrations = [
-        ...await api.listPluginCapabilities(kind: 'ui_extension'),
-        ...await api.listPluginCapabilities(kind: 'client_extension'),
-      ];
+      final registrations = await api.listClientExtensions();
       if (!mounted) return;
       setState(() {
         _registry = buildClientExtensionRegistry(registrations);
@@ -167,6 +169,7 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
             Positioned.fill(
               child: _PluginExtensionPanel(
                 extension: _activeExtension!,
+                compact: false,
                 running: _running,
                 message: _actionMessage,
                 failed: _actionFailed,
@@ -198,6 +201,7 @@ class PluginExtensionSlot extends StatefulWidget {
     this.menuIconTextGap = 8,
     this.buttonWidth,
     this.buttonHeight = 48,
+    this.showLoadingPlaceholder = false,
   });
 
   final ClientExtensionSlot slot;
@@ -214,6 +218,7 @@ class PluginExtensionSlot extends StatefulWidget {
   final double menuIconTextGap;
   final double? buttonWidth;
   final double buttonHeight;
+  final bool showLoadingPlaceholder;
 
   @override
   State<PluginExtensionSlot> createState() => _PluginExtensionSlotState();
@@ -237,6 +242,10 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
     super.didChangeDependencies();
     final app = AppScope.appOf(context);
     final revision = app.pluginExtensionRevision;
+    final cached = app.pluginCapabilities.cachedClientExtensions;
+    if (cached != null) {
+      _registry = buildClientExtensionRegistry(cached);
+    }
     if (app.offlineMode || app.token == null) {
       _loadedToken = null;
       _loadedRevision = null;
@@ -265,10 +274,7 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
     setState(() => _loading = true);
     try {
       final api = AppScope.appOf(context).pluginCapabilities;
-      final registrations = [
-        ...await api.listPluginCapabilities(kind: 'ui_extension'),
-        ...await api.listPluginCapabilities(kind: 'client_extension'),
-      ];
+      final registrations = await api.listClientExtensions();
       if (!mounted) return;
       setState(() {
         _registry = buildClientExtensionRegistry(registrations);
@@ -340,6 +346,7 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
           if (extension == null) return const SizedBox.shrink();
           return _PluginExtensionPanel(
             extension: extension,
+            compact: true,
             running: _running,
             message: _actionMessage,
             failed: _actionFailed,
@@ -384,7 +391,25 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
             .take(widget.limit!.clamp(0, extensions.length).toInt())
             .toList();
 
-    if (visible.isEmpty) return const SizedBox.shrink();
+    if (visible.isEmpty) {
+      final menuLabel = widget.menuLabel;
+      if (_loading && widget.showLoadingPlaceholder && menuLabel != null) {
+        return _PluginExtensionMenuButton(
+          label: menuLabel,
+          extensions: const [],
+          width: widget.buttonWidth,
+          height: widget.buttonHeight,
+          iconSize: widget.iconSize,
+          showLabel: widget.showMenuLabel,
+          fontSize: widget.menuFontSize,
+          horizontalPadding: widget.menuHorizontalPadding,
+          iconTextGap: widget.menuIconTextGap,
+          onOpen: (_) {},
+          enabled: false,
+        );
+      }
+      return const SizedBox.shrink();
+    }
 
     final menuLabel = widget.menuLabel;
     if (menuLabel != null && menuLabel.trim().isNotEmpty) {
@@ -447,6 +472,7 @@ class _PluginExtensionMenuButton extends StatefulWidget {
     required this.horizontalPadding,
     required this.iconTextGap,
     this.width,
+    this.enabled = true,
   });
 
   final String label;
@@ -459,6 +485,7 @@ class _PluginExtensionMenuButton extends StatefulWidget {
   final double fontSize;
   final double horizontalPadding;
   final double iconTextGap;
+  final bool enabled;
 
   @override
   State<_PluginExtensionMenuButton> createState() =>
@@ -478,77 +505,85 @@ class _PluginExtensionMenuButtonState
       child: SizedBox(
         width: widget.width,
         height: widget.height,
-        child: PopupMenuButton<ClientExtensionDescriptor>(
-          tooltip: widget.label,
-          onSelected: widget.onOpen,
-          offset: const Offset(0, 8),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          itemBuilder: (context) => [
-            for (final extension in widget.extensions)
-              PopupMenuItem<ClientExtensionDescriptor>(
-                value: extension,
-                child: Row(
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: context.isDark
-                            ? AppColors.slate800
-                            : AppColors.slate100,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: _PluginExtensionIcon(
-                        extension: extension,
-                        size: widget.iconSize,
-                        color: context.mutedText,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        extension.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: context.cardColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: context.faintBorder),
+        child: IgnorePointer(
+          ignoring: !widget.enabled,
+          child: PopupMenuButton<ClientExtensionDescriptor>(
+            tooltip: widget.label,
+            onSelected: widget.onOpen,
+            offset: const Offset(0, 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Padding(
-              padding:
-                  EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.more_horiz_rounded,
-                      size: widget.iconSize, color: color),
-                  if (widget.showLabel) ...[
-                    SizedBox(width: widget.iconTextGap),
-                    Flexible(
-                      child: Text(
-                        widget.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: color,
-                          fontSize: widget.fontSize,
-                          fontWeight: FontWeight.w400,
+            itemBuilder: (context) => [
+              for (final extension in widget.extensions)
+                PopupMenuItem<ClientExtensionDescriptor>(
+                  value: extension,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: context.isDark
+                              ? AppColors.slate800
+                              : AppColors.slate100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: _PluginExtensionIcon(
+                          extension: extension,
+                          size: widget.iconSize,
+                          color: context.mutedText,
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          extension.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: context.faintBorder),
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.horizontalPadding,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.more_horiz_rounded,
+                      size: widget.iconSize,
+                      color: color,
                     ),
+                    if (widget.showLabel) ...[
+                      SizedBox(width: widget.iconTextGap),
+                      Flexible(
+                        child: Text(
+                          widget.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: widget.fontSize,
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
@@ -936,6 +971,7 @@ class _PluginLauncherTile extends StatelessWidget {
 class _PluginExtensionPanel extends StatelessWidget {
   const _PluginExtensionPanel({
     required this.extension,
+    required this.compact,
     required this.running,
     required this.failed,
     required this.onClose,
@@ -945,6 +981,7 @@ class _PluginExtensionPanel extends StatelessWidget {
   });
 
   final ClientExtensionDescriptor extension;
+  final bool compact;
   final bool running;
   final bool failed;
   final String? message;
@@ -954,6 +991,22 @@ class _PluginExtensionPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewport = MediaQuery.of(context).size;
+    final panelHeight = (viewport.height * (compact ? 0.86 : 0.88))
+        .clamp(0.0, compact ? 608.0 : 672.0)
+        .toDouble();
+    final panelMargin = viewport.width >= 640 ? 24.0 : 12.0;
+    final isWebContainer =
+        extension.renderMode == ClientExtensionRenderMode.webContainer;
+    final body = _PluginExtensionPanelBody(
+      extension: extension,
+      running: running,
+      failed: failed,
+      message: message,
+      onInvoke: onInvoke,
+      extensionContext: extensionContext,
+    );
+
     return Material(
       color: Colors.transparent,
       child: Stack(
@@ -971,14 +1024,12 @@ class _PluginExtensionPanel extends StatelessWidget {
             alignment: Alignment.bottomRight,
             child: SafeArea(
               child: Container(
-                width: MediaQuery.of(context).size.width < 560
-                    ? double.infinity
-                    : 420,
-                height: MediaQuery.of(context).size.height * 0.72,
-                margin: const EdgeInsets.all(16),
+                width: viewport.width < 560 ? double.infinity : 448,
+                height: panelHeight,
+                margin: EdgeInsets.all(panelMargin),
                 decoration: BoxDecoration(
                   color: context.cardColor,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: context.faintBorder),
                   boxShadow: [
                     BoxShadow(
@@ -995,17 +1046,12 @@ class _PluginExtensionPanel extends StatelessWidget {
                       onClose: onClose,
                     ),
                     Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: _PluginExtensionPanelBody(
-                          extension: extension,
-                          running: running,
-                          failed: failed,
-                          message: message,
-                          onInvoke: onInvoke,
-                          extensionContext: extensionContext,
-                        ),
-                      ),
+                      child: isWebContainer
+                          ? body
+                          : Padding(
+                              padding: const EdgeInsets.all(18),
+                              child: body,
+                            ),
                     ),
                   ],
                 ),
@@ -1030,16 +1076,16 @@ class _PluginExtensionPanelHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: context.faintBorder)),
       ),
       child: Row(
         children: [
           Container(
-            width: 34,
-            height: 34,
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
               color: AppColors.primary50,
               borderRadius: BorderRadius.circular(8),
@@ -1052,7 +1098,7 @@ class _PluginExtensionPanelHeader extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -2077,6 +2123,11 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     );
     final loadAssetAsTopLevel = _pluginWebViewLoadsAssetAsTopLevel();
     final pluginTheme = _pluginThemePayload(context);
+    final themeVariables = pluginTheme['cssVariables'];
+    debugPrint(
+      '[plugin-webview] theme scheme=${pluginTheme['colorScheme']} '
+      'bg=${themeVariables is Map ? themeVariables['--bg'] : ''}',
+    );
     final initPayload = _pluginInitPayloadJson(
       extension: widget.extension,
       extensionContext: widget.extensionContext,
@@ -2089,13 +2140,33 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     late final Future<void> controllerSetup;
     try {
       late final WebViewController nextController;
-      nextController = WebViewController();
+      nextController = defaultTargetPlatform == TargetPlatform.windows
+          ? WebViewController.fromPlatformCreationParams(
+              const WindowsWebViewControllerCreationParams(
+                // The native WebView is an HWND overlay. A dialog rebuild can
+                // temporarily deactivate its Flutter subtree; suspending the
+                // browser in that interval leaves a blank native surface.
+                suspendDuringDeactive: false,
+              ),
+            )
+          : WebViewController();
       controllerSetup = nextController
           .setJavaScriptMode(JavaScriptMode.unrestricted)
           .then<void>(
             (_) => nextController.setNavigationDelegate(
               NavigationDelegate(
                 onNavigationRequest: (request) {
+                  // The web client loads the plugin document inside an
+                  // iframe. Allow the document and all of its plugin asset
+                  // subresources, including css/js, before applying the
+                  // external-navigation policy.
+                  if (_isPluginAssetUrl(
+                    request.url,
+                    assetUrl: assetUrl,
+                    pluginId: widget.extension.pluginId,
+                  )) {
+                    return NavigationDecision.navigate;
+                  }
                   if (loadAssetAsTopLevel) {
                     // Subresources such as the plugin CSS/JS are not top-level
                     // navigations. Let the WebView fetch them under the same
@@ -2128,15 +2199,48 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                   _openPluginExternalUrl(request.url);
                   return NavigationDecision.prevent;
                 },
-                onPageFinished: (_) {
-                  if (loadAssetAsTopLevel) {
-                    _installTopLevelPluginBridge(
-                      nextController,
-                      initPayload: initPayload,
-                      theme: pluginTheme,
-                      assetUrl: assetUrl,
+                onPageFinished: (url) {
+                  if (loadAssetAsTopLevel &&
+                      url.isNotEmpty &&
+                      !_isPluginAssetUrl(
+                        url,
+                        assetUrl: assetUrl,
+                        pluginId: widget.extension.pluginId,
+                      )) {
+                    final parsedUrl = Uri.tryParse(url);
+                    final safeUrl = parsedUrl == null
+                        ? url
+                        : parsedUrl.replace(query: '', fragment: '').toString();
+                    debugPrint(
+                      '[plugin-webview] rejected final document outside plugin asset: $safeUrl',
                     );
-                    _appliedThemeSignature = _pluginThemeSignature(pluginTheme);
+                    if (mounted) {
+                      setState(() {
+                        _error =
+                            'Plugin UI redirected outside the authenticated asset';
+                      });
+                    }
+                    return;
+                  }
+                  if (loadAssetAsTopLevel) {
+                    unawaited(() async {
+                      await _installTopLevelPluginBridge(
+                        nextController,
+                        initPayload: initPayload,
+                        theme: pluginTheme,
+                        assetUrl: assetUrl,
+                      );
+                      _appliedThemeSignature =
+                          _pluginThemeSignature(pluginTheme);
+                      await _probePluginDocument(
+                        nextController,
+                        url,
+                      );
+                    }());
+                  } else {
+                    unawaited(
+                      _probePluginFrame(nextController, assetUrl),
+                    );
                   }
                   _pageLoaded = true;
                 },
@@ -2185,6 +2289,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
         app: app,
         loadAssetAsTopLevel: loadAssetAsTopLevel,
         initPayload: initPayload,
+        theme: pluginTheme,
         generation: generation,
         setupFuture: controllerSetup,
       ),
@@ -2197,6 +2302,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     required AppState app,
     required bool loadAssetAsTopLevel,
     required String initPayload,
+    required Map<String, Object?> theme,
     required int generation,
     required Future<void> setupFuture,
   }) async {
@@ -2206,22 +2312,45 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       // completed, otherwise the plugin can run before TingPluginBridge exists.
       await setupFuture;
 
+      final assetUri = Uri.parse(assetUrl);
+      await _writePluginCookiesToWebView(
+        controller: controller,
+        assetUri: assetUri,
+        cookieHeader: app.api.cookie,
+      );
+      await _configurePluginSubresourceHeaders(
+        controller: controller,
+        assetUri: assetUri,
+        headers: app.api.authHeaders,
+      );
+
       if (loadAssetAsTopLevel) {
-        final assetUri = Uri.parse(assetUrl);
-        await _writePluginCookiesToWebView(
-          controller: controller,
-          assetUri: assetUri,
-          cookieHeader: app.api.cookie,
-        );
         await controller.loadRequest(
           assetUri,
           headers: app.api.authHeaders,
         );
       } else {
+        final response = await app.api.getTextUri(assetUri);
+        final responseData = response.data;
+        final html = responseData is List<int>
+            ? utf8.decode(responseData, allowMalformed: false)
+            : responseData?.toString() ?? '';
+        final safeUrl = assetUri.replace(query: '', fragment: '').toString();
+        debugPrint(
+          '[plugin-webview] fetched plugin html url=$safeUrl '
+          'status=${response.statusCode} length=${html.length}',
+        );
+        if (_looksLikeTingReaderShell(html)) {
+          throw StateError(
+            'Plugin asset request returned the Ting Reader app shell',
+          );
+        }
         await controller.loadHtmlString(
           _pluginWebContainerHtml(
             initPayload: initPayload,
             assetUrl: assetUrl,
+            assetHtml: _pluginHtmlWithBaseHref(html, assetUrl),
+            theme: theme,
           ),
           baseUrl: app.api.baseUrl,
         );
@@ -2229,6 +2358,25 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
       setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _configurePluginSubresourceHeaders({
+    required WebViewController controller,
+    required Uri assetUri,
+    required Map<String, String> headers,
+  }) async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    final platform = controller.platform;
+    if (platform is! WindowsPlatformWebViewController) return;
+    final configured = await platform.setRequestHeaders(
+      assetUri,
+      headers: headers,
+    );
+    if (!configured) {
+      throw StateError(
+        'Windows WebView2 failed to configure plugin resource headers',
+      );
     }
   }
 
@@ -2257,7 +2405,10 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       final cookie = WebViewCookie(
         name: name,
         value: value,
-        domain: assetUri.host,
+        // fnOS may redirect through fnos.net while validating the relay
+        // session. Use the parent domain so both the FNID host and fnos.net
+        // receive the same gateway cookies, as they do in a browser.
+        domain: FnosGateway.cookieDomainForHost(assetUri.host),
         path: '/',
       );
       if (windowsController != null) {
@@ -2293,15 +2444,96 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     final request = _decodeBridgeRequest(message.message);
     if (request == null) return;
 
+    debugPrint(
+      '[plugin-webview] bridge request method=${request.method}',
+    );
+
     try {
       final result = await _invokeBridgeRequest(request);
       await _postBridgeResponse(request, ok: true, result: result);
+      debugPrint(
+        '[plugin-webview] bridge response method=${request.method} ok=1',
+      );
     } catch (error) {
       await _postBridgeResponse(
         request,
         ok: false,
         error: error.toString(),
       );
+      debugPrint(
+        '[plugin-webview] bridge response method=${request.method} ok=0',
+      );
+    }
+  }
+
+  Future<void> _probePluginDocument(
+    WebViewController controller,
+    String url,
+  ) async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    final parsed = Uri.tryParse(url);
+    final safeUrl = parsed == null
+        ? url
+        : parsed.replace(query: '', fragment: '').toString();
+    try {
+      final result = await controller.runJavaScriptReturningResult('''
+JSON.stringify({
+  readyState: document.readyState,
+  title: document.title,
+  href: location.href,
+  bodyLength: document.body ? document.body.innerHTML.length : -1,
+  scriptCount: document.scripts.length,
+  styleCount: document.styleSheets.length,
+  appText: document.body ? document.body.innerText.slice(0, 80) : ""
+})
+''');
+      debugPrint('[plugin-webview] DOM probe url=$safeUrl result=$result');
+    } catch (error) {
+      debugPrint('[plugin-webview] DOM probe failed url=$safeUrl');
+    }
+  }
+
+  Future<void> _probePluginFrame(
+    WebViewController controller,
+    String assetUrl,
+  ) async {
+    if (defaultTargetPlatform != TargetPlatform.windows) return;
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    final parsed = Uri.tryParse(assetUrl);
+    final safeUrl = parsed == null
+        ? assetUrl
+        : parsed.replace(query: '', fragment: '').toString();
+    try {
+      final result = await controller.runJavaScriptReturningResult('''
+(function() {
+  const frame = document.getElementById("plugin-frame");
+  const doc = frame && frame.contentDocument;
+  return JSON.stringify({
+    frameReady: Boolean(frame),
+    frameUrl: frame && frame.contentWindow ? frame.contentWindow.location.href : "",
+    frameTitle: doc ? doc.title : "",
+    frameBodyLength: doc && doc.body ? doc.body.innerHTML.length : -1,
+    frameScriptCount: doc ? doc.scripts.length : -1,
+    frameStyleCount: doc ? doc.styleSheets.length : -1,
+    frameText: doc && doc.body ? doc.body.innerText.slice(0, 80) : "",
+    themeBackground: doc && doc.body
+        ? getComputedStyle(doc.body).backgroundColor
+        : "",
+    themeColor: doc && doc.body
+        ? getComputedStyle(doc.body).color
+        : "",
+    themeScheme: doc && doc.documentElement
+        ? getComputedStyle(doc.documentElement).colorScheme
+        : "",
+    themeVariable: doc && doc.documentElement
+        ? getComputedStyle(doc.documentElement).getPropertyValue("--bg")
+        : ""
+  });
+})()
+''');
+      debugPrint('[plugin-webview] iframe probe url=$safeUrl result=$result');
+    } catch (_) {
+      debugPrint('[plugin-webview] iframe probe failed url=$safeUrl');
     }
   }
 
@@ -2391,10 +2623,11 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
 }
 
 bool _pluginWebViewLoadsAssetAsTopLevel() {
-  // Loading the asset as the top-level document lets the host inject bridge and
-  // theme state directly, instead of requiring each plugin UI to implement its
-  // own theme listener. NavigationDelegate keeps the page pinned to plugin assets.
-  return !kIsWeb;
+  // Match the web client: fetch the HTML through the authenticated API and
+  // render it in an iframe/srcdoc. Direct top-level navigation is treated as a
+  // normal document by the fnOS gateway and can return the SPA shell instead
+  // of the plugin asset.
+  return false;
 }
 
 bool _pluginWebViewSupported() {
@@ -2625,6 +2858,39 @@ Map<String, Object?> _pluginThemePayload(BuildContext context) {
 
 String _pluginThemeSignature(Map<String, Object?> theme) => jsonEncode(theme);
 
+String _escapePluginHtmlAttribute(String value) {
+  return value
+      .replaceAll('&', '&amp;')
+      .replaceAll('"', '&quot;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;');
+}
+
+String _pluginHtmlWithBaseHref(String html, String assetUrl) {
+  if (RegExp(r'<base\b', caseSensitive: false).hasMatch(html)) {
+    return html;
+  }
+  final baseTag = '<base href="${_escapePluginHtmlAttribute(assetUrl)}">';
+  final headPattern = RegExp(r'<head([^>]*)>', caseSensitive: false);
+  final match = headPattern.firstMatch(html);
+  if (match != null) {
+    final end = match.end;
+    return '${html.substring(0, end)}$baseTag${html.substring(end)}';
+  }
+  return '$baseTag$html';
+}
+
+bool _looksLikeTingReaderShell(String html) {
+  final hasAppTitle = RegExp(
+    r'<title[^>]*>\s*Ting Reader\b',
+    caseSensitive: false,
+  ).hasMatch(html);
+  final normalized = html.toLowerCase();
+  final hasRoot =
+      normalized.contains('id="root"') || normalized.contains("id='root'");
+  return hasAppTitle && hasRoot;
+}
+
 String _pluginThemeApplicationScript(Map<String, Object?> theme) {
   final themePayload = jsonEncode(theme);
   return '''
@@ -2634,13 +2900,13 @@ String _pluginThemeApplicationScript(Map<String, Object?> theme) {
   const colorScheme = rawScheme.indexOf("dark") >= 0 ? "dark" : "light";
   const root = document.documentElement;
   const vars = theme.cssVariables || {};
-  root.style.colorScheme = colorScheme;
+  root.style.setProperty("color-scheme", colorScheme, "important");
   root.dataset.tingTheme = colorScheme;
   root.dataset.theme = colorScheme;
   root.classList.toggle("dark", colorScheme === "dark");
   root.classList.toggle("light", colorScheme === "light");
   Object.keys(vars).forEach(function(key) {
-    root.style.setProperty(key, String(vars[key]));
+    root.style.setProperty(key, String(vars[key]), "important");
   });
   let meta = document.querySelector('meta[name="color-scheme"]');
   if (!meta) {
@@ -2650,8 +2916,11 @@ String _pluginThemeApplicationScript(Map<String, Object?> theme) {
   }
   meta.setAttribute("content", colorScheme);
   if (document.body) {
-    if (vars["--bg"]) document.body.style.backgroundColor = String(vars["--bg"]);
-    if (vars["--text"]) document.body.style.color = String(vars["--text"]);
+    if (vars["--bg"]) document.body.style.setProperty("background-color", String(vars["--bg"]), "important");
+    if (vars["--text"]) document.body.style.setProperty("color", String(vars["--text"]), "important");
+  }
+  if (typeof window.__tingPluginApplyTheme === "function") {
+    window.__tingPluginApplyTheme(theme);
   }
   window.__tingPluginTheme = theme;
   window.postMessage({ type: "ting-plugin:theme", theme: theme }, "*");
@@ -2662,8 +2931,14 @@ String _pluginThemeApplicationScript(Map<String, Object?> theme) {
 String _pluginWebContainerHtml({
   required String initPayload,
   required String assetUrl,
+  required String assetHtml,
+  required Map<String, Object?> theme,
 }) {
   final assetPayload = jsonEncode(assetUrl);
+  // A plugin document contains </script>. Escape '<' in the JSON string so
+  // embedding it inside this wrapper's script cannot terminate that script.
+  final assetHtmlPayload = jsonEncode(assetHtml).replaceAll('<', r'\u003C');
+  final themePayload = jsonEncode(theme);
 
   return '''
 <!doctype html>
@@ -2672,15 +2947,89 @@ String _pluginWebContainerHtml({
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    html, body, iframe { margin: 0; width: 100%; height: 100%; border: 0; background: transparent; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: transparent;
+    }
+    iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      border: 0;
+      overflow: hidden;
+      background: transparent;
+    }
   </style>
 </head>
 <body>
-  <iframe id="plugin-frame" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
+  <iframe id="plugin-frame" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
   <script>
     const frame = document.getElementById('plugin-frame');
     const initPayload = $initPayload;
     const assetUrl = $assetPayload;
+    const assetHtml = $assetHtmlPayload;
+    const pluginTheme = $themePayload;
+
+    function installPluginHostStyles(doc, colorScheme) {
+      let style = doc.getElementById("ting-plugin-host-style");
+      if (!style) {
+        style = doc.createElement("style");
+        style.id = "ting-plugin-host-style";
+        (doc.head || doc.documentElement).appendChild(style);
+      }
+      const thumb = colorScheme === "dark"
+        ? "rgba(148, 163, 184, 0.48)"
+        : "rgba(100, 116, 139, 0.34)";
+      style.textContent =
+        "html, body, .generate-panel, .saved-panel {" +
+        "scrollbar-width: thin; scrollbar-color: " + thumb + " transparent; }" +
+        "html::-webkit-scrollbar, body::-webkit-scrollbar, " +
+        ".generate-panel::-webkit-scrollbar, .saved-panel::-webkit-scrollbar " +
+        "{ width: 8px; height: 8px; }" +
+        "html::-webkit-scrollbar-track, body::-webkit-scrollbar-track, " +
+        ".generate-panel::-webkit-scrollbar-track, .saved-panel::-webkit-scrollbar-track " +
+        "{ background: transparent; }" +
+        "html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb, " +
+        ".generate-panel::-webkit-scrollbar-thumb, .saved-panel::-webkit-scrollbar-thumb " +
+        "{ background: " + thumb + "; border: 2px solid transparent; " +
+        "border-radius: 999px; background-clip: padding-box; }" +
+        "html::-webkit-scrollbar-button, body::-webkit-scrollbar-button, " +
+        ".generate-panel::-webkit-scrollbar-button, .saved-panel::-webkit-scrollbar-button " +
+        "{ display: none; width: 0; height: 0; }";
+    }
+
+    function applyPluginTheme(theme) {
+      const rawScheme = String(
+        theme && (theme.colorScheme || theme.brightness) || "light"
+      ).toLowerCase();
+      const colorScheme = rawScheme.indexOf("dark") >= 0 ? "dark" : "light";
+      const doc = frame.contentDocument;
+      if (!doc || !doc.documentElement) return;
+      const root = doc.documentElement;
+      const vars = (theme && theme.cssVariables) || {};
+      installPluginHostStyles(doc, colorScheme);
+      root.style.setProperty("color-scheme", colorScheme, "important");
+      root.dataset.tingTheme = colorScheme;
+      root.dataset.theme = colorScheme;
+      root.classList.toggle("dark", colorScheme === "dark");
+      root.classList.toggle("light", colorScheme === "light");
+      Object.keys(vars).forEach(function(key) {
+        root.style.setProperty(key, String(vars[key]), "important");
+      });
+      if (doc.body) {
+        if (vars["--bg"]) doc.body.style.setProperty("background-color", String(vars["--bg"]), "important");
+        if (vars["--text"]) doc.body.style.setProperty("color", String(vars["--text"]), "important");
+      }
+      if (frame.contentWindow) {
+        frame.contentWindow.postMessage({ type: "ting-plugin:theme", theme: theme }, "*");
+      }
+    }
+
+    window.__tingPluginApplyTheme = applyPluginTheme;
 
     function absolutePluginUrl(url) {
       try {
@@ -2717,6 +3066,11 @@ String _pluginWebContainerHtml({
 
     frame.addEventListener('load', function() {
       if (frame.contentWindow) {
+        applyPluginTheme(pluginTheme);
+        // WebView2 can expose the srcdoc document one tick after the iframe
+        // load event. Reapply after layout so plugin CSS cannot win a race.
+        window.setTimeout(function() { applyPluginTheme(pluginTheme); }, 0);
+        window.setTimeout(function() { applyPluginTheme(pluginTheme); }, 120);
         try {
           frame.contentWindow.open = function(url) {
             if (url && shouldOpenExternally(url)) {
@@ -2743,7 +3097,7 @@ String _pluginWebContainerHtml({
         frame.contentWindow.postMessage(initPayload, '*');
       }
     });
-    frame.src = assetUrl;
+    frame.srcdoc = assetHtml;
   </script>
 </body>
 </html>

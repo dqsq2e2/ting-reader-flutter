@@ -1,9 +1,7 @@
 export 'webview_plugin.dart';
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
@@ -67,8 +65,9 @@ class WinWebViewPermissionRequest extends PlatformWebViewPermissionRequest {
   @override
   Future<void> grant() async {
     if (_isDone) {
-      print(
-        "[webview_win_floating] WinWebViewPermissionRequest: already called grant() or deny() before. ignored",
+      log(
+        'WinWebViewPermissionRequest: grant() or deny() was already called. Ignoring duplicate call.',
+        name: 'webview_win_floating',
       );
       return;
     }
@@ -80,8 +79,9 @@ class WinWebViewPermissionRequest extends PlatformWebViewPermissionRequest {
   @override
   Future<void> deny() async {
     if (_isDone) {
-      print(
-        "[webview_win_floating] WinWebViewPermissionRequest: already called grant() or deny() before. ignored",
+      log(
+        'WinWebViewPermissionRequest: grant() or deny() was already called. Ignoring duplicate call.',
+        name: 'webview_win_floating',
       );
       return;
     }
@@ -92,8 +92,10 @@ class WinWebViewPermissionRequest extends PlatformWebViewPermissionRequest {
 
   Future<void> denyIfNoAction() async {
     if (_isDone) return;
-    print(
-        "[webview_win_floating] onPermissionRequest() doesn't call grant() or deny()!");
+    log(
+      'Permission request completed without grant() or deny(); denying it.',
+      name: 'webview_win_floating',
+    );
     _controller.grantPermission(_deferralId, false);
     _isDone = true;
   }
@@ -111,8 +113,10 @@ class WinSslAuthError extends PlatformSslAuthError {
 
   @override
   Future<void> proceed() async {
-    print(
-        "[webview_win_floating] onSslAuthError(): WinSslAuthError.proceed() do nothing. Always skip websites with ssl auth error");
+    log(
+      'WinSslAuthError.proceed() is unsupported; SSL-auth-error pages remain blocked.',
+      name: 'webview_win_floating',
+    );
   }
 }
 
@@ -244,7 +248,7 @@ class WinWebViewController {
       this.params = params;
     } else {
       log("[webview_win_floating] variable 'params' is not a 'WindowsWebViewControllerCreationParams' object. type: ${params.runtimeType}");
-      this.params = WindowsWebViewControllerCreationParams();
+      this.params = const WindowsWebViewControllerCreationParams();
     }
 
     _initFuture = WebviewWinFloatingPlatform.instance.create(
@@ -481,6 +485,21 @@ class WinWebViewController {
       method: method,
       headers: headers,
       body: body,
+    );
+  }
+
+  /// Configure headers for same-origin subresources without navigating first.
+  /// This is used by iframe/srcdoc plugin containers, whose HTML is fetched by
+  /// Dart before the WebView loads the document.
+  Future<bool> setRequestHeaders(
+    Uri origin, {
+    required Map<String, String> headers,
+  }) async {
+    await _initFuture;
+    return WebviewWinFloatingPlatform.instance.setRequestHeaders(
+      _webviewId,
+      origin: origin.origin,
+      headers: headers,
     );
   }
 

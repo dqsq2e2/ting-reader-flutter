@@ -355,7 +355,10 @@ String _shortUserId(String id, {bool dotted = true}) {
 
 String _formatUserDate(BuildContext context, String? raw) {
   if (raw == null || raw.isEmpty) return context.localeText('从未', 'Never');
-  final date = DateTime.tryParse(raw)?.toLocal();
+  final date = backendDateTimeInApplicationTimeZone(
+    raw,
+    AppScope.appOf(context).applicationTimeZone,
+  );
   if (date == null) return raw;
   final hour = date.hour.toString().padLeft(2, '0');
   final minute = date.minute.toString().padLeft(2, '0');

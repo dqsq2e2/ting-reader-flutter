@@ -34,7 +34,8 @@ class SavedServerProfile {
   final DateTime? gatewayCookieAt;
   final DateTime? lastLoginAt;
 
-  bool get isFnosGateway => mode == ServerProfileMode.fnosGateway;
+  bool get isFnosGateway =>
+      mode == ServerProfileMode.fnosGateway || fnId.trim().isNotEmpty;
 
   factory SavedServerProfile.fromJson(Map<String, dynamic> json) {
     final rawFnId = json['fn_id']?.toString().trim() ?? '';

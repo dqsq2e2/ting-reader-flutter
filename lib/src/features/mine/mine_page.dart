@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
+import '../../core/utils/application_time_zone.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
@@ -1520,7 +1521,7 @@ class _HistoryProgressBar extends StatelessWidget {
 }
 
 DateTime _historyTime(ProgressItem item) {
-  return DateTime.tryParse(item.updatedAt ?? '')?.toLocal() ??
+  return backendDateTimeInApplicationTimeZone(item.updatedAt) ??
       DateTime.fromMillisecondsSinceEpoch(0);
 }
 
@@ -1534,10 +1535,14 @@ String _formatLastListenedTime(BuildContext context, String? value) {
   if (value == null || value.isEmpty) {
     return context.localeText('未知时间', 'Unknown time');
   }
-  final date = DateTime.tryParse(value)?.toLocal();
+  final appState = AppScope.appOf(context);
+  final date = backendDateTimeInApplicationTimeZone(
+    value,
+    appState.applicationTimeZone,
+  );
   if (date == null) return context.localeText('未知时间', 'Unknown time');
 
-  final now = DateTime.now();
+  final now = nowInApplicationTimeZone(appState.applicationTimeZone);
   final today = DateTime(now.year, now.month, now.day);
   final target = DateTime(date.year, date.month, date.day);
   final diff = today.difference(target).inDays;

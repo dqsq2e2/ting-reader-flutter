@@ -1,11 +1,13 @@
 #include "my_webview.h"
 
 #include <functional>
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <utility> // std::pair
 #include <regex>
 #include <cwchar>
+#include <cwctype>
 
 #include <windows.h>
 #include <WebView2.h>
@@ -100,8 +102,10 @@ private:
     bool m_isNowGoBackForward = false;
 
     bool isSameOriginRequest(const std::wstring& requestUri) const;
+    bool isFnosGatewayRequest(const std::wstring& requestUri) const;
     HRESULT applyRequestHeaders(
-        ICoreWebView2HttpRequestHeaders* requestHeaders) const;
+        ICoreWebView2HttpRequestHeaders* requestHeaders,
+        bool includeAuthorization = true) const;
 
     void __sendOnNavigationRequest(std::wstring utf16Url, std::string utf8Url, bool isNewWindow);
     void __sendOnPageStarted(std::string url, UINT64 navigationId);
@@ -191,6 +195,10 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                 hr = m_pWebview->get_Settings(&m_pSettings);
                 m_pController = controller;
 
+                const auto visibleHr = m_pController->put_IsVisible(TRUE);
+                std::cout << "[webview_win_floating] controller visible hr="
+                          << visibleHr << std::endl;
+
                 m_pSettings->put_AreDefaultContextMenusEnabled(FALSE);
 #ifndef _DEBUG
                 m_pSettings->put_AreDevToolsEnabled(FALSE);
@@ -218,20 +226,45 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                                 // If we skip the POST request below, all the headers will be discard,
                                 // so the POST request will be failed, and this makes most of the html login-form failed.
                                 headers->Contains(L"Content-Type", &isPostMethod);
-                                if (isSameOriginRequest(utf16Url)) {
-                                    const auto headerHr =
-                                        applyRequestHeaders(headers.get());
-                                    const auto queryPosition =
-                                        utf16Url.find_first_of(L"?#");
-                                    const auto safeUrl = utf16Url.substr(
-                                        0, queryPosition == std::wstring::npos
-                                               ? std::wstring::npos
-                                               : queryPosition);
-                                    std::cout
-                                        << "[webview_win_floating] navigation headers applied"
-                                        << " url=" << utf8_encode(safeUrl)
-                                        << " hr=" << headerHr << std::endl;
+                                const bool sameOrigin =
+                                    isSameOriginRequest(utf16Url);
+                                const bool gatewayOrigin =
+                                    isFnosGatewayRequest(utf16Url);
+                                HRESULT headerHr = S_OK;
+                                if (sameOrigin) {
+                                    headerHr = applyRequestHeaders(headers.get());
+                                } else if (gatewayOrigin) {
+                                    // A fnOS validation redirect may move from
+                                    // the FNID host to fnos.net. Forward only
+                                    // gateway cookies there; never forward the
+                                    // Ting Reader JWT to the fnOS login host.
+                                    headerHr = applyRequestHeaders(
+                                        headers.get(), false);
                                 }
+
+                                const auto queryPosition =
+                                    utf16Url.find_first_of(L"?#");
+                                const auto safeUrl = utf16Url.substr(
+                                    0, queryPosition == std::wstring::npos
+                                           ? std::wstring::npos
+                                           : queryPosition);
+                                BOOL hasCookie = FALSE;
+                                BOOL hasAuthorization = FALSE;
+                                headers->Contains(L"Cookie", &hasCookie);
+                                headers->Contains(
+                                    L"Authorization", &hasAuthorization);
+                                std::cout
+                                    << "[webview_win_floating] navigation request"
+                                    << " url=" << utf8_encode(safeUrl)
+                                    << " same_origin=" << (sameOrigin ? 1 : 0)
+                                    << " gateway_origin="
+                                    << (gatewayOrigin ? 1 : 0)
+                                    << " redirected=" << (isRedirected ? 1 : 0)
+                                    << " hr=" << headerHr
+                                    << " cookie=" << (hasCookie ? 1 : 0)
+                                    << " authorization="
+                                    << (hasAuthorization ? 1 : 0)
+                                    << std::endl;
                             }
 
                             bool userInitiated = true;
@@ -292,8 +325,28 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                         [=](ICoreWebView2* sender, ICoreWebView2NavigationCompletedEventArgs* args) -> HRESULT {
                             UINT64 navigationId = 0;
                             args->get_NavigationId(&navigationId);
-                            std::string url = m_navigationMap[navigationId];
-                            m_navigationMap.erase(navigationId);
+                            std::string url;
+                            const auto navigationIt = m_navigationMap.find(navigationId);
+                            if (navigationIt != m_navigationMap.end()) {
+                                url = navigationIt->second;
+                                m_navigationMap.erase(navigationIt);
+                            }
+
+                            wil::unique_cotaskmem_string source;
+                            sender->get_Source(&source);
+                            const std::string sourceUrl =
+                                source.get() == nullptr
+                                    ? std::string()
+                                    : utf8_encode(std::wstring(source.get()));
+                            const std::string completedUrl =
+                                sourceUrl.empty() ? url : sourceUrl;
+                            const auto sourceQuery = completedUrl.find_first_of("?#");
+                            const std::string safeCompletedUrl =
+                                completedUrl.substr(
+                                    0,
+                                    sourceQuery == std::string::npos
+                                        ? std::string::npos
+                                        : sourceQuery);
 
                             int httpStatusCode = 0;
                             wil::com_ptr<ICoreWebView2NavigationCompletedEventArgs> baseArgs = args;
@@ -308,19 +361,20 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                             args->get_WebErrorStatus(&webErrorStatus);
                             std::cout
                                 << "[webview_win_floating] navigation completed"
-                                << " url=" << url
+                                << " initial_url=" << url
+                                << " source=" << safeCompletedUrl
                                 << " status=" << httpStatusCode
                                 << " success=" << (success ? 1 : 0)
                                 << " web_error=" << static_cast<int>(webErrorStatus)
                                 << std::endl;
                             if (httpStatusCode >= 400) {
-                                params.onHttpError(url, httpStatusCode);
-                                params.onPageFinished(url);
+                                params.onHttpError(completedUrl, httpStatusCode);
+                                params.onPageFinished(completedUrl);
                                 return S_OK;
                             }
 
                             if (success) {
-                                params.onPageFinished(url);
+                                params.onPageFinished(completedUrl);
                                 return S_OK;
                             }
 
@@ -338,8 +392,8 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                                 case COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_REVOKED:
                                 case COREWEBVIEW2_WEB_ERROR_STATUS_CERTIFICATE_IS_INVALID:
                                     // for SSL certificate error
-                                    params.onSslAuthError(url);
-                                    params.onPageFinished(url);
+                                    params.onSslAuthError(completedUrl);
+                                    params.onPageFinished(completedUrl);
                                     return S_OK;
                             }
 
@@ -379,8 +433,9 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                             }
                             if (errType != NULL) {
                                 // std::cout << "[native] errCode: " << errCode << std::endl;
-                                params.onWebResourceError(url, errCode, errType);
-                                params.onPageFinished(url);
+                                params.onWebResourceError(
+                                    completedUrl, errCode, errType);
+                                params.onPageFinished(completedUrl);
                             }
 
                             return S_OK;
@@ -394,6 +449,8 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                             if (FAILED(hr)) return S_OK;
 
                             auto utf8Title = utf8_encode(std::wstring(title.get()));
+                            std::cout << "[webview_win_floating] document title="
+                                      << utf8Title << std::endl;
                             params.onPageTitleChanged(utf8Title);
                             return S_OK;
                         }).Get(), NULL);
@@ -409,19 +466,6 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                         })
                         .Get(), NULL);
 
-                m_pWebview->add_DocumentTitleChanged(
-                    Callback<ICoreWebView2DocumentTitleChangedEventHandler>(
-                        [=](ICoreWebView2* sender, IUnknown* args) -> HRESULT {
-                            wil::unique_cotaskmem_string pwTitle;
-                            HRESULT hr = sender->get_DocumentTitle(&pwTitle);
-                            if (SUCCEEDED(hr)) {
-                                std::string title = utf8_encode(pwTitle.get());
-                                params.onPageTitleChanged(title);
-                            }
-                            return S_OK;
-                        }).Get(), NULL);
-
-
                 hr = m_pWebview->add_WebMessageReceived(
                     Callback<ICoreWebView2WebMessageReceivedEventHandler>(
                         [=](ICoreWebView2* sender, ICoreWebView2WebMessageReceivedEventArgs* args) -> HRESULT {
@@ -429,6 +473,13 @@ MyWebViewImpl::MyWebViewImpl(HWND hWnd,
                                 wil::unique_cotaskmem_string json;
                                 HRESULT hr = args->get_WebMessageAsJson(&json);
                                 if (SUCCEEDED(hr)) {
+                                    std::cout
+                                        << "[webview_win_floating] web message received"
+                                        << " length="
+                                        << (json.get() == nullptr
+                                                ? 0
+                                                : wcslen(json.get()))
+                                        << std::endl;
                                     params.onWebMessageReceived(Utf8FromUtf16(json.get()));
                                 }
                             }
@@ -573,21 +624,65 @@ bool MyWebViewImpl::isSameOriginRequest(
 {
     if (m_requestHeaderOrigin.empty()) return false;
 
-    const size_t originLength = m_requestHeaderOrigin.length();
-    return requestUri == m_requestHeaderOrigin ||
-        (requestUri.length() > originLength &&
-         requestUri.compare(0, originLength, m_requestHeaderOrigin) == 0 &&
-         (requestUri[originLength] == L'/' ||
-          requestUri[originLength] == L'?'));
+    std::wstring lowerRequest = requestUri;
+    std::wstring lowerOrigin = m_requestHeaderOrigin;
+    std::transform(lowerRequest.begin(), lowerRequest.end(),
+                   lowerRequest.begin(), [](wchar_t value) {
+                     return static_cast<wchar_t>(std::towlower(value));
+                   });
+    std::transform(lowerOrigin.begin(), lowerOrigin.end(),
+                   lowerOrigin.begin(), [](wchar_t value) {
+                     return static_cast<wchar_t>(std::towlower(value));
+                   });
+
+    const size_t originLength = lowerOrigin.length();
+    return lowerRequest == lowerOrigin ||
+        (lowerRequest.length() > originLength &&
+         lowerRequest.compare(0, originLength, lowerOrigin) == 0 &&
+         (lowerRequest[originLength] == L'/' ||
+          lowerRequest[originLength] == L'?'));
+}
+
+bool MyWebViewImpl::isFnosGatewayRequest(
+    const std::wstring& requestUri) const
+{
+    const auto schemeEnd = requestUri.find(L"://");
+    if (schemeEnd == std::wstring::npos) return false;
+
+    const auto hostStart = schemeEnd + 3;
+    const auto hostEnd = requestUri.find_first_of(L"/?#", hostStart);
+    std::wstring host = requestUri.substr(
+        hostStart,
+        hostEnd == std::wstring::npos ? std::wstring::npos
+                                      : hostEnd - hostStart);
+    const auto port = host.find(L':');
+    if (port != std::wstring::npos) host.resize(port);
+    std::transform(host.begin(), host.end(), host.begin(), [](wchar_t value) {
+        return static_cast<wchar_t>(std::towlower(value));
+    });
+
+    if (host == L"fnos.net") return true;
+    const std::wstring suffix = L".fnos.net";
+    return host.length() > suffix.length() &&
+           host.compare(host.length() - suffix.length(), suffix.length(),
+                        suffix) == 0;
 }
 
 HRESULT MyWebViewImpl::applyRequestHeaders(
-    ICoreWebView2HttpRequestHeaders* requestHeaders) const
+    ICoreWebView2HttpRequestHeaders* requestHeaders,
+    bool includeAuthorization) const
 {
     if (requestHeaders == nullptr || m_requestHeaders.empty()) return S_OK;
 
     HRESULT firstFailure = S_OK;
     for (const auto& header : m_requestHeaders) {
+        if (!includeAuthorization) {
+            // Cross-host fnOS redirects get only the gateway cookie. The Ting
+            // Reader bearer token must remain scoped to the app host.
+            if (_wcsicmp(header.first.c_str(), L"Cookie") != 0) {
+                continue;
+            }
+        }
         const auto hr = requestHeaders->SetHeader(
             header.first.c_str(), header.second.c_str());
         if (FAILED(hr)) {
@@ -619,7 +714,11 @@ HRESULT MyWebViewImpl::setRequestHeaders(
 
     HRESULT hr = m_pWebview->AddWebResourceRequestedFilter(
         L"*", COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
-    if (FAILED(hr)) return hr;
+    if (FAILED(hr)) {
+        std::cerr << "[webview_win_floating] add web resource filter failed"
+                  << " hr=" << hr << std::endl;
+        return hr;
+    }
 
     hr = m_pWebview->add_WebResourceRequested(
         Callback<ICoreWebView2WebResourceRequestedEventHandler>(
@@ -632,20 +731,38 @@ HRESULT MyWebViewImpl::setRequestHeaders(
 
               wil::com_ptr<ICoreWebView2WebResourceRequest> request;
               HRESULT requestHr = args->get_Request(&request);
-              if (FAILED(requestHr) || request == nullptr) return S_OK;
+              if (FAILED(requestHr) || request == nullptr) {
+                std::cerr
+                    << "[webview_win_floating] web resource get request failed"
+                    << " hr=" << requestHr << std::endl;
+                return S_OK;
+              }
 
               wil::unique_cotaskmem_string uri;
               requestHr = request->get_Uri(&uri);
-              if (FAILED(requestHr) || uri.get() == nullptr) return S_OK;
+              if (FAILED(requestHr) || uri.get() == nullptr) {
+                std::cerr
+                    << "[webview_win_floating] web resource get uri failed"
+                    << " hr=" << requestHr << std::endl;
+                return S_OK;
+              }
 
               const std::wstring requestUri(uri.get());
-              if (!isSameOriginRequest(requestUri)) return S_OK;
+              const bool sameOrigin = isSameOriginRequest(requestUri);
+              const bool gatewayOrigin = isFnosGatewayRequest(requestUri);
+              if (!sameOrigin && !gatewayOrigin) return S_OK;
 
               wil::com_ptr<ICoreWebView2HttpRequestHeaders> requestHeaders;
               requestHr = request->get_Headers(&requestHeaders);
-              if (FAILED(requestHr) || requestHeaders == nullptr) return S_OK;
+              if (FAILED(requestHr) || requestHeaders == nullptr) {
+                std::cerr
+                    << "[webview_win_floating] web resource get headers failed"
+                    << " hr=" << requestHr << std::endl;
+                return S_OK;
+              }
 
-              const auto headerHr = applyRequestHeaders(requestHeaders.get());
+              const auto headerHr = applyRequestHeaders(
+                  requestHeaders.get(), sameOrigin);
               BOOL hasCookie = FALSE;
               BOOL hasAuthorization = FALSE;
               requestHeaders->Contains(L"Cookie", &hasCookie);
@@ -658,6 +775,8 @@ HRESULT MyWebViewImpl::setRequestHeaders(
               std::cout << "[webview_win_floating] web resource headers applied"
                         << " url=" << utf8_encode(safeUri)
                         << " hr=" << headerHr
+                        << " same_origin=" << (sameOrigin ? 1 : 0)
+                        << " gateway_origin=" << (gatewayOrigin ? 1 : 0)
                         << " cookie=" << (hasCookie ? 1 : 0)
                         << " authorization=" << (hasAuthorization ? 1 : 0)
                         << std::endl;
@@ -665,7 +784,14 @@ HRESULT MyWebViewImpl::setRequestHeaders(
             })
             .Get(),
         &m_webResourceRequestedToken);
-    if (SUCCEEDED(hr)) m_hasRequestHeaderHandler = true;
+    if (SUCCEEDED(hr)) {
+        m_hasRequestHeaderHandler = true;
+        std::cout << "[webview_win_floating] web resource handler installed"
+                  << std::endl;
+    } else {
+        std::cerr << "[webview_win_floating] add web resource handler failed"
+                  << " hr=" << hr << std::endl;
+    }
     return hr;
 }
 
@@ -678,9 +804,14 @@ HRESULT MyWebViewImpl::runJavascript(LPCWSTR javaScriptString, bool ignoreResult
 {
     return m_pWebview->ExecuteScript(javaScriptString, Callback<ICoreWebView2ExecuteScriptCompletedHandler >(
         [callback, ignoreResult](HRESULT hr, LPCWSTR resultObjectAsJson) -> HRESULT {
+            if (FAILED(hr)) {
+                std::cerr << "[webview_win_floating] ExecuteScript failed"
+                          << " hr=" << hr << std::endl;
+            }
             if (callback != nullptr) {
                 if (ignoreResult) callback("");
-                else callback(utf8_encode(resultObjectAsJson));
+                else if (resultObjectAsJson == nullptr) callback("null");
+                else callback(utf8_encode(std::wstring(resultObjectAsJson)));
             }
             return hr;
         }).Get());
@@ -750,7 +881,14 @@ void MyWebViewImpl::removeScriptChannelByName(LPCWSTR channelName)
 HRESULT MyWebViewImpl::updateBounds(RECT& bounds)
 {
     m_bounds = bounds;
-    return m_pController->put_Bounds(bounds);
+    const auto hr = m_pController->put_Bounds(bounds);
+    std::cout << "[webview_win_floating] bounds"
+              << " left=" << bounds.left
+              << " top=" << bounds.top
+              << " right=" << bounds.right
+              << " bottom=" << bounds.bottom
+              << " hr=" << hr << std::endl;
+    return hr;
 }
 
 HRESULT MyWebViewImpl::getBounds(RECT& bounds)
@@ -761,7 +899,10 @@ HRESULT MyWebViewImpl::getBounds(RECT& bounds)
 
 HRESULT MyWebViewImpl::setVisible(bool isVisible)
 {
-    return m_pController->put_IsVisible(isVisible);
+    const auto hr = m_pController->put_IsVisible(isVisible);
+    std::cout << "[webview_win_floating] visibility="
+              << (isVisible ? 1 : 0) << " hr=" << hr << std::endl;
+    return hr;
 }
 
 HRESULT MyWebViewImpl::setBackgroundColor(int32_t argb)

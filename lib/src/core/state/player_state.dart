@@ -10,6 +10,7 @@ import 'package:just_audio/just_audio.dart' as audio;
 import 'package:just_audio_background/just_audio_background.dart'
     as audio_background;
 
+import '../api/api_client.dart';
 import '../models/models.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/urls.dart';
@@ -19,6 +20,8 @@ import 'download_state.dart';
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
     WidgetsBinding.instance.addObserver(this);
+    appState.onGatewayLoginRequired = _pauseForGatewayReauthentication;
+    appState.onGatewayLoginRestored = _restoreAfterGatewayReauthentication;
     // Interruption policy is managed here because Android distinguishes
     // transient focus loss (which sends a later gain event) from permanent
     // focus loss (which does not). Audio-session activation is also requested
@@ -58,7 +61,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         _startProgressTimer();
       } else {
         _stopProgressTimers();
-        unawaited(sendProgress());
+        if (!_gatewayReauthenticationPending) {
+          unawaited(sendProgress());
+        }
       }
       notifyListeners();
     });
@@ -114,6 +119,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _usingAudioQueue = false;
   bool _suppressPositionUpdates = false;
   bool _applyingQueueStartSeek = false;
+  bool _gatewayReauthenticationPending = false;
+  bool _resumeAfterGatewayReauthentication = false;
   // 睡眠定时按集数：集数用完时阻止 playChapter 的 _playWithSession 自动起播，
   // 并在 _playWithSession 中暂停仍在播放的旧音频。
   bool _suppressAutoPlay = false;
@@ -371,6 +378,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<bool> _playWithSession() async {
+    if (_gatewayReauthenticationPending) {
+      if (appState.needsGatewayLogin) return false;
+      _gatewayReauthenticationPending = false;
+      _resumeAfterGatewayReauthentication = false;
+    }
     if (_suppressAutoPlay) {
       _suppressAutoPlay = false;
       // playing 状态可能先于原生播放器变为 false，pause() 会因此直接返回。
@@ -534,6 +546,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> togglePlay() async {
     if (!hasChapter) return;
+    if (_gatewayReauthenticationPending) {
+      _resumeAfterGatewayReauthentication = false;
+      if (_audio.playing) await _audio.pause();
+      return;
+    }
     _cancelFocusRecovery(clearResume: true);
     // 用户手动操作，清除睡眠定时设置的自动暂停标记。
     _suppressAutoPlay = false;
@@ -549,10 +566,109 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   /// 仅暂停播放，不会在未播放时触发播放。用于睡眠定时等需要确定性地暂停的场景。
   Future<void> pause() async {
     if (!hasChapter) return;
+    if (_gatewayReauthenticationPending) {
+      _resumeAfterGatewayReauthentication = false;
+    }
     _cancelFocusRecovery(clearResume: true);
     if (_audio.playing) {
       await _audio.pause();
-      await sendProgress();
+      if (!_gatewayReauthenticationPending) {
+        await sendProgress();
+      }
+    }
+  }
+
+  Future<void> _pauseForGatewayReauthentication() async {
+    if (_gatewayReauthenticationPending) return;
+    _gatewayReauthenticationPending = true;
+    _resumeAfterGatewayReauthentication =
+        hasChapter && (isPlaying || _audio.playing);
+    _cancelFocusRecovery(clearResume: true);
+    _stopProgressTimers();
+    _closeProgressSocket();
+    if (_audio.playing) {
+      try {
+        await _audio.pause();
+      } catch (_) {
+        // Authentication recovery should still proceed when native pause fails.
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> _restoreAfterGatewayReauthentication() async {
+    if (!_gatewayReauthenticationPending) return;
+    final shouldResume = _resumeAfterGatewayReauthentication;
+    _gatewayReauthenticationPending = false;
+    _resumeAfterGatewayReauthentication = false;
+
+    if (!hasChapter || !appState.isAuthenticated) {
+      notifyListeners();
+      return;
+    }
+
+    try {
+      await _refreshPlaybackSourceAfterGatewayLogin();
+      if (shouldResume) {
+        await _playWithSession();
+        _startProgressTimer();
+      }
+      error = null;
+    } catch (_) {
+      error = appState.textForLocale(
+        '飞牛重新登录后恢复播放失败',
+        'Unable to resume playback after fnOS sign-in',
+      );
+    }
+    notifyListeners();
+  }
+
+  Future<void> _refreshPlaybackSourceAfterGatewayLogin() async {
+    final book = currentBook;
+    final chapter = currentChapter;
+    if (book == null || chapter == null) return;
+
+    final resumePosition = _clampPlaybackTime(currentTime);
+    _suppressPositionUpdates = true;
+    try {
+      if (_usingAudioQueue) {
+        final chapterList = chapters.isEmpty ? <Chapter>[chapter] : chapters;
+        final chapterIndex = chapterList.indexWhere(
+          (item) => item.id == chapter.id,
+        );
+        await _setAudioQueueWithRedirectRecovery(
+          book,
+          chapterList,
+          initialIndex: chapterIndex >= 0 ? chapterIndex : 0,
+          initialPosition:
+              Duration(milliseconds: (resumePosition * 1000).round()),
+        );
+      } else if (_usingTranscodeStream) {
+        await _setFallbackTranscodeSource(
+          chapter,
+          _mediaItemFor(book, chapter, streamOffset: resumePosition),
+          resumePosition,
+        );
+      } else {
+        await _setAudioUrlWithRedirectRecovery(
+          () => streamUrl(chapter.id),
+          mediaItem: _mediaItemFor(
+            book,
+            chapter,
+            streamOffset: resumePosition,
+          ),
+        );
+        if (resumePosition > 0) {
+          await _audio.seek(
+            Duration(milliseconds: (resumePosition * 1000).round()),
+          );
+        }
+      }
+      currentTime = resumePosition;
+      await _audio.setSpeed(playbackSpeed);
+      await _audio.setVolume(volume);
+    } finally {
+      _suppressPositionUpdates = false;
     }
   }
 
@@ -1022,13 +1138,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final book = currentBook;
     final chapter = currentChapter;
     if (book == null || chapter == null) return;
-    if (appState.offlineMode) return;
+    if (appState.offlineMode || _gatewayReauthenticationPending) return;
     final sentByWebSocket = await _sendProgressByWebSocket(
       book,
       chapter,
       playbackStart: playbackStart,
     );
-    if (sentByWebSocket) return;
+    if (sentByWebSocket || _gatewayReauthenticationPending) return;
     await _sendProgressByHttp(
       book,
       chapter,
@@ -1039,14 +1155,24 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _sendCurrentProgressByWebSocket() async {
     final book = currentBook;
     final chapter = currentChapter;
-    if (book == null || chapter == null || appState.offlineMode) return;
+    if (book == null ||
+        chapter == null ||
+        appState.offlineMode ||
+        _gatewayReauthenticationPending) {
+      return;
+    }
     await _sendProgressByWebSocket(book, chapter);
   }
 
   Future<void> _sendCurrentProgressByHttp() async {
     final book = currentBook;
     final chapter = currentChapter;
-    if (book == null || chapter == null || appState.offlineMode) return;
+    if (book == null ||
+        chapter == null ||
+        appState.offlineMode ||
+        _gatewayReauthenticationPending) {
+      return;
+    }
     if (!kIsWeb && _progressSocket != null) return;
     await _sendProgressByHttp(book, chapter);
   }
@@ -1056,6 +1182,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     Chapter chapter, {
     double? playbackStart,
   }) async {
+    if (_gatewayReauthenticationPending) return;
     try {
       await appState.api.post(
         '/api/progress',
@@ -1079,7 +1206,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }) async {
     if (kIsWeb) return false;
     final token = appState.token;
-    if (token == null || token.isEmpty || appState.offlineMode) return false;
+    if (token == null ||
+        token.isEmpty ||
+        appState.offlineMode ||
+        _gatewayReauthenticationPending) {
+      return false;
+    }
     try {
       final socket = await _ensureProgressSocket();
       if (socket == null) return false;
@@ -1093,7 +1225,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         }),
       );
       return true;
-    } catch (_) {
+    } catch (error) {
+      if (_isInvalidGatewayTokenResult(error)) {
+        _triggerGatewayReauthentication();
+      }
       _closeProgressSocket();
       return false;
     }
@@ -1106,14 +1241,22 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       final uri = _progressWebSocketUri();
       if (uri == null) return null;
-      final socket = await WebSocket.connect(uri.toString()).timeout(
+      final headers = appState.api.authHeaders;
+      final socket = await WebSocket.connect(
+        uri.toString(),
+        headers: headers.isEmpty ? null : headers,
+      ).timeout(
         const Duration(seconds: 5),
       );
+      if (_gatewayReauthenticationPending) {
+        await socket.close();
+        return null;
+      }
       _progressSocket = socket;
       _progressSocketSub = socket.listen(
         _handleProgressSocketMessage,
-        onDone: _closeProgressSocket,
-        onError: (_) => _closeProgressSocket(),
+        onDone: () => _handleProgressSocketDone(socket),
+        onError: (Object error) => _handleProgressSocketError(socket, error),
         cancelOnError: true,
       );
       _progressSocketPingTimer?.cancel();
@@ -1126,7 +1269,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         }
       });
       return socket;
-    } catch (_) {
+    } catch (error) {
+      if (_isInvalidGatewayTokenResult(error)) {
+        _triggerGatewayReauthentication();
+      }
       _closeProgressSocket();
       return null;
     } finally {
@@ -1153,7 +1299,18 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   void _handleProgressSocketMessage(dynamic message) {
     if (message == null) return;
     try {
-      final data = jsonDecode(message.toString());
+      final rawMessage = message is List<int>
+          ? utf8.decode(message, allowMalformed: true)
+          : message.toString();
+      if (_isInvalidGatewayTokenResult(rawMessage)) {
+        _triggerGatewayReauthentication();
+        return;
+      }
+      final data = jsonDecode(rawMessage);
+      if (_isInvalidGatewayTokenResult(data)) {
+        _triggerGatewayReauthentication();
+        return;
+      }
       if (data is! Map) return;
       if (data['type'] != 'progress_updated') return;
       final bookId = data['book_id']?.toString();
@@ -1171,7 +1328,34 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  void _closeProgressSocket() {
+  void _handleProgressSocketDone(WebSocket socket) {
+    if (_isInvalidGatewayTokenResult(socket.closeReason)) {
+      _triggerGatewayReauthentication();
+    }
+    _closeProgressSocket(expectedSocket: socket);
+  }
+
+  void _handleProgressSocketError(WebSocket socket, Object error) {
+    if (_isInvalidGatewayTokenResult(error)) {
+      _triggerGatewayReauthentication();
+    }
+    _closeProgressSocket(expectedSocket: socket);
+  }
+
+  bool _isInvalidGatewayTokenResult(Object? result) {
+    if (!(appState.api.isGatewaySession?.call() ?? false)) return false;
+    return ApiClient.isInvalidGatewayTokenPayload(result);
+  }
+
+  void _triggerGatewayReauthentication() {
+    _closeProgressSocket();
+    unawaited(appState.handleGatewaySessionExpired());
+  }
+
+  void _closeProgressSocket({WebSocket? expectedSocket}) {
+    if (expectedSocket != null && !identical(_progressSocket, expectedSocket)) {
+      return;
+    }
     _progressSocketPingTimer?.cancel();
     _progressSocketPingTimer = null;
     _progressSocketSub?.cancel();
@@ -1239,6 +1423,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _startProgressTimer() {
+    if (_gatewayReauthenticationPending) return;
     _stopProgressTimers();
     unawaited(sendProgress(playbackStart: currentTime));
     _progressWsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
@@ -1268,6 +1453,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    if (appState.onGatewayLoginRequired == _pauseForGatewayReauthentication) {
+      appState.onGatewayLoginRequired = null;
+    }
+    if (appState.onGatewayLoginRestored ==
+        _restoreAfterGatewayReauthentication) {
+      appState.onGatewayLoginRestored = null;
+    }
     WidgetsBinding.instance.removeObserver(this);
     _stopProgressTimers();
     _positionSub?.cancel();

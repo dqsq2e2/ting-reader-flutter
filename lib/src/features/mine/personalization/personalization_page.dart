@@ -5,6 +5,7 @@ import '../../../core/models/models.dart';
 import '../../../core/plugin_extensions/types.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/home_layout.dart';
+import '../../../core/utils/application_time_zone.dart';
 import '../../../core/utils/locale.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
@@ -47,6 +48,8 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   bool _autoCache = false;
   bool _ignoreAudioFocus = false;
   String _widgetEmbedType = 'private';
+  String _applicationTimeZone = defaultApplicationTimeZone;
+  bool _timeZoneSaving = false;
 
   @override
   void initState() {
@@ -68,7 +71,9 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     _usernameController.text = appState.user?.username ?? '';
     try {
       await appState.loadSettings(silent: true);
+      await appState.loadApplicationTimeZone(silent: true);
       _applySettings(appState.settings);
+      _applicationTimeZone = appState.applicationTimeZone;
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -186,6 +191,29 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     await _saveSettings({'home_layout': next.toJson()});
   }
 
+  Future<void> _saveApplicationTimeZone(String value) async {
+    if (_timeZoneSaving) return;
+    setState(() => _timeZoneSaving = true);
+    try {
+      final appState = AppScope.appOf(context);
+      await appState.updateApplicationTimeZone(value);
+      if (!mounted) return;
+      setState(() {
+        _applicationTimeZone = appState.applicationTimeZone;
+        _saved = true;
+      });
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (mounted) setState(() => _saved = false);
+      });
+    } catch (error) {
+      if (mounted) {
+        _showSnack(context.l10n.commonSaveFailed(error.toString()));
+      }
+    } finally {
+      if (mounted) setState(() => _timeZoneSaving = false);
+    }
+  }
+
   Future<void> _saveAccount() async {
     if (_accountSaving) return;
     final appState = AppScope.appOf(context);
@@ -257,8 +285,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     final uri = Uri.base;
     if ((uri.scheme == 'http' || uri.scheme == 'https') &&
         uri.host.isNotEmpty) {
-      final port = uri.hasPort ? ':${uri.port}' : '';
-      return '${uri.scheme}://${uri.host}$port';
+      return uri.origin;
     }
     return AppScope.appOf(context).activeUrl;
   }
@@ -372,6 +399,14 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
                 _saveSettings({'language': value});
               },
             ),
+            if (appState.isAdmin) ...[
+              const SizedBox(height: 24),
+              _ApplicationTimeZoneSection(
+                value: _applicationTimeZone,
+                saving: _timeZoneSaving,
+                onChanged: _saveApplicationTimeZone,
+              ),
+            ],
             const SizedBox(height: 24),
             _HomeLayoutSection(
               value: _homeLayout,

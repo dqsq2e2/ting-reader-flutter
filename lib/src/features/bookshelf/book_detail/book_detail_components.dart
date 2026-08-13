@@ -81,6 +81,7 @@ class _CollapsibleBookTags extends StatelessWidget {
   static const double _runSpacing = 8;
   static const double _tagHorizontalPadding = 20;
   static const double _tagVerticalPadding = 10;
+  static const double _collapsedBottomSafety = 4;
   static const double _layoutTolerance = 2;
   static const TextStyle _tagTextStyle = TextStyle(
     fontSize: 12,
@@ -142,7 +143,7 @@ class _CollapsibleBookTags extends StatelessWidget {
             tags.take(_visibleTagCount(tagWidths, availableForTags)).toList();
 
         return SizedBox(
-          height: rowHeight,
+          height: rowHeight + _collapsedBottomSafety,
           child: ClipRect(
             child: Align(
               alignment: Alignment.topCenter,
@@ -344,6 +345,13 @@ class _BookActionPanelState extends State<_BookActionPanel> {
     super.didChangeDependencies();
     final app = AppScope.appOf(context);
     final revision = app.pluginExtensionRevision;
+    final cached = app.pluginCapabilities.cachedClientExtensions;
+    if (cached != null) {
+      final registry = buildClientExtensionRegistry(cached);
+      _hasBookDetailExtensions =
+          (registry.bySlot[ClientExtensionSlot.bookDetailAction] ?? const [])
+              .isNotEmpty;
+    }
     if (app.offlineMode || app.token == null) {
       _loadedToken = null;
       _loadedRevision = null;
@@ -366,10 +374,7 @@ class _BookActionPanelState extends State<_BookActionPanel> {
     setState(() => _loadingExtensions = true);
     try {
       final api = AppScope.appOf(context).pluginCapabilities;
-      final registrations = [
-        ...await api.listPluginCapabilities(kind: 'ui_extension'),
-        ...await api.listPluginCapabilities(kind: 'client_extension'),
-      ];
+      final registrations = await api.listClientExtensions();
       if (!mounted) return;
       final registry = buildClientExtensionRegistry(registrations);
       final hasExtensions =
@@ -428,15 +433,17 @@ class _BookActionPanelState extends State<_BookActionPanel> {
     final scrapeLabel = context.localeText('刮削', 'Scrape');
     final editLabel = context.l10n.commonEdit;
     final moreLabel = context.localeText('更多', 'More');
+    final showBookDetailExtensions =
+        _hasBookDetailExtensions || _loadingExtensions;
     final widthLabels = <String>[
       context.localeText('收藏', 'Favorite'),
       context.localeText('已收藏', 'Favorited'),
       if (widget.admin) scrapeLabel,
       if (widget.admin) editLabel,
-      if (_hasBookDetailExtensions) moreLabel,
+      if (showBookDetailExtensions) moreLabel,
     ];
     final actionCount =
-        1 + (widget.admin ? 2 : 0) + (_hasBookDetailExtensions ? 1 : 0);
+        1 + (widget.admin ? 2 : 0) + (showBookDetailExtensions ? 1 : 0);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -516,7 +523,7 @@ class _BookActionPanelState extends State<_BookActionPanel> {
               iconTextGap: actionIconTextGap,
               onPressed: widget.onEdit,
             ),
-          if (_hasBookDetailExtensions)
+          if (showBookDetailExtensions)
             PluginExtensionSlot(
               slot: ClientExtensionSlot.bookDetailAction,
               extensionContext: widget.extensionContext,
@@ -527,6 +534,7 @@ class _BookActionPanelState extends State<_BookActionPanel> {
               menuFontSize: actionFontSize,
               menuHorizontalPadding: actionPadding,
               menuIconTextGap: actionIconTextGap,
+              showLoadingPlaceholder: _loadingExtensions,
             ),
         ];
 

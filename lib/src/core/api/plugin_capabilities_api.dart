@@ -4,9 +4,73 @@ import '../models/plugin.dart'
 import 'api_client.dart';
 
 class PluginCapabilitiesApi {
-  const PluginCapabilitiesApi(this._api);
+  PluginCapabilitiesApi(this._api);
 
   final ApiClient _api;
+  Future<List<PluginCapabilityRegistration>>? _clientExtensionsFuture;
+  List<PluginCapabilityRegistration>? _cachedClientExtensions;
+  String? _clientExtensionsCacheKey;
+
+  /// Shares the capability lookup between the global host, page actions, and
+  /// inline extension slots for the current authenticated server context.
+  Future<List<PluginCapabilityRegistration>> listClientExtensions() {
+    final cacheKey = _currentClientExtensionsCacheKey;
+    final cachedFuture = _clientExtensionsFuture;
+    if (cachedFuture != null && _clientExtensionsCacheKey == cacheKey) {
+      return cachedFuture;
+    }
+
+    final future = _fetchClientExtensions(cacheKey);
+    _clientExtensionsCacheKey = cacheKey;
+    _clientExtensionsFuture = future;
+    return future;
+  }
+
+  /// Synchronous snapshot for widgets that are mounting after the lookup has
+  /// already completed.
+  List<PluginCapabilityRegistration>? get cachedClientExtensions {
+    if (_clientExtensionsCacheKey != _currentClientExtensionsCacheKey) {
+      return null;
+    }
+    return _cachedClientExtensions;
+  }
+
+  void invalidateClientExtensionsCache() {
+    _clientExtensionsFuture = null;
+    _cachedClientExtensions = null;
+    _clientExtensionsCacheKey = null;
+  }
+
+  String get _currentClientExtensionsCacheKey => [
+        _api.baseUrl,
+        _api.token ?? '',
+        _api.cookie ?? '',
+      ].join('|');
+
+  Future<List<PluginCapabilityRegistration>> _fetchClientExtensions(
+    String cacheKey,
+  ) async {
+    try {
+      final registrations = [
+        ...await listPluginCapabilities(kind: 'ui_extension'),
+        ...await listPluginCapabilities(kind: 'client_extension'),
+      ];
+      final result = List<PluginCapabilityRegistration>.unmodifiable(
+        registrations,
+      );
+      if (_clientExtensionsCacheKey == cacheKey) {
+        _cachedClientExtensions = result;
+      }
+      return result;
+    } catch (_) {
+      if (_clientExtensionsCacheKey == cacheKey) {
+        _clientExtensionsFuture = null;
+        _cachedClientExtensions = null;
+        _clientExtensionsCacheKey = null;
+      }
+      rethrow;
+    }
+  }
 
   Future<List<PluginCapabilityRegistration>> listPluginCapabilities({
     String? kind,

@@ -189,6 +189,84 @@ class _LanguageSection extends StatelessWidget {
   }
 }
 
+class _ApplicationTimeZoneSection extends StatelessWidget {
+  const _ApplicationTimeZoneSection({
+    required this.value,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  final String value;
+  final bool saving;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final options = applicationTimeZoneOptions;
+    final selected =
+        options.contains(value) ? value : defaultApplicationTimeZone;
+    return _SettingsSection(
+      icon: Icons.public_rounded,
+      iconColor: Colors.indigo,
+      title: l10n.settingsTimeZone,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final copy = Text(
+            l10n.settingsTimeZoneDescription,
+            style: TextStyle(color: context.mutedText, fontSize: 13),
+          );
+          final dropdown = DropdownButtonFormField<String>(
+            initialValue: selected,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.public_rounded, size: 19),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.faintBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.faintBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide:
+                    const BorderSide(color: AppColors.primary600, width: 1.5),
+              ),
+            ),
+            items: options
+                .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
+                .toList(),
+            onChanged: saving
+                ? null
+                : (next) {
+                    if (next != null) onChanged(next);
+                  },
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [copy, const SizedBox(height: 14), dropdown],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: copy),
+              const SizedBox(width: 20),
+              SizedBox(width: 280, child: dropdown),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _HomeLayoutSection extends StatelessWidget {
   const _HomeLayoutSection({
     required this.value,

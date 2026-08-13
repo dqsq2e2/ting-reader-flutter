@@ -2,6 +2,7 @@ import 'package:lpinyin/lpinyin.dart';
 import 'package:flutter/widgets.dart';
 
 import 'locale.dart';
+import 'application_time_zone.dart';
 
 String formatDurationShort(num seconds) {
   if (seconds <= 0) return '0:00';
@@ -38,12 +39,13 @@ String formatDurationHumanForLocale(BuildContext context, num seconds) {
 
 String formatDateCn(String? raw) {
   if (raw == null || raw.isEmpty) return '从未';
-  final date = DateTime.tryParse(raw)?.toLocal();
+  final date = backendDateTimeInApplicationTimeZone(raw);
   if (date == null) return raw;
   return '${date.month}月${date.day}日';
 }
 
 String formatFullDateCn(DateTime date) {
+  date = toApplicationTimeZone(date);
   const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'];
   return '${date.year}年${date.month}月${date.day}日 ${weekdays[date.weekday - 1]}';
 }
@@ -61,15 +63,15 @@ String formatBytes(num bytes) {
 }
 
 String greeting() {
-  final hour = DateTime.now().hour;
+  final hour = nowInApplicationTimeZone().hour;
   if (hour >= 5 && hour < 12) return '早上好';
   if (hour >= 12 && hour < 14) return '中午好';
   if (hour >= 14 && hour < 18) return '下午好';
   return '晚上好';
 }
 
-String greetingForLocale(BuildContext context) {
-  final hour = DateTime.now().hour;
+String greetingForLocale(BuildContext context, {DateTime? now}) {
+  final hour = (now ?? nowInApplicationTimeZone()).hour;
   if (hour >= 5 && hour < 12) {
     return context.localeText('早上好', 'Good morning');
   }

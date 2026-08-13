@@ -23,7 +23,10 @@ class ApiClient {
   String _languageCode = 'zh';
   final Map<String, Future<Response<dynamic>>> _inFlightMutations = {};
   int _mutationSequence = 0;
-  Future<String?> Function(String failedBaseUrl)? recoverBaseUrl;
+  Future<String?> Function(String failedBaseUrl, CancelToken? cancelToken)?
+      recoverBaseUrl;
+  bool Function()? isGatewaySession;
+  Future<void> Function()? onGatewaySessionExpired;
 
   String get baseUrl => _baseUrl;
   String? get token => _token;
@@ -75,15 +78,47 @@ class ApiClient {
     return value;
   }
 
+  /// Returns an HTTP(S) origin while preserving IPv6 address brackets.
+  static String originFromUri(Uri uri) {
+    if ((uri.scheme != 'http' && uri.scheme != 'https') || uri.host.isEmpty) {
+      throw FormatException('Invalid HTTP server URI: $uri');
+    }
+    return uri.origin;
+  }
+
   Future<Response<dynamic>> get(
     String path, {
     Map<String, dynamic>? params,
+    CancelToken? cancelToken,
   }) {
     return _send(
       () => _dio.get<dynamic>(
         path,
         queryParameters: params,
         options: _authOptions(),
+        cancelToken: cancelToken,
+      ),
+      cancelToken: cancelToken,
+    );
+  }
+
+  /// Fetch a text asset from an absolute URL with the same credentials as API
+  /// requests. Plugin UI HTML is an API asset, not an SPA fallback, so callers
+  /// need a plain-text response and must not rely on the WebView's document
+  /// navigation semantics.
+  Future<Response<dynamic>> getTextUri(Uri uri) {
+    return _send(
+      () => _dio.getUri<dynamic>(
+        uri,
+        options: Options(
+          // Decode plugin documents explicitly in the caller. Some plugin
+          // responses omit charset even though their files are UTF-8.
+          responseType: ResponseType.bytes,
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml',
+            ...authHeaders,
+          },
+        ),
       ),
     );
   }
@@ -92,8 +127,21 @@ class ApiClient {
     String path, {
     Object? data,
     Map<String, dynamic>? params,
+    CancelToken? cancelToken,
   }) {
     final idempotencyKey = _idempotencyKey();
+    if (cancelToken != null) {
+      return _send(
+        () => _dio.post<dynamic>(
+          path,
+          data: data,
+          queryParameters: params,
+          options: _authOptions(idempotencyKey: idempotencyKey),
+          cancelToken: cancelToken,
+        ),
+        cancelToken: cancelToken,
+      );
+    }
     return _sendMutation(
       'POST',
       path,
@@ -206,9 +254,21 @@ class ApiClient {
   Future<Response<dynamic>> _send(
     Future<Response<dynamic>> Function() request, {
     bool retrying = false,
+    CancelToken? cancelToken,
   }) async {
+    var gatewaySessionExpiredNotified = false;
     try {
       final response = await request();
+      if (_isGatewaySessionInvalidResponse(response)) {
+        gatewaySessionExpiredNotified = true;
+        await _notifyGatewaySessionExpired();
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+          message: 'Gateway session returned invalid token',
+        );
+      }
       if (_isHtmlFallbackForApi(response)) {
         throw DioException(
           requestOptions: response.requestOptions,
@@ -219,19 +279,92 @@ class ApiClient {
       }
       return response;
     } on DioException catch (error) {
+      if (CancelToken.isCancel(error)) rethrow;
+      if (!gatewaySessionExpiredNotified &&
+          _isGatewaySessionInvalidResponse(error.response)) {
+        gatewaySessionExpiredNotified = true;
+        await _notifyGatewaySessionExpired();
+      }
       if (retrying || !_shouldTryRecover(error) || recoverBaseUrl == null) {
         rethrow;
       }
 
-      final recovered = await recoverBaseUrl!(_baseUrl);
+      final recovered = await recoverBaseUrl!(_baseUrl, cancelToken);
+      if (cancelToken?.isCancelled ?? false) {
+        throw DioException(
+          requestOptions: error.requestOptions,
+          type: DioExceptionType.cancel,
+          message: 'Request cancelled',
+        );
+      }
       if (recovered == null || recovered.isEmpty) rethrow;
       configure(baseUrl: recovered, token: _token, cookie: _cookie);
-      return _send(request, retrying: true);
+      return _send(request, retrying: true, cancelToken: cancelToken);
     }
   }
 
+  Future<void> _notifyGatewaySessionExpired() async {
+    final handler = onGatewaySessionExpired;
+    if (handler == null) return;
+    try {
+      await handler();
+    } catch (_) {
+      // Session detection must not hide the original API response.
+    }
+  }
+
+  bool _isGatewaySessionInvalidResponse(Response<dynamic>? response) {
+    if (response == null) return false;
+    if (!(isGatewaySession?.call() ?? false)) return false;
+    final status = response.statusCode;
+    // fnOS Connect can return a plain "invalid token" body with HTTP 200.
+    // Only an explicit token marker in a successful response is handled here;
+    // ordinary HTTP failures remain ordinary API failures.
+    if (status == null || status < 200 || status >= 300) return false;
+
+    return isInvalidGatewayTokenPayload(response.data);
+  }
+
+  /// Whether a gateway response explicitly reports an expired fnOS session.
+  ///
+  /// fnOS Connect can report this condition with HTTP 200, so callers must not
+  /// treat generic transport or progress-sync errors as a reason to re-login.
+  static bool isInvalidGatewayTokenPayload(Object? payload) {
+    if (payload is Map) {
+      for (final key in const ['error', 'message', 'detail', 'code', 'type']) {
+        if (_isInvalidTokenText(payload[key]?.toString())) return true;
+      }
+      return false;
+    }
+    if (payload is List<int>) {
+      return _isInvalidTokenText(utf8.decode(payload, allowMalformed: true));
+    }
+    return _isInvalidTokenText(payload?.toString());
+  }
+
+  static bool _isInvalidTokenText(String? value) {
+    var normalized =
+        value?.trim().toLowerCase().replaceAll(RegExp(r'[\s_-]+'), ' ') ?? '';
+    if (normalized.length >= 2 &&
+        normalized.startsWith('"') &&
+        normalized.endsWith('"')) {
+      normalized = normalized.substring(1, normalized.length - 1).trim();
+    }
+    return normalized == 'invalid token' ||
+        normalized == 'token is invalid' ||
+        normalized == 'invalid fnos token';
+  }
+
   bool _isHtmlFallbackForApi(Response<dynamic> response) {
-    if (!response.requestOptions.uri.path.contains('/api/')) return false;
+    final path = response.requestOptions.uri.path;
+    if (!path.contains('/api/')) return false;
+
+    // Plugin UI documents are intentionally served as text/html from an API
+    // asset route. They must not be mistaken for the application's SPA shell.
+    if (path.contains('/api/v1/plugin-assets/') ||
+        path.contains('/api/plugin-assets/')) {
+      return false;
+    }
 
     final contentType =
         response.headers.value(Headers.contentTypeHeader)?.toLowerCase() ?? '';

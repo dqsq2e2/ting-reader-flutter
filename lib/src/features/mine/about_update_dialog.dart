@@ -331,9 +331,7 @@ class _AboutPageState extends State<AboutPage> {
               ),
               alignment: Alignment.center,
               child: Icon(
-                success
-                    ? Icons.check_rounded
-                    : Icons.info_outline_rounded,
+                success ? Icons.check_rounded : Icons.info_outline_rounded,
                 size: 19,
                 color: accent,
               ),

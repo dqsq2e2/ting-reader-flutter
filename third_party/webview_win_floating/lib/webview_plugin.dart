@@ -287,6 +287,16 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
     );
   }
 
+  /// Configure headers for same-origin subresources without a top-level
+  /// navigation. This keeps iframe/srcdoc plugin loading authenticated on
+  /// Windows WebView2.
+  Future<bool> setRequestHeaders(
+    Uri origin, {
+    required Map<String, String> headers,
+  }) {
+    return controller.setRequestHeaders(origin, headers: headers);
+  }
+
   Future<bool> setCookie(WebViewCookie cookie) {
     return controller.setCookie(cookie);
   }
@@ -334,8 +344,8 @@ class WindowsPlatformWebViewController extends PlatformWebViewController {
   }
 
   @override
-  Future<void> enableZoom(bool isEnable) {
-    return controller.enableZoom(isEnable);
+  Future<void> enableZoom(bool enabled) {
+    return controller.enableZoom(enabled);
   }
 
   // ------------------------------------------------------------------------

@@ -8,7 +8,8 @@ class _HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 720;
-    final date = DateTime.now().toLocal();
+    final appState = AppScope.appOf(context);
+    final date = nowInApplicationTimeZone(appState.applicationTimeZone);
     final dateText = context.isEnglishLocale
         ? '${date.month}/${date.day} ${_weekdayEn(date.weekday)}'
         : '${date.month}月${date.day}日${_weekdayCn(date.weekday)}';
@@ -17,7 +18,7 @@ class _HomeHeader extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          greetingForLocale(context),
+          greetingForLocale(context, now: date),
           style: const TextStyle(
             color: AppColors.primary600,
             fontSize: 14,

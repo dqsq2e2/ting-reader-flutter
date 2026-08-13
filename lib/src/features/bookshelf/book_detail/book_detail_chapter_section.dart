@@ -78,10 +78,20 @@ class _ChapterSectionState extends State<_ChapterSection> {
   void _centerSelectedGroup() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final context = _groupKeys[widget.groupIndex]?.currentContext;
-      if (context == null) return;
-      Scrollable.ensureVisible(
-        context,
+      final groupContext = _groupKeys[widget.groupIndex]?.currentContext;
+      if (groupContext == null) return;
+      final horizontalScrollable = Scrollable.maybeOf(
+        groupContext,
+        axis: Axis.horizontal,
+      );
+      final target = groupContext.findRenderObject();
+      if (horizontalScrollable == null || target == null || !target.attached) {
+        return;
+      }
+      // Scrollable.ensureVisible traverses every ancestor scrollable, which
+      // would overwrite the chapter-row jump in the outer vertical list.
+      horizontalScrollable.position.ensureVisible(
+        target,
         alignment: 0.5,
         duration: const Duration(milliseconds: 420),
         curve: Curves.easeOutCubic,

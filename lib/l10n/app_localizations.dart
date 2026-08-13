@@ -374,6 +374,18 @@ abstract class AppLocalizations {
   /// **'English'**
   String get settingsLanguageEn;
 
+  /// No description provided for @settingsTimeZone.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用时区'**
+  String get settingsTimeZone;
+
+  /// No description provided for @settingsTimeZoneDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅管理员可设置全站时间显示；服务端和数据库仍统一使用 UTC。'**
+  String get settingsTimeZoneDescription;
+
   /// No description provided for @settingsHomeLayout.
   ///
   /// In zh, this message translates to:
