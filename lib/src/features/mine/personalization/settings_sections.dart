@@ -161,6 +161,7 @@ class _LanguageSection extends StatelessWidget {
       icon: Icons.language_rounded,
       iconColor: Colors.cyan,
       title: l10n.settingsLanguage,
+      showHeader: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -184,28 +185,52 @@ class _LanguageSection extends StatelessWidget {
   }
 }
 
-class _LanguageSettingRow extends StatelessWidget {
-  const _LanguageSettingRow({
-    required this.language,
-    required this.onLanguage,
+const _settingsSelectWidth = 280.0;
+
+class _SettingsSelectRow extends StatelessWidget {
+  const _SettingsSelectRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.description,
+    required this.dropdown,
   });
 
-  final String language;
-  final ValueChanged<String> onLanguage;
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String description;
+  final Widget dropdown;
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
-        final copy = Text(
-          l10n.settingsLanguageDescription,
-          style: TextStyle(color: context.mutedText, fontSize: 13),
-        );
-        final dropdown = _LanguageDropdown(
-          value: language,
-          onChanged: onLanguage,
+        final copy = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, color: iconColor, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              style: TextStyle(color: context.mutedText, fontSize: 13),
+            ),
+          ],
         );
         if (compact) {
           return Column(
@@ -218,13 +243,39 @@ class _LanguageSettingRow extends StatelessWidget {
           );
         }
         return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(child: copy),
             const SizedBox(width: 20),
-            SizedBox(width: 240, child: dropdown),
+            SizedBox(width: _settingsSelectWidth, child: dropdown),
           ],
         );
       },
+    );
+  }
+}
+
+class _LanguageSettingRow extends StatelessWidget {
+  const _LanguageSettingRow({
+    required this.language,
+    required this.onLanguage,
+  });
+
+  final String language;
+  final ValueChanged<String> onLanguage;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _SettingsSelectRow(
+      icon: Icons.translate_rounded,
+      iconColor: Colors.cyan,
+      title: l10n.settingsLanguage,
+      description: l10n.settingsLanguageDescription,
+      dropdown: _LanguageDropdown(
+        value: language,
+        onChanged: onLanguage,
+      ),
     );
   }
 }
@@ -246,81 +297,42 @@ class _ApplicationTimeZoneSettingRow extends StatelessWidget {
     final options = applicationTimeZoneOptions;
     final selected =
         options.contains(value) ? value : defaultApplicationTimeZone;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 620;
-        final copy = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.public_rounded,
-                  color: Colors.indigo,
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  l10n.settingsTimeZone,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.settingsTimeZoneDescription,
-              style: TextStyle(color: context.mutedText, fontSize: 13),
-            ),
-          ],
-        );
-        final dropdown = DropdownButtonFormField<String>(
-          initialValue: selected,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.public_rounded, size: 19),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: context.faintBorder),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: context.faintBorder),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide:
-                  const BorderSide(color: AppColors.primary600, width: 1.5),
-            ),
-          ),
-          items: options
-              .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
-              .toList(),
-          onChanged: saving
-              ? null
-              : (next) {
-                  if (next != null) onChanged(next);
-                },
-        );
-        if (compact) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [copy, const SizedBox(height: 14), dropdown],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: copy),
-            const SizedBox(width: 20),
-            SizedBox(width: 280, child: dropdown),
-          ],
-        );
-      },
+    final dropdown = DropdownButtonFormField<String>(
+      initialValue: selected,
+      isExpanded: true,
+      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.public_rounded, size: 19),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: context.faintBorder),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: context.faintBorder),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppColors.primary600, width: 1.5),
+        ),
+      ),
+      items: options
+          .map((zone) => DropdownMenuItem(value: zone, child: Text(zone)))
+          .toList(),
+      onChanged: saving
+          ? null
+          : (next) {
+              if (next != null) onChanged(next);
+            },
+    );
+    return _SettingsSelectRow(
+      icon: Icons.public_rounded,
+      iconColor: Colors.indigo,
+      title: l10n.settingsTimeZone,
+      description: l10n.settingsTimeZoneDescription,
+      dropdown: dropdown,
     );
   }
 }

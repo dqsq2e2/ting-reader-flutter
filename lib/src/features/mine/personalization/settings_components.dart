@@ -7,6 +7,7 @@ class _SettingsSection extends StatelessWidget {
     required this.title,
     required this.child,
     this.trailing,
+    this.showHeader = true,
   });
 
   final IconData icon;
@@ -14,6 +15,7 @@ class _SettingsSection extends StatelessWidget {
   final String title;
   final Widget child;
   final Widget? trailing;
+  final bool showHeader;
 
   @override
   Widget build(BuildContext context) {
@@ -24,23 +26,25 @@ class _SettingsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+          if (showHeader) ...[
+            Row(
+              children: [
+                Icon(icon, color: iconColor, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
-              if (trailing != null) trailing!,
-            ],
-          ),
-          SizedBox(height: compact ? 18 : 22),
+                if (trailing != null) trailing!,
+              ],
+            ),
+            SizedBox(height: compact ? 18 : 22),
+          ],
           child,
         ],
       ),
