@@ -252,11 +252,24 @@ class _ApplicationTimeZoneSettingRow extends StatelessWidget {
         final copy = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              l10n.settingsTimeZone,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+            Row(
+              children: [
+                const Icon(
+                  Icons.public_rounded,
+                  color: Colors.indigo,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  l10n.settingsTimeZone,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               l10n.settingsTimeZoneDescription,
               style: TextStyle(color: context.mutedText, fontSize: 13),
