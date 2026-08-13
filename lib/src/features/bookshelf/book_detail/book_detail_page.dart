@@ -275,7 +275,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             _chapterRowKeys.clear();
           });
         }
-        return _loadChapterPage(tab: resolvedTab, groupIndex: lastGroup);
+        return await _loadChapterPage(tab: resolvedTab, groupIndex: lastGroup);
       }
       final visibleIds = page.chapters.map((chapter) => chapter.id).toSet();
       if (!mounted) return page;

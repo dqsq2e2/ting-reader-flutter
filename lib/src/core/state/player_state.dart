@@ -253,7 +253,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
     try {
       final session = await audio_session.AudioSession.instance;
-      return session.setActive(true);
+      return await session.setActive(true);
     } catch (_) {
       return defaultTargetPlatform != TargetPlatform.android &&
           defaultTargetPlatform != TargetPlatform.iOS;
