@@ -16,6 +16,7 @@ import '../utils/chapter_sort.dart';
 import '../utils/urls.dart';
 import 'app_state.dart';
 import 'download_state.dart';
+import 'gateway_media_guard.dart';
 
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   PlayerState(this.appState, this.downloadState) {
@@ -34,6 +35,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _positionSub = _audio.positionStream.listen((position) {
       if (_suppressPositionUpdates) return;
       currentTime = _displayTimeForAudioPosition(position);
+      if (currentTime > _furthestChapterPosition) {
+        _furthestChapterPosition = currentTime;
+      }
       _handleSkipOutro();
       notifyListeners();
     });
@@ -69,7 +73,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     });
     _completeSub = _audio.playerStateStream.listen((state) {
       if (state.processingState == audio.ProcessingState.completed) {
-        unawaited(sendProgress());
+        unawaited(_handlePlaybackCompleted(state));
       }
     });
     _indexSub = _audio.currentIndexStream.listen(_syncChapterFromAudioIndex);
@@ -117,10 +121,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _durationSynced = {};
   bool _usingTranscodeStream = false;
   bool _usingAudioQueue = false;
+  bool _usingGatewaySingleChapterSource = false;
   bool _suppressPositionUpdates = false;
   bool _applyingQueueStartSeek = false;
+  int? _handlingGatewayMediaCompletionGeneration;
   bool _gatewayReauthenticationPending = false;
   bool _resumeAfterGatewayReauthentication = false;
+  double _furthestChapterPosition = 0;
   // 睡眠定时按集数：集数用完时阻止 playChapter 的 _playWithSession 自动起播，
   // 并在 _playWithSession 中暂停仍在播放的旧音频。
   bool _suppressAutoPlay = false;
@@ -464,6 +471,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final targetChapter = chapters[initialIndex];
     currentChapter = targetChapter;
     currentTime = resumePosition;
+    _furthestChapterPosition = resumePosition;
     duration = targetChapter.duration.toDouble();
     error = null;
     usingLocalFile = false;
@@ -472,6 +480,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _suppressPositionUpdates = true;
     _usingTranscodeStream = false;
     _usingAudioQueue = false;
+    _usingGatewaySingleChapterSource = false;
     _clearTranscodeClock();
     // 按集数睡眠：集数用完则阻止后续 _playWithSession 起播，并暂停旧音频。
     if (_checkEpisodeSleepOnChapterChange()) {
@@ -481,20 +490,32 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     await _waitForPendingTranscodeSeek();
     if (!_isActivePlay(playGeneration, targetChapter.id)) return;
 
+    final useGatewaySingleChapter = _usesGatewaySingleChapterPlayback;
+    String? localPath;
     try {
-      final localPath = _localFilePathFromChapter(targetChapter) ??
+      localPath = _localFilePathFromChapter(targetChapter) ??
           await downloadState.localPathForChapter(targetChapter.id);
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
       usingLocalFile = localPath != null;
-      await _setAudioQueueWithRedirectRecovery(
-        book,
-        chapters,
-        initialIndex: initialIndex,
-        initialPosition:
-            Duration(milliseconds: (resumePosition * 1000).round()),
-      );
+      if (useGatewaySingleChapter) {
+        await _setGatewaySingleChapterSource(
+          book,
+          targetChapter,
+          localPath: localPath,
+          position: resumePosition,
+        );
+      } else {
+        await _setAudioQueueWithRedirectRecovery(
+          book,
+          chapters,
+          initialIndex: initialIndex,
+          initialPosition:
+              Duration(milliseconds: (resumePosition * 1000).round()),
+        );
+      }
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
-      _usingAudioQueue = true;
+      _usingAudioQueue = !useGatewaySingleChapter;
+      _usingGatewaySingleChapterSource = useGatewaySingleChapter;
       currentTime = resumePosition;
       _suppressPositionUpdates = false;
       await _audio.setSpeed(playbackSpeed);
@@ -504,8 +525,22 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _startProgressTimer();
     } catch (err) {
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
+      if (useGatewaySingleChapter && localPath == null) {
+        final previousResume = _resumeAfterGatewayReauthentication;
+        _resumeAfterGatewayReauthentication = !_suppressAutoPlay;
+        final probeResult = await _probeGatewaySession();
+        if (probeResult != _GatewaySessionProbeResult.expired) {
+          _resumeAfterGatewayReauthentication = previousResume;
+        }
+        if (!_isActivePlay(playGeneration, targetChapter.id)) return;
+        if (probeResult == _GatewaySessionProbeResult.expired) {
+          _suppressPositionUpdates = false;
+          return;
+        }
+      }
       usingLocalFile = false;
       _usingAudioQueue = false;
+      _usingGatewaySingleChapterSource = useGatewaySingleChapter;
       _usingTranscodeStream = true;
       _resetTranscodeClock(resumePosition);
       _suppressPositionUpdates = true;
@@ -581,8 +616,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _pauseForGatewayReauthentication() async {
     if (_gatewayReauthenticationPending) return;
     _gatewayReauthenticationPending = true;
-    _resumeAfterGatewayReauthentication =
-        hasChapter && (isPlaying || _audio.playing);
+    _resumeAfterGatewayReauthentication = _resumeAfterGatewayReauthentication ||
+        (hasChapter && (isPlaying || _audio.playing));
     _cancelFocusRecovery(clearResume: true);
     _stopProgressTimers();
     _closeProgressSocket();
@@ -610,8 +645,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await _refreshPlaybackSourceAfterGatewayLogin();
       if (shouldResume) {
-        await _playWithSession();
-        _startProgressTimer();
+        unawaited(_resumePlaybackAfterGatewayReauthentication());
       }
       error = null;
     } catch (_) {
@@ -623,15 +657,43 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  Future<void> _resumePlaybackAfterGatewayReauthentication() async {
+    try {
+      await _playWithSession();
+    } catch (_) {
+      error = appState.textForLocale(
+        '飞牛重新登录后恢复播放失败',
+        'Unable to resume playback after fnOS sign-in',
+      );
+      notifyListeners();
+    }
+  }
+
   Future<void> _refreshPlaybackSourceAfterGatewayLogin() async {
     final book = currentBook;
     final chapter = currentChapter;
     if (book == null || chapter == null) return;
 
-    final resumePosition = _clampPlaybackTime(currentTime);
+    final resumePosition = gatewayMediaResumePosition(
+      positionSeconds: currentTime,
+      furthestPositionSeconds: _furthestChapterPosition,
+      expectedDurationSeconds: chapter.duration.toDouble(),
+    );
     _suppressPositionUpdates = true;
     try {
-      if (_usingAudioQueue) {
+      if (_usesGatewaySingleChapterPlayback && !_usingTranscodeStream) {
+        final localPath = _localFilePathFromChapter(chapter) ??
+            await downloadState.localPathForChapter(chapter.id);
+        usingLocalFile = localPath != null;
+        await _setGatewaySingleChapterSource(
+          book,
+          chapter,
+          localPath: localPath,
+          position: resumePosition,
+        );
+        _usingAudioQueue = false;
+        _usingGatewaySingleChapterSource = true;
+      } else if (_usingAudioQueue) {
         final chapterList = chapters.isEmpty ? <Chapter>[chapter] : chapters;
         final chapterIndex = chapterList.indexWhere(
           (item) => item.id == chapter.id,
@@ -665,6 +727,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         }
       }
       currentTime = resumePosition;
+      _furthestChapterPosition = resumePosition;
+      if (chapter.duration > 0) {
+        duration = chapter.duration.toDouble();
+      }
       await _audio.setSpeed(playbackSpeed);
       await _audio.setVolume(volume);
     } finally {
@@ -677,6 +743,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         duration > 0 ? seconds.clamp(0, duration).toDouble() : seconds;
     final seekGeneration = ++_seekGeneration;
     currentTime = target;
+    _furthestChapterPosition = target;
     notifyListeners();
     if (_usingTranscodeStream && currentChapter != null) {
       _resetTranscodeClock(target);
@@ -955,6 +1022,32 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _setGatewaySingleChapterSource(
+    Book book,
+    Chapter chapter, {
+    required String? localPath,
+    required double position,
+  }) async {
+    final mediaItem = _mediaItemFor(book, chapter);
+    if (localPath != null) {
+      await _audio.setAudioSource(
+        audio.AudioSource.uri(Uri.file(localPath), tag: mediaItem),
+        initialPosition: Duration(
+          milliseconds: (position * 1000).round(),
+        ),
+      );
+      return;
+    }
+
+    await _setAudioUrlWithRedirectRecovery(
+      () => streamUrl(chapter.id),
+      mediaItem: mediaItem,
+    );
+    if (position > 0) {
+      await _audio.seek(Duration(milliseconds: (position * 1000).round()));
+    }
+  }
+
   Future<void> _setFallbackTranscodeSource(
     Chapter chapter,
     MediaItem mediaItem,
@@ -1069,6 +1162,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         book == null ? 0.0 : _startPositionFor(book, nextChapter);
     currentChapter = nextChapter;
     currentTime = startPosition;
+    _furthestChapterPosition = startPosition;
     duration = nextChapter.duration.toDouble();
     _clearTranscodeClock();
     _usingTranscodeStream = false;
@@ -1086,6 +1180,129 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       unawaited(_seekAudioQueueToChapter(index, book, nextChapter));
     }
     _startProgressTimer();
+  }
+
+  bool get _usesGatewaySingleChapterPlayback =>
+      !appState.offlineMode &&
+      !appState.needsGatewayLogin &&
+      (appState.token?.trim().isNotEmpty ?? false) &&
+      (appState.api.isGatewaySession?.call() ?? false);
+
+  Future<void> _handlePlaybackCompleted(audio.PlayerState state) async {
+    if (!_usingGatewaySingleChapterSource || _usingAudioQueue) {
+      await sendProgress();
+      return;
+    }
+    if (!_usesGatewaySingleChapterPlayback) {
+      await sendProgress();
+      if (!_gatewayReauthenticationPending && !appState.needsGatewayLogin) {
+        unawaited(nextChapter());
+      }
+      return;
+    }
+    final playGeneration = _playGeneration;
+    if (_handlingGatewayMediaCompletionGeneration == playGeneration ||
+        _suppressPositionUpdates ||
+        _gatewayReauthenticationPending ||
+        appState.needsGatewayLogin) {
+      return;
+    }
+
+    final chapter = currentChapter;
+    if (chapter == null) return;
+    _handlingGatewayMediaCompletionGeneration = playGeneration;
+    final shouldResume = state.playing || isPlaying || _audio.playing;
+    _resumeAfterGatewayReauthentication =
+        _resumeAfterGatewayReauthentication || shouldResume;
+    _stopProgressTimers();
+    var shouldAdvance = false;
+
+    try {
+      final observedPosition = gatewayMediaResumePosition(
+        positionSeconds: currentTime,
+        furthestPositionSeconds: _furthestChapterPosition,
+        expectedDurationSeconds: chapter.duration.toDouble(),
+      );
+      currentTime = observedPosition;
+      _furthestChapterPosition = observedPosition;
+      if (chapter.duration > 0) {
+        duration = chapter.duration.toDouble();
+      }
+      notifyListeners();
+
+      // Native media requests bypass Dio and fnOS may return HTTP 200 with an
+      // "invalid token" body. Verify the gateway before advancing.
+      final probeResult = await _probeGatewaySession();
+      if (!_isActivePlay(playGeneration, chapter.id)) return;
+      if (probeResult == _GatewaySessionProbeResult.expired) return;
+      if (probeResult == _GatewaySessionProbeResult.unavailable) {
+        _resumeAfterGatewayReauthentication = false;
+        await _pauseAfterGatewayMediaFailure();
+        error = appState.textForLocale(
+          '无法验证飞牛登录状态，播放已暂停',
+          'Unable to verify the fnOS session. Playback is paused',
+        );
+        notifyListeners();
+        return;
+      }
+
+      if (_gatewayReauthenticationPending || appState.needsGatewayLogin) {
+        return;
+      }
+
+      if (!usingLocalFile &&
+          isPrematureGatewayMediaCompletion(
+            positionSeconds: observedPosition,
+            expectedDurationSeconds: chapter.duration.toDouble(),
+          )) {
+        _resumeAfterGatewayReauthentication = false;
+        await _pauseAfterGatewayMediaFailure();
+        error = appState.textForLocale(
+          '音频流异常结束，已停止自动跳转章节',
+          'The audio stream ended unexpectedly. Automatic chapter advance was stopped',
+        );
+        notifyListeners();
+        return;
+      }
+
+      _resumeAfterGatewayReauthentication = false;
+      await sendProgress();
+      if (!_isActivePlay(playGeneration, chapter.id) ||
+          _gatewayReauthenticationPending ||
+          appState.needsGatewayLogin) {
+        return;
+      }
+      shouldAdvance = shouldResume;
+    } finally {
+      if (_handlingGatewayMediaCompletionGeneration == playGeneration) {
+        _handlingGatewayMediaCompletionGeneration = null;
+      }
+    }
+    if (shouldAdvance) {
+      unawaited(nextChapter());
+    }
+  }
+
+  Future<_GatewaySessionProbeResult> _probeGatewaySession() async {
+    try {
+      await appState.api.get('/api/me');
+      return _GatewaySessionProbeResult.valid;
+    } catch (_) {
+      if (_gatewayReauthenticationPending || appState.needsGatewayLogin) {
+        return _GatewaySessionProbeResult.expired;
+      }
+      return _GatewaySessionProbeResult.unavailable;
+    }
+  }
+
+  Future<void> _pauseAfterGatewayMediaFailure() async {
+    _stopProgressTimers();
+    if (!_audio.playing) return;
+    try {
+      await _audio.pause();
+    } catch (_) {
+      isPlaying = false;
+    }
   }
 
   MediaItem _mediaItemFor(
@@ -1173,7 +1390,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         _gatewayReauthenticationPending) {
       return;
     }
-    if (!kIsWeb && _progressSocket != null) return;
+    if (!kIsWeb &&
+        _progressSocket != null &&
+        !_usesGatewaySingleChapterPlayback) {
+      return;
+    }
     await _sendProgressByHttp(book, chapter);
   }
 
@@ -1423,7 +1644,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _startProgressTimer() {
-    if (_gatewayReauthenticationPending) return;
+    if (_gatewayReauthenticationPending ||
+        !_audio.playing ||
+        _audio.processingState == audio.ProcessingState.completed) {
+      return;
+    }
     _stopProgressTimers();
     unawaited(sendProgress(playbackStart: currentTime));
     _progressWsTimer = Timer.periodic(const Duration(seconds: 2), (_) {
@@ -1481,6 +1706,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     super.dispose();
   }
 }
+
+enum _GatewaySessionProbeResult { valid, expired, unavailable }
 
 const _personalAudioDeviceTypeNames = <String>{
   'wiredHeadset',
