@@ -989,10 +989,15 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _setAudioUrlWithRedirectRecovery(
     String Function() buildUrl, {
     required MediaItem mediaItem,
+    Duration? initialPosition,
   }) async {
     final firstUrl = buildUrl();
     try {
-      await _setAudioUrl(firstUrl, mediaItem);
+      await _setAudioUrl(
+        firstUrl,
+        mediaItem,
+        initialPosition: initialPosition,
+      );
     } catch (_) {
       if (!appState.usesActiveOrigin(firstUrl)) rethrow;
       final previousActiveUrl = appState.activeUrl;
@@ -1002,14 +1007,23 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           recoveredUrl == previousActiveUrl) {
         rethrow;
       }
-      await _setAudioUrl(buildUrl(), mediaItem);
+      await _setAudioUrl(
+        buildUrl(),
+        mediaItem,
+        initialPosition: initialPosition,
+      );
     }
   }
 
-  Future<void> _setAudioUrl(String url, MediaItem mediaItem) {
+  Future<void> _setAudioUrl(
+    String url,
+    MediaItem mediaItem, {
+    Duration? initialPosition,
+  }) {
     if (kIsWeb) {
       return _audio.setAudioSource(
         audio.AudioSource.uri(Uri.parse(url), tag: mediaItem),
+        initialPosition: initialPosition,
       );
     }
     final headers = appState.api.authHeaders;
@@ -1019,6 +1033,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         headers: headers.isEmpty ? null : headers,
         tag: mediaItem,
       ),
+      initialPosition: initialPosition,
     );
   }
 
@@ -1042,10 +1057,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     await _setAudioUrlWithRedirectRecovery(
       () => streamUrl(chapter.id),
       mediaItem: mediaItem,
+      initialPosition: Duration(
+        milliseconds: (position * 1000).round(),
+      ),
     );
-    if (position > 0) {
-      await _audio.seek(Duration(milliseconds: (position * 1000).round()));
-    }
   }
 
   Future<void> _setFallbackTranscodeSource(
