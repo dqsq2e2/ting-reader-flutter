@@ -400,11 +400,7 @@ packages:
     description:
       name: lucide_icons_flutter
       sha256: "6e2eb4a11137851be84a57e936fc864d565709ec0ae854b786b15397d1b66276"
-<<<<<<< Updated upstream
-      url: "https://pub.dev"
-=======
       url: "https://pub.flutter-io.cn"
->>>>>>> Stashed changes
     source: hosted
     version: "3.1.17"
   matcher:

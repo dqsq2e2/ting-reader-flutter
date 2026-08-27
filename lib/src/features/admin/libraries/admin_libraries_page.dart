@@ -736,6 +736,41 @@ const Map<String, dynamic> _defaultLibraryScraperConfig = {
   'scheduled_sync_interval': 'daily',
 };
 
+const Map<String, dynamic> _defaultLibrarySyncConfig = {
+  'scheduled_sync_enabled': false,
+  'scheduled_sync_interval': 'daily',
+};
+
+Map<String, dynamic>? _parseRssSyncConfig(String text) {
+  if (text.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(text);
+    if (decoded is! Map) return null;
+
+    final config = <String, dynamic>{};
+    final enabled = decoded['scheduled_sync_enabled'];
+    if (enabled is bool) {
+      config['scheduled_sync_enabled'] = enabled;
+    }
+    final interval = decoded['scheduled_sync_interval'];
+    if (interval is String &&
+        const {'hourly', 'daily', 'weekly', 'monthly'}.contains(interval)) {
+      config['scheduled_sync_interval'] = interval;
+    }
+    return config.isEmpty ? null : config;
+  } catch (_) {
+    // RSS has no scraper JSON to validate. Ignore stale hidden text.
+    return null;
+  }
+}
+
+String _prettyRssSyncJson(Object? value) {
+  if (value is! Map) return '';
+  final config = _parseRssSyncConfig(jsonEncode(value));
+  if (config == null) return '';
+  return const JsonEncoder.withIndent('  ').convert(config);
+}
+
 String _prettyLibraryJson(Object? value) {
   return const JsonEncoder.withIndent('  ')
       .convert(value ?? _defaultLibraryScraperConfig);

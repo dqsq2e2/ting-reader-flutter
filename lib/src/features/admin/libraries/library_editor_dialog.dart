@@ -43,7 +43,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
       text: (library?.rootPath.isNotEmpty ?? false) ? library!.rootPath : '/',
     );
     _scraperController = TextEditingController(
-      text: _prettyLibraryJson(library?.scraperConfig),
+      text: _isRss
+          ? _prettyRssSyncJson(library?.scraperConfig)
+          : _prettyLibraryJson(library?.scraperConfig),
     );
     _loadScraperSources();
   }
@@ -132,9 +134,13 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
-    Object? scraperConfig;
     final scraperText = _scraperController.text.trim();
-    if (scraperText.isNotEmpty) {
+    Object? scraperConfig;
+    if (_isRss) {
+      // RSS does not run scraper plugins. Keep only the schedule settings,
+      // which are stored in the legacy config column for the scheduler.
+      scraperConfig = _parseRssSyncConfig(scraperText);
+    } else if (scraperText.isNotEmpty) {
       try {
         scraperConfig = jsonDecode(scraperText);
       } catch (_) {
@@ -201,6 +207,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     if (_editing || _type == type) return;
     setState(() {
       _type = type;
+      if (_isRss) {
+        _scraperController.text = _prettyRssSyncJson(null);
+      }
       if (_type == 'webdav' && _rootPathController.text.trim().isEmpty) {
         _rootPathController.text = '/';
       }
@@ -214,7 +223,9 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
         return decoded.map((key, value) => MapEntry(key.toString(), value));
       }
     } catch (_) {}
-    return Map<String, dynamic>.from(_defaultLibraryScraperConfig);
+    return Map<String, dynamic>.from(
+      _isRss ? _defaultLibrarySyncConfig : _defaultLibraryScraperConfig,
+    );
   }
 
   void _updateScraperConfig(Map<String, dynamic> updates) {
