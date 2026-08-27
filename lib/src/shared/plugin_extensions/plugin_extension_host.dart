@@ -1122,6 +1122,7 @@ class _PluginExtensionPageState extends State<PluginExtensionPage> {
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
+        top: MediaQuery.sizeOf(context).width >= 1280,
         child: Column(
           children: [
             Container(
