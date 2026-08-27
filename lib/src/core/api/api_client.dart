@@ -278,7 +278,7 @@ class ApiClient {
         gatewaySessionExpiredNotified = true;
         final recovered = !authRetrying && await _notifyGatewaySessionExpired();
         if (recovered) {
-          return _send(
+          return await _send(
             request,
             retrying: retrying,
             authRetrying: true,
@@ -308,7 +308,7 @@ class ApiClient {
         gatewaySessionExpiredNotified = true;
         final recovered = !authRetrying && await _notifyGatewaySessionExpired();
         if (recovered) {
-          return _send(
+          return await _send(
             request,
             retrying: retrying,
             authRetrying: true,
@@ -318,7 +318,7 @@ class ApiClient {
       } else if (!authRetrying && _isExpiredAppSession(error)) {
         final recovered = await _notifyGatewaySessionExpired();
         if (recovered) {
-          return _send(
+          return await _send(
             request,
             retrying: retrying,
             authRetrying: true,
@@ -340,7 +340,7 @@ class ApiClient {
       }
       if (recovered == null || recovered.isEmpty) rethrow;
       configure(baseUrl: recovered, token: _token, cookie: _cookie);
-      return _send(
+      return await _send(
         request,
         retrying: true,
         authRetrying: authRetrying,
