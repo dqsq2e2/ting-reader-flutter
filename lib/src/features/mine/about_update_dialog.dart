@@ -463,8 +463,12 @@ class _AboutPageState extends State<AboutPage> {
                     _AboutLink(
                       icon: Icons.public_rounded,
                       label: context.localeText('官方网站', 'Official Website'),
-                      value: tingReaderWebsiteUrl,
-                      url: tingReaderWebsiteUrl,
+                      value: localizedTingReaderWebsiteUrl(
+                        Localizations.localeOf(context).languageCode,
+                      ),
+                      url: localizedTingReaderWebsiteUrl(
+                        Localizations.localeOf(context).languageCode,
+                      ),
                       iconColor: Colors.blue.shade600,
                       iconBackground: Colors.blue.shade50,
                     ),

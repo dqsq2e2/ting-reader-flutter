@@ -60,6 +60,11 @@ dependencies:
   webview_win_floating:
     path: third_party/webview_win_floating
   lucide_icons_flutter: ^3.1.14+2
+  crypto: ^3.0.7
+  encrypt: ^5.0.3
+  pointycastle: ^3.9.1
+  flutter_secure_storage: ^10.3.1
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -85,6 +90,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/logo.png
+    - assets/images/logo-B-Z1b4kd.svg
 
   # To add assets to your application, add an assets section, like this:
   # assets:

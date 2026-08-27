@@ -957,12 +957,14 @@ class HeaderText extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.icon,
+    this.iconWidget,
     this.iconColor = AppColors.primary600,
   });
 
   final String title;
   final String subtitle;
   final IconData? icon;
+  final Widget? iconWidget;
   final Color iconColor;
 
   @override
@@ -976,8 +978,8 @@ class HeaderText extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              Icon(icon, color: iconColor, size: phone ? 24 : 30),
+            if (icon != null || iconWidget != null) ...[
+              iconWidget ?? Icon(icon, color: iconColor, size: phone ? 24 : 30),
               SizedBox(width: phone ? 8 : 12),
             ],
             Flexible(
@@ -1017,13 +1019,15 @@ class HeaderText extends StatelessWidget {
 class PageHeaderRow extends StatelessWidget {
   const PageHeaderRow({
     super.key,
-    required this.icon,
+    this.icon,
+    this.iconWidget,
     required this.title,
     required this.subtitle,
     this.action,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final Widget? iconWidget;
   final String title;
   final String subtitle;
   final Widget? action;
@@ -1034,6 +1038,7 @@ class PageHeaderRow extends StatelessWidget {
       builder: (context, constraints) {
         final header = HeaderText(
           icon: icon,
+          iconWidget: iconWidget,
           title: title,
           subtitle: subtitle,
         );

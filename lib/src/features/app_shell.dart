@@ -13,6 +13,7 @@ import 'home/home_page.dart';
 import 'mine/about_update_dialog.dart';
 import 'mine/downloads_page.dart';
 import 'mine/favorites_page.dart';
+import 'mine/fn_connect_page.dart';
 import 'mine/mine_page.dart';
 import 'mine/personalization/personalization_page.dart';
 import 'playlists/playlists_page.dart';
@@ -35,6 +36,7 @@ enum AppDestination {
   history,
   playlists,
   personalization,
+  fnConnect,
   notifications,
   statistics,
   downloads,
@@ -57,6 +59,7 @@ bool _isMineDestination(AppDestination destination) {
     AppDestination.history ||
     AppDestination.favorites ||
     AppDestination.personalization ||
+    AppDestination.fnConnect ||
     AppDestination.notifications ||
     AppDestination.statistics ||
     AppDestination.downloads ||
@@ -69,6 +72,7 @@ bool _isMineDestination(AppDestination destination) {
 bool _hidesMiniPlayer(AppDestination destination) {
   return switch (destination) {
     AppDestination.personalization ||
+    AppDestination.fnConnect ||
     AppDestination.libraries ||
     AppDestination.plugins ||
     AppDestination.logs ||
@@ -164,6 +168,8 @@ class _AppShellState extends State<AppShell> {
       case 'personalization':
       case 'settings':
         return AppDestination.personalization;
+      case 'fn-connect':
+        return AppDestination.fnConnect;
       case 'notifications':
         return AppDestination.notifications;
       case 'statistics':
@@ -414,6 +420,7 @@ class _AppShellState extends State<AppShell> {
       AppDestination.favorites ||
       AppDestination.history ||
       AppDestination.personalization ||
+      AppDestination.fnConnect ||
       AppDestination.notifications ||
       AppDestination.statistics ||
       AppDestination.about =>
@@ -620,6 +627,7 @@ class _AppShellState extends State<AppShell> {
           openFavorites: () => _go(AppDestination.favorites),
           openDownloads: () => _go(AppDestination.downloads),
           openPersonalization: () => _go(AppDestination.personalization),
+          openFnConnect: () => _go(AppDestination.fnConnect),
           openNotifications: () => _go(AppDestination.notifications),
           openStatistics: () => _go(AppDestination.statistics),
           openAbout: _openAbout,
@@ -641,6 +649,8 @@ class _AppShellState extends State<AppShell> {
           openDownloads: () => _go(AppDestination.downloads),
           onBack: () => _go(AppDestination.mine),
         );
+      case AppDestination.fnConnect:
+        return FnConnectPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.notifications:
         return NotificationSettingsPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.statistics:

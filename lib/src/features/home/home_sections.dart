@@ -19,8 +19,9 @@ class _HomeStatsGrid extends StatelessWidget {
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 560;
         final cols = compact ? 2 : 2;
-        final gap = compact ? 12.0 : 14.0;
+        final gap = compact ? 8.0 : 14.0;
         final width = (constraints.maxWidth - gap * (cols - 1)) / cols;
+        final listened = formatMinutesMetricForLocale(context, listenMinutes);
         return Wrap(
           spacing: gap,
           runSpacing: gap,
@@ -31,8 +32,8 @@ class _HomeStatsGrid extends StatelessWidget {
               icon: Icons.headphones_rounded,
               iconColor: AppColors.primary600,
               label: context.localeText('最近已听', 'Listened'),
-              value: listenMinutes.toString(),
-              unit: context.localeText('分钟', 'min'),
+              value: listened.value,
+              unit: listened.unit,
             ),
             _MetricCard(
               width: width,
@@ -92,50 +93,62 @@ class _MetricCard extends StatelessWidget {
     return SizedBox(
       width: width,
       child: TingCard(
-        radius: compact ? 22 : 24,
-        padding: EdgeInsets.all(compact ? 14 : 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        radius: compact ? 16 : 24,
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 11 : 18,
+          vertical: compact ? 10 : 16,
+        ),
+        child: Row(
           children: [
-            Container(
-              width: compact ? 50 : 44,
-              height: compact ? 50 : 44,
-              decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(icon, color: iconColor, size: compact ? 24 : 21),
-            ),
-            SizedBox(height: compact ? 20 : 18),
-            Text(
-              label,
-              style: TextStyle(
-                color: context.mutedText,
-                fontSize: 12,
-              ),
-            ),
-            SizedBox(height: compact ? 4 : 3),
-            RichText(
-              text: TextSpan(
-                style: DefaultTextStyle.of(context).style,
-                children: [
-                  TextSpan(
-                    text: value,
-                    style: TextStyle(
-                      color: context.isDark
-                          ? AppColors.slate50
-                          : AppColors.slate950,
-                      fontSize: compact ? 30 : 28,
-                    ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: compact ? 36 : 44,
+                  height: compact ? 36 : 44,
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(compact ? 11 : 16),
                   ),
-                  TextSpan(
-                    text: ' $unit',
-                    style: TextStyle(
-                      color: context.tertiaryText,
-                      fontSize: 12,
-                    ),
+                  child: Icon(icon, color: iconColor, size: compact ? 17 : 21),
+                ),
+                SizedBox(height: compact ? 7 : 10),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: context.mutedText,
+                    fontSize: compact ? 10 : 12,
                   ),
-                ],
+                ),
+              ],
+            ),
+            SizedBox(width: compact ? 12 : 22),
+            Expanded(
+              child: RichText(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                text: TextSpan(
+                  style: DefaultTextStyle.of(context).style,
+                  children: [
+                    TextSpan(
+                      text: value,
+                      style: TextStyle(
+                        color: context.isDark
+                            ? AppColors.slate50
+                            : AppColors.slate950,
+                        fontSize: compact ? 22 : 30,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' $unit',
+                      style: TextStyle(
+                        color: context.tertiaryText,
+                        fontSize: compact ? 9 : 12,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
