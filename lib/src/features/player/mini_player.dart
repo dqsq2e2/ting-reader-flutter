@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
-import '../../core/plugin_extensions/types.dart';
 import '../../core/state/app_state.dart';
 import '../../core/state/download_state.dart';
 import '../../core/state/player_state.dart';
@@ -16,7 +15,6 @@ import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
-import '../../shared/plugin_extensions/plugin_extension_host.dart';
 
 part 'parts/chapter_sheet.dart';
 part 'parts/collapsed_mini_player.dart';

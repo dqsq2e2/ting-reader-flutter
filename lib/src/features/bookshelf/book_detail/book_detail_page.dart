@@ -788,6 +788,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final genNum = TextEditingController();
     final genTitle = TextEditingController();
     var selectedGroupOrder = _chapterGroupsDescending ? 'desc' : 'asc';
+    var metadataLocked = book.manualCorrected;
+    var metadataLockTouched = false;
 
     final result = await showDialog<_EditBookDialogResult>(
       context: context,
@@ -821,6 +823,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   'skip_outro': int.tryParse(skipOutro.text.trim()) ?? 0,
                   'chapter_regex': chapterRegex.text.trim(),
                   'description': description.text.trim(),
+                  'manual_corrected':
+                      metadataLockTouched ? metadataLocked : true,
                 };
                 final res = await appState.api.patch(
                   '/api/books/${book.id}',
@@ -1234,6 +1238,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 16),
+                        _MetadataLockControl(
+                          value: metadataLocked,
+                          onChanged: disabled
+                              ? null
+                              : (value) => setDialogState(() {
+                                    metadataLocked = value;
+                                    metadataLockTouched = true;
+                                  }),
+                        ),
                         const SizedBox(height: 22),
                         if (twoColumns)
                           Row(
@@ -1353,8 +1367,17 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 runSpacing: 8,
                 alignment: WrapAlignment.end,
                 children: compact
-                    ? [deleteButton, writeButton, cancelButton, saveButton]
-                    : [writeButton, cancelButton, saveButton],
+                    ? [
+                        deleteButton,
+                        if (book.libraryType == 'local') writeButton,
+                        cancelButton,
+                        saveButton,
+                      ]
+                    : [
+                        if (book.libraryType == 'local') writeButton,
+                        cancelButton,
+                        saveButton,
+                      ],
               );
               if (compact) {
                 return Align(alignment: Alignment.centerRight, child: actions);

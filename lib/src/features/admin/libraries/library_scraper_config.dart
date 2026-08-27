@@ -188,6 +188,8 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final supportsMetadataWriting = widget.libraryType == 'local';
+    final showJsonEditor = _showJson && widget.libraryType != 'webdav';
     final nfo = _boolValue('nfo_writing_enabled', false);
     final metadata = _boolValue('metadata_writing_enabled', false);
     final preferTitle = _boolValue('use_filename_as_title', true);
@@ -215,16 +217,17 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
                 child: DialogLabel(
                     context.localeText('刮削源配置', 'Scraper Sources'),
                     fontSize: 14)),
-            TextButton(
-              onPressed: () => setState(() => _showJson = !_showJson),
-              child: Text(_showJson
-                  ? context.localeText('切换至简易模式', 'Simple Mode')
-                  : context.localeText('切换至高级模式 (JSON)', 'Advanced (JSON)')),
-            ),
+            if (widget.libraryType != 'webdav')
+              TextButton(
+                onPressed: () => setState(() => _showJson = !_showJson),
+                child: Text(showJsonEditor
+                    ? context.localeText('切换至简易模式', 'Simple Mode')
+                    : context.localeText('切换至高级模式 (JSON)', 'Advanced (JSON)')),
+              ),
           ],
         ),
         const SizedBox(height: 8),
-        if (_showJson)
+        if (showJsonEditor)
           TextFormField(
             controller: widget.controller,
             maxLines: 8,
@@ -243,24 +246,27 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
             ),
             child: Column(
               children: [
-                _ConfigSwitchRow(
-                  title:
-                      context.localeText('启用 NFO 元数据写入', 'Write NFO metadata'),
-                  subtitle: context.localeText('刮削或修改元数据时同步写入 book.nfo 文件',
-                      'Write book.nfo when scraping or editing metadata'),
-                  value: nfo,
-                  onChanged: (value) => _setBool('nfo_writing_enabled', value),
-                ),
-                _ConfigSwitchRow(
-                  title: context.localeText(
-                      '写入 metadata.json', 'Write metadata.json'),
-                  subtitle: context.localeText(
-                      '生成 Audiobookshelf 兼容的 metadata.json 文件',
-                      'Generate an Audiobookshelf-compatible metadata.json file'),
-                  value: metadata,
-                  onChanged: (value) =>
-                      _setBool('metadata_writing_enabled', value),
-                ),
+                if (supportsMetadataWriting) ...[
+                  _ConfigSwitchRow(
+                    title: context.localeText(
+                        '启用 NFO 元数据写入', 'Write NFO metadata'),
+                    subtitle: context.localeText('刮削或修改元数据时同步写入 book.nfo 文件',
+                        'Write book.nfo when scraping or editing metadata'),
+                    value: nfo,
+                    onChanged: (value) =>
+                        _setBool('nfo_writing_enabled', value),
+                  ),
+                  _ConfigSwitchRow(
+                    title: context.localeText(
+                        '写入 metadata.json', 'Write metadata.json'),
+                    subtitle: context.localeText(
+                        '生成 Audiobookshelf 兼容的 metadata.json 文件',
+                        'Generate an Audiobookshelf-compatible metadata.json file'),
+                    value: metadata,
+                    onChanged: (value) =>
+                        _setBool('metadata_writing_enabled', value),
+                  ),
+                ],
                 _ConfigSwitchRow(
                   title: context.localeText(
                       '优先使用文件/文件夹名作为标题', 'Prefer file/folder title'),

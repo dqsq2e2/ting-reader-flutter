@@ -1,94 +1,17 @@
 part of 'personalization_page.dart';
 
-class _AccountSection extends StatelessWidget {
-  const _AccountSection({
-    required this.usernameController,
-    required this.passwordController,
-    required this.saving,
-    required this.saved,
-    required this.onSave,
-  });
-
-  final TextEditingController usernameController;
-  final TextEditingController passwordController;
-  final bool saving;
-  final bool saved;
-  final VoidCallback onSave;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    return _SettingsSection(
-      icon: Icons.person_rounded,
-      iconColor: AppColors.primary500,
-      title: l10n.settingsAccount,
-      trailing: _SavedBadge(
-        visible: saved,
-        label: l10n.settingsAccountUpdated,
-        compact: true,
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final compact = constraints.maxWidth < 720;
-          final fields = [
-            _TextSettingField(
-              controller: usernameController,
-              label: l10n.settingsUsername,
-              icon: Icons.person_rounded,
-            ),
-            _TextSettingField(
-              controller: passwordController,
-              label: l10n.settingsPassword,
-              hintText: l10n.settingsNewPassword,
-              icon: Icons.key_rounded,
-              obscureText: true,
-            ),
-          ];
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              compact
-                  ? Column(
-                      children: [
-                        for (final field in fields) ...[
-                          field,
-                          if (field != fields.last) const SizedBox(height: 14),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Expanded(child: fields.first),
-                        const SizedBox(width: 16),
-                        Expanded(child: fields.last),
-                      ],
-                    ),
-              const SizedBox(height: 18),
-              Align(
-                alignment: Alignment.centerRight,
-                child: PrimaryButton(
-                  label: l10n.settingsUpdateAccount,
-                  icon: Icons.save_rounded,
-                  loading: saving,
-                  onPressed: onSave,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _AppearanceSection extends StatelessWidget {
   const _AppearanceSection({
     required this.theme,
     required this.onTheme,
+    required this.toolMenuEnabled,
+    required this.onToolMenuEnabled,
   });
 
   final String theme;
   final ValueChanged<String> onTheme;
+  final bool toolMenuEnabled;
+  final ValueChanged<bool> onToolMenuEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -117,20 +40,33 @@ class _AppearanceSection extends StatelessWidget {
               label: l10n.settingsSystem,
             ),
           ];
-          return Row(
+          return Column(
             children: [
-              for (var i = 0; i < options.length; i++) ...[
-                Expanded(
-                  child: _ThemeChoiceCard(
-                    option: options[i],
-                    selected: theme == options[i].id ||
-                        (theme == 'auto' && options[i].id == 'system'),
-                    onTap: () => onTheme(options[i].id),
-                    compact: compact,
-                  ),
-                ),
-                if (i != options.length - 1) SizedBox(width: compact ? 8 : 12),
-              ],
+              Row(
+                children: [
+                  for (var i = 0; i < options.length; i++) ...[
+                    Expanded(
+                      child: _ThemeChoiceCard(
+                        option: options[i],
+                        selected: theme == options[i].id ||
+                            (theme == 'auto' && options[i].id == 'system'),
+                        onTap: () => onTheme(options[i].id),
+                        compact: compact,
+                      ),
+                    ),
+                    if (i != options.length - 1)
+                      SizedBox(width: compact ? 8 : 12),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 22),
+              _SettingDivider(),
+              _ToggleSettingRow(
+                title: l10n.settingsPluginToolMenu,
+                subtitle: l10n.settingsPluginToolMenuDescription,
+                value: toolMenuEnabled,
+                onChanged: onToolMenuEnabled,
+              ),
             ],
           );
         },

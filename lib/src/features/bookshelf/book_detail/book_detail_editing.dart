@@ -32,6 +32,83 @@ class _EditFieldLabel extends StatelessWidget {
   }
 }
 
+class _MetadataLockControl extends StatelessWidget {
+  const _MetadataLockControl({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onChanged == null ? null : () => onChanged!(!value),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: AppColors.primary50.withValues(
+            alpha: context.isDark ? 0.12 : 0.75,
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.primary500.withValues(
+              alpha: context.isDark ? 0.28 : 0.2,
+            ),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: value,
+                activeColor: AppColors.primary600,
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                onChanged: onChanged == null
+                    ? null
+                    : (next) => onChanged!(next ?? false),
+              ),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.localeText('锁定元数据', 'Lock metadata'),
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    context.localeText(
+                      '锁定后，自动同步扫描不会覆盖手动刮削或编辑保存的元数据。',
+                      'When locked, automatic scans will not overwrite metadata saved by manual scraping or editing.',
+                    ),
+                    style: TextStyle(
+                      color: context.mutedText,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _EditMetadataField extends StatelessWidget {
   const _EditMetadataField({
     required this.controller,

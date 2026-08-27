@@ -236,6 +236,36 @@ abstract class AppLocalizations {
   /// **'主菜单已在底部导航中。'**
   String get navMainMenuInBottom;
 
+  /// No description provided for @navPluginPages.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件页面'**
+  String get navPluginPages;
+
+  /// No description provided for @navCollapseSidebar.
+  ///
+  /// In zh, this message translates to:
+  /// **'折叠侧边栏'**
+  String get navCollapseSidebar;
+
+  /// No description provided for @navExpandSidebar.
+  ///
+  /// In zh, this message translates to:
+  /// **'展开侧边栏'**
+  String get navExpandSidebar;
+
+  /// No description provided for @pluginPageUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件页面不可用'**
+  String get pluginPageUnavailable;
+
+  /// No description provided for @pluginPageUnavailableDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'该插件页面已停用或暂时无法加载。'**
+  String get pluginPageUnavailableDescription;
+
   /// No description provided for @startupConnecting.
   ///
   /// In zh, this message translates to:
@@ -463,6 +493,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'展示我的书单和系列入口'**
   String get settingsHomeCollectionsDescription;
+
+  /// No description provided for @settingsPluginEntries.
+  ///
+  /// In zh, this message translates to:
+  /// **'插件入口'**
+  String get settingsPluginEntries;
+
+  /// No description provided for @settingsPluginToolMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'右下角插件工具菜单'**
+  String get settingsPluginToolMenu;
+
+  /// No description provided for @settingsPluginToolMenuDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示插件声明的右下角快捷入口，默认开启。'**
+  String get settingsPluginToolMenuDescription;
 
   /// No description provided for @settingsPlayback.
   ///

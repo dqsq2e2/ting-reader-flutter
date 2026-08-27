@@ -3,15 +3,21 @@ import '../models/plugin.dart';
 enum ClientExtensionSlot {
   globalFloatingAction('global.floating_action'),
   globalPanel('global.panel'),
-  settingsSection('settings.section'),
+  appSidebarPage('app.sidebar_page'),
   bookDetailAction('book.detail_action'),
+  @Deprecated('Immersive player plugin entries are no longer rendered.')
   readerToolbarAction('reader.toolbar_action'),
+  @Deprecated('Immersive player plugin entries are no longer rendered.')
   readerSidePanel('reader.side_panel'),
+  @Deprecated(
+      'reader.document_viewer is retained for manifest compatibility only.')
   readerDocumentViewer('reader.document_viewer');
 
   const ClientExtensionSlot(this.value);
 
   final String value;
+
+  bool get rendersInClient => !value.startsWith('reader.');
 
   static ClientExtensionSlot? fromValue(Object? value) {
     final text = value?.toString().trim();
@@ -49,6 +55,7 @@ class ClientExtensionDescriptor {
     required this.pluginId,
     required this.pluginName,
     this.adminOnly = false,
+    this.clientGrant,
     required this.slot,
     required this.renderMode,
     required this.capability,
@@ -63,6 +70,7 @@ class ClientExtensionDescriptor {
   final String pluginId;
   final String pluginName;
   final bool adminOnly;
+  final String? clientGrant;
   final ClientExtensionSlot slot;
   final ClientExtensionRenderMode renderMode;
   final PluginCapability capability;
@@ -83,6 +91,32 @@ class ClientExtensionDescriptor {
     final value = render['entry'];
     final text = value?.toString().trim();
     return text == null || text.isEmpty ? null : text;
+  }
+
+  Map<String, dynamic> get bridge {
+    final value = render['bridge'];
+    return value is Map ? Map<String, dynamic>.from(value) : const {};
+  }
+
+  bool get allowsCapabilityInvoke => bridge['allow_capability_invoke'] != false;
+
+  Set<String> get allowedCapabilityIds {
+    final value = bridge['capabilities'];
+    final declared = value is List
+        ? value
+            .map((entry) => entry.toString().trim())
+            .where((entry) => entry.isNotEmpty)
+        : const Iterable<String>.empty();
+    return {capability.id, ...declared};
+  }
+
+  Set<String> get allowedHostMethods {
+    final value = bridge['host_methods'];
+    if (value is! List) return const {};
+    return value
+        .map((entry) => entry.toString().trim())
+        .where((entry) => entry.isNotEmpty)
+        .toSet();
   }
 }
 

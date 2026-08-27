@@ -80,6 +80,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navMainMenuInBottom => '主菜单已在底部导航中。';
 
   @override
+  String get navPluginPages => '插件页面';
+
+  @override
+  String get navCollapseSidebar => '折叠侧边栏';
+
+  @override
+  String get navExpandSidebar => '展开侧边栏';
+
+  @override
+  String get pluginPageUnavailable => '插件页面不可用';
+
+  @override
+  String get pluginPageUnavailableDescription => '该插件页面已停用或暂时无法加载。';
+
+  @override
   String get startupConnecting => '正在连接服务器';
 
   @override
@@ -194,6 +209,15 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsHomeCollectionsDescription => '展示我的书单和系列入口';
+
+  @override
+  String get settingsPluginEntries => '插件入口';
+
+  @override
+  String get settingsPluginToolMenu => '右下角插件工具菜单';
+
+  @override
+  String get settingsPluginToolMenuDescription => '显示插件声明的右下角快捷入口，默认开启。';
 
   @override
   String get settingsPlayback => '播放偏好';

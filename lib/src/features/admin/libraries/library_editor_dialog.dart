@@ -26,6 +26,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
   bool get _editing => widget.library != null;
   bool get _isLocal => _type == 'local';
   bool get _isRss => _type == 'rss';
+  bool get _isRemote => _type == 'webdav' || _isRss;
 
   @override
   void initState() {
@@ -133,7 +134,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
 
     Object? scraperConfig;
     final scraperText = _scraperController.text.trim();
-    if (!_isRss && scraperText.isNotEmpty) {
+    if (scraperText.isNotEmpty) {
       try {
         scraperConfig = jsonDecode(scraperText);
       } catch (_) {
@@ -141,6 +142,10 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
             '刮削源配置 JSON 格式错误', 'Scraper source config JSON is invalid'));
         return;
       }
+    }
+    if (_type == 'webdav' && scraperConfig is Map) {
+      scraperConfig['nfo_writing_enabled'] = false;
+      scraperConfig['metadata_writing_enabled'] = false;
     }
 
     final payload = <String, dynamic>{
@@ -200,6 +205,22 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
         _rootPathController.text = '/';
       }
     });
+  }
+
+  Map<String, dynamic> _currentScraperConfig() {
+    try {
+      final decoded = jsonDecode(_scraperController.text);
+      if (decoded is Map) {
+        return decoded.map((key, value) => MapEntry(key.toString(), value));
+      }
+    } catch (_) {}
+    return Map<String, dynamic>.from(_defaultLibraryScraperConfig);
+  }
+
+  void _updateScraperConfig(Map<String, dynamic> updates) {
+    final config = _currentScraperConfig()..addAll(updates);
+    _scraperController.text = _prettyLibraryJson(config);
+    setState(() {});
   }
 
   @override
@@ -306,6 +327,10 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                           _buildRssFields()
                         else
                           _buildWebDavFields(),
+                        if (_isRemote) ...[
+                          const SizedBox(height: 18),
+                          _buildScheduledSyncSettings(),
+                        ],
                         if (!_isRss) ...[
                           const SizedBox(height: 18),
                           _ScraperConfigPanel(
@@ -530,6 +555,112 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
           },
           decoration: const InputDecoration(
             hintText: 'https://example.com/podcast/feed.xml',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScheduledSyncSettings() {
+    final config = _currentScraperConfig();
+    final enabled = config['scheduled_sync_enabled'] == true;
+    final configuredInterval = config['scheduled_sync_interval']?.toString();
+    const intervals = ['hourly', 'daily', 'weekly', 'monthly'];
+    final interval =
+        intervals.contains(configuredInterval) ? configuredInterval! : 'daily';
+
+    String intervalLabel(String value) {
+      switch (value) {
+        case 'hourly':
+          return context.localeText('每小时', 'Hourly');
+        case 'weekly':
+          return context.localeText('每周', 'Weekly');
+        case 'monthly':
+          return context.localeText('每月', 'Monthly');
+        default:
+          return context.localeText('每天', 'Daily');
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.schedule_rounded,
+              size: 18,
+              color: AppColors.primary600,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DialogLabel(
+                context.localeText('定时同步', 'Scheduled Sync'),
+                fontSize: 14,
+              ),
+            ),
+            Tooltip(
+              message: context.localeText(
+                '按所选周期自动执行增量同步。',
+                'Automatically run an incremental sync at the selected interval.',
+              ),
+              child: const Icon(
+                Icons.help_outline_rounded,
+                size: 16,
+                color: AppColors.slate400,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: context.isDark ? AppColors.slate800 : AppColors.slate50,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: context.faintBorder),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: Checkbox(
+                  value: enabled,
+                  activeColor: AppColors.primary600,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) => _updateScraperConfig({
+                    'scheduled_sync_enabled': value ?? false,
+                  }),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: interval,
+                    isExpanded: true,
+                    borderRadius: BorderRadius.circular(10),
+                    onChanged: enabled
+                        ? (value) {
+                            if (value != null) {
+                              _updateScraperConfig({
+                                'scheduled_sync_interval': value,
+                              });
+                            }
+                          }
+                        : null,
+                    items: [
+                      for (final value in intervals)
+                        DropdownMenuItem(
+                          value: value,
+                          child: Text(intervalLabel(value)),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],

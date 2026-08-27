@@ -50,6 +50,9 @@ app.*.map.json
 android_build_debug.log
 tool/
 test/
+!test/
+test/*
+!test/plugin_extension_registry_test.dart
 preview_screenshots/
 real_compare_screenshots/
 web_compare_screenshots/

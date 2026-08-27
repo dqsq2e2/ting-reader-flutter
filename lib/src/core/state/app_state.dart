@@ -52,6 +52,7 @@ class AppState extends ChangeNotifier {
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'resume_after_interruption',
+    'sidebar_collapsed',
   };
   static const _obsoleteLocalSettingKeys = <String>{
     'resume_after_interruption',
@@ -121,7 +122,23 @@ class AppState extends ChangeNotifier {
 
   bool get isEnglish => languageCode.toLowerCase().startsWith('en');
 
+  bool get sidebarCollapsed => _boolSetting('sidebar_collapsed');
+
+  bool get pluginToolMenuEnabled =>
+      _boolSetting('plugin_tool_menu_enabled', fallback: true);
+
   String textForLocale(String zh, String en) => isEnglish ? en : zh;
+
+  bool _boolSetting(String key, {bool fallback = false}) {
+    final nested = asMap(settings['settings_json']);
+    final value = settings[key] ?? nested[key];
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final normalized = value?.toString().trim().toLowerCase();
+    if (normalized == 'true' || normalized == '1') return true;
+    if (normalized == 'false' || normalized == '0') return false;
+    return fallback;
+  }
 
   void notifyPluginExtensionsChanged() {
     pluginCapabilities.invalidateClientExtensionsCache();

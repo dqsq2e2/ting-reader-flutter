@@ -6,7 +6,6 @@ class _SettingsSection extends StatelessWidget {
     required this.iconColor,
     required this.title,
     required this.child,
-    this.trailing,
     this.showHeader = true,
   });
 
@@ -14,7 +13,6 @@ class _SettingsSection extends StatelessWidget {
   final Color iconColor;
   final String title;
   final Widget child;
-  final Widget? trailing;
   final bool showHeader;
 
   @override
@@ -40,7 +38,6 @@ class _SettingsSection extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (trailing != null) trailing!,
               ],
             ),
             SizedBox(height: compact ? 18 : 22),
@@ -48,48 +45,6 @@ class _SettingsSection extends StatelessWidget {
           child,
         ],
       ),
-    );
-  }
-}
-
-class _TextSettingField extends StatelessWidget {
-  const _TextSettingField({
-    required this.controller,
-    required this.label,
-    required this.icon,
-    this.hintText,
-    this.obscureText = false,
-  });
-
-  final TextEditingController controller;
-  final String label;
-  final String? hintText;
-  final IconData icon;
-  final bool obscureText;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: context.isDark ? AppColors.slate400 : AppColors.slate600,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          obscureText: obscureText,
-          decoration: InputDecoration(
-            hintText: hintText,
-            prefixIcon: Icon(icon, size: 19),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -619,21 +574,16 @@ class _SavedBadge extends StatelessWidget {
   const _SavedBadge({
     required this.visible,
     required this.label,
-    this.compact = false,
   });
 
   final bool visible;
   final String label;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     if (!visible) return const SizedBox.shrink();
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 12,
-        vertical: compact ? 4 : 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.green.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
@@ -647,7 +597,7 @@ class _SavedBadge extends StatelessWidget {
             label,
             style: TextStyle(
               color: Colors.green.shade700,
-              fontSize: compact ? 12 : 14,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
           ),

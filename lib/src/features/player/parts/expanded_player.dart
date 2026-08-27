@@ -1043,18 +1043,6 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
           mainButtonSize: mainButtonSize,
           hasError: player.error != null,
         );
-        final readerExtensionContext = <String, Object?>{
-          'book_id': book.id,
-          'book_title': book.title,
-          'book_path': book.path,
-          'chapter_id': chapter.id,
-          'chapter_title': chapter.title,
-          'chapter_path': chapter.path,
-          'position': player.currentTime,
-          'duration': maxDuration,
-          'playback_state': player.isPlaying ? 'playing' : 'paused',
-        };
-
         return Material(
           color: backgroundColor,
           child: Stack(
@@ -1154,23 +1142,6 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                     _openPlaybackSettings(player, book),
                               ),
                             ],
-                          ),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                PluginExtensionSlot(
-                                  slot: ClientExtensionSlot.readerToolbarAction,
-                                  extensionContext: readerExtensionContext,
-                                ),
-                                PluginExtensionSlot(
-                                  slot: ClientExtensionSlot.readerSidePanel,
-                                  extensionContext: readerExtensionContext,
-                                  padding: const EdgeInsets.only(left: 6),
-                                ),
-                              ],
-                            ),
                           ),
                           const SizedBox(height: 28),
                           ConstrainedBox(

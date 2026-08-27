@@ -138,11 +138,17 @@ class PluginCapabilitiesApi {
     required String pluginId,
     required String capabilityId,
     Object? params = const {},
+    String? uiCapabilityId,
+    String? uiGrant,
   }) async {
     final res = await _api.post(
       '/api/v1/plugins/${Uri.encodeComponent(pluginId)}/capabilities/'
       '${Uri.encodeComponent(capabilityId)}/invoke',
-      data: {'params': params ?? const {}},
+      data: _compactParams({
+        'params': params ?? const {},
+        'ui_capability_id': uiCapabilityId,
+        'ui_grant': uiGrant,
+      }),
     );
     return asMap(res.data)['result'] as T;
   }
@@ -167,6 +173,8 @@ class PluginCapabilitiesApi {
 
   Future<T> invokePluginHost<T>({
     required String pluginId,
+    required String uiCapabilityId,
+    required String uiGrant,
     required String method,
     Object? params,
   }) async {
@@ -174,6 +182,8 @@ class PluginCapabilitiesApi {
       '/api/v1/plugin-host/invoke',
       data: _compactParams({
         'plugin_id': pluginId,
+        'ui_capability_id': uiCapabilityId,
+        'ui_grant': uiGrant,
         'method': method,
         'params': params,
       }),
@@ -183,6 +193,7 @@ class PluginCapabilitiesApi {
 
   String pluginAssetUrl({
     required String pluginId,
+    required String clientGrant,
     required String entry,
   }) {
     final encodedEntry = entry
@@ -192,6 +203,7 @@ class PluginCapabilitiesApi {
         .map(Uri.encodeComponent)
         .join('/');
     return '${_api.baseUrl}/api/v1/plugin-assets/'
+        '${Uri.encodeComponent(clientGrant)}/'
         '${Uri.encodeComponent(pluginId)}/$encodedEntry';
   }
 }

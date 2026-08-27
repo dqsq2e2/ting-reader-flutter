@@ -12,8 +12,14 @@ class _LogsPageState extends State<LogsPage> {
   bool _autoRefresh = true;
   String _moduleFilter = 'audit';
   String _levelFilter = '';
+  String _pluginFilter = '';
+  String _pluginSourceFilter = '';
+  String _pluginSearch = '';
+  List<PluginItem> _plugins = [];
+  int _total = 0;
   List<_LogEntry> _logs = [];
   final Set<String> _expandedLogKeys = {};
+  final TextEditingController _pluginSearchController = TextEditingController();
   Timer? _timer;
 
   @override
@@ -26,26 +32,51 @@ class _LogsPageState extends State<LogsPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _pluginSearchController.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool silent = false}) async {
     if (!silent) setState(() => _loading = true);
+    final api = AppScope.appOf(context).api;
     try {
-      final res = await AppScope.appOf(context).api.get(
-        '/api/system/logs',
+      final isPluginLogs = _moduleFilter == 'plugins';
+      if (isPluginLogs && _plugins.isEmpty) {
+        try {
+          final pluginsResponse = await api.get('/api/v1/plugins');
+          if (mounted) {
+            _plugins = asMapList(pluginsResponse.data)
+                .map(PluginItem.fromJson)
+                .where((plugin) => plugin.id.isNotEmpty)
+                .toList();
+          }
+        } catch (_) {
+          // The all-plugin log endpoint remains usable if the plugin list fails.
+        }
+      }
+      final res = await api.get(
+        isPluginLogs ? '/api/v1/plugin-logs' : '/api/system/logs',
         params: {
           'page': 1,
           'page_size': 100,
-          if (_moduleFilter.isNotEmpty) 'module': _moduleFilter,
+          if (!isPluginLogs && _moduleFilter.isNotEmpty)
+            'module': _moduleFilter,
           if (_levelFilter.isNotEmpty) 'level': _levelFilter,
+          if (isPluginLogs && _pluginFilter.isNotEmpty)
+            'plugin_id': _pluginFilter,
+          if (isPluginLogs && _pluginSourceFilter.isNotEmpty)
+            'source': _pluginSourceFilter,
+          if (isPluginLogs && _pluginSearch.trim().isNotEmpty)
+            'q': _pluginSearch.trim(),
         },
       );
       if (!mounted) return;
       final next =
           asMapList(asMap(res.data)['logs']).map(_LogEntry.fromJson).toList();
+      final total = (asMap(res.data)['total'] as num?)?.toInt() ?? next.length;
       setState(() {
         _logs = next;
+        _total = total;
         _expandedLogKeys.removeWhere(
           (key) => !_logs.asMap().entries.any(
                 (entry) => _logKey(entry.value, entry.key) == key,
@@ -60,8 +91,8 @@ class _LogsPageState extends State<LogsPage> {
   Future<void> _clear() async {
     final ok = await _confirm(
       title: context.localeText('清空日志', 'Clear Logs'),
-      message: context.localeText('确定要清空所有日志和任务记录吗？这将删除所有系统日志和已完成/失败的任务。',
-          'Clear all logs and task records? This deletes system logs and completed or failed tasks.'),
+      message: context.localeText('确定要清空所有日志和任务记录吗？这将删除核心日志、插件日志和已完成/失败的任务。',
+          'Clear all core logs, plugin logs, and completed or failed tasks?'),
       action: context.localeText('清空', 'Clear'),
     );
     if (!ok || !mounted) return;
@@ -93,9 +124,20 @@ class _LogsPageState extends State<LogsPage> {
   }
 
   Future<void> _export({String? level}) async {
+    final isPluginLogs = _moduleFilter == 'plugins';
+    final exportLevel = level ?? _levelFilter;
     final res = await AppScope.appOf(context).api.get(
-      '/api/system/logs/export',
-      params: {if (level != null) 'level': level},
+      isPluginLogs ? '/api/v1/plugin-logs/export' : '/api/system/logs/export',
+      params: {
+        if (exportLevel.isNotEmpty) 'level': exportLevel,
+        if (!isPluginLogs && _moduleFilter.isNotEmpty) 'module': _moduleFilter,
+        if (isPluginLogs && _pluginFilter.isNotEmpty)
+          'plugin_id': _pluginFilter,
+        if (isPluginLogs && _pluginSourceFilter.isNotEmpty)
+          'source': _pluginSourceFilter,
+        if (isPluginLogs && _pluginSearch.trim().isNotEmpty)
+          'q': _pluginSearch.trim(),
+      },
     );
     await Clipboard.setData(ClipboardData(text: res.data?.toString() ?? ''));
     if (!mounted) return;
@@ -159,6 +201,41 @@ class _LogsPageState extends State<LogsPage> {
     _load();
   }
 
+  void _setPlugin(String value) {
+    setState(() {
+      _pluginFilter = value;
+      _expandedLogKeys.clear();
+    });
+    _load();
+  }
+
+  void _setPluginSource(String value) {
+    setState(() {
+      _pluginSourceFilter = value;
+      _expandedLogKeys.clear();
+    });
+    _load();
+  }
+
+  void _setPluginSearch(String value) {
+    setState(() {
+      _pluginSearch = value;
+      _expandedLogKeys.clear();
+    });
+    _load();
+  }
+
+  void _resetPluginFilters() {
+    _pluginSearchController.clear();
+    setState(() {
+      _pluginFilter = '';
+      _pluginSourceFilter = '';
+      _pluginSearch = '';
+      _expandedLogKeys.clear();
+    });
+    _load();
+  }
+
   String _logKey(_LogEntry log, int index) {
     return [
       log.taskId ?? '',
@@ -197,6 +274,20 @@ class _LogsPageState extends State<LogsPage> {
           onAutoRefreshChanged: _setAutoRefresh,
           onRefresh: () => _load(),
         ),
+        if (_moduleFilter == 'plugins') ...[
+          const SizedBox(height: 18),
+          _SystemPluginLogFilters(
+            plugins: _plugins,
+            plugin: _pluginFilter,
+            source: _pluginSourceFilter,
+            total: _total,
+            searchController: _pluginSearchController,
+            onPluginChanged: _setPlugin,
+            onSourceChanged: _setPluginSource,
+            onSearchSubmitted: _setPluginSearch,
+            onReset: _resetPluginFilters,
+          ),
+        ],
         const SizedBox(height: 24),
         TingCard(
           padding: EdgeInsets.zero,
@@ -218,20 +309,30 @@ class _LogsPageState extends State<LogsPage> {
                 Column(
                   children: [
                     for (var i = 0; i < _logs.length; i++) ...[
-                      _LogRow(
-                        log: _logs[i],
-                        expanded:
-                            _expandedLogKeys.contains(_logKey(_logs[i], i)),
-                        onToggleDetails: _logs[i].fields.isEmpty
-                            ? null
-                            : () => _toggleLogDetails(_logKey(_logs[i], i)),
-                        onCancelTask: _logs[i].taskId == null
-                            ? null
-                            : () => _cancelTask(_logs[i].taskId!),
-                        onDeleteTask: _logs[i].taskId == null
-                            ? null
-                            : () => _deleteTask(_logs[i].taskId!),
-                      ),
+                      if (_moduleFilter == 'plugins')
+                        _PluginLogRow(
+                          log: _logs[i],
+                          expanded:
+                              _expandedLogKeys.contains(_logKey(_logs[i], i)),
+                          onToggleDetails: _logs[i].fields.isEmpty
+                              ? null
+                              : () => _toggleLogDetails(_logKey(_logs[i], i)),
+                        )
+                      else
+                        _LogRow(
+                          log: _logs[i],
+                          expanded:
+                              _expandedLogKeys.contains(_logKey(_logs[i], i)),
+                          onToggleDetails: _logs[i].fields.isEmpty
+                              ? null
+                              : () => _toggleLogDetails(_logKey(_logs[i], i)),
+                          onCancelTask: _logs[i].taskId == null
+                              ? null
+                              : () => _cancelTask(_logs[i].taskId!),
+                          onDeleteTask: _logs[i].taskId == null
+                              ? null
+                              : () => _deleteTask(_logs[i].taskId!),
+                        ),
                       if (i != _logs.length - 1) const Divider(height: 1),
                     ],
                   ],
@@ -344,6 +445,7 @@ class _LogsHeader extends StatelessWidget {
                   'audit::notification',
                   context.localeText('通知记录', 'Notification')
                 ),
+                ('plugins', context.localeText('插件日志', 'Plugin Logs')),
                 ('all', context.localeText('系统所有日志', 'All')),
               ],
               onChanged: onModuleChanged,
@@ -469,6 +571,132 @@ class _LogsTitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SystemPluginLogFilters extends StatelessWidget {
+  const _SystemPluginLogFilters({
+    required this.plugins,
+    required this.plugin,
+    required this.source,
+    required this.total,
+    required this.searchController,
+    required this.onPluginChanged,
+    required this.onSourceChanged,
+    required this.onSearchSubmitted,
+    required this.onReset,
+  });
+
+  final List<PluginItem> plugins;
+  final String plugin;
+  final String source;
+  final int total;
+  final TextEditingController searchController;
+  final ValueChanged<String> onPluginChanged;
+  final ValueChanged<String> onSourceChanged;
+  final ValueChanged<String> onSearchSubmitted;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    const sources = ['', 'code', 'lifecycle', 'runtime', 'gateway', 'security'];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.faintBorder),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 760;
+          final filters = Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _LogSelect(
+                label: context.localeText('插件', 'Plugin'),
+                width: compact ? constraints.maxWidth : 270,
+                value: plugin,
+                items: [
+                  ('', context.localeText('全部插件', 'All plugins')),
+                  for (final item in plugins) (item.id, item.name),
+                ],
+                onChanged: onPluginChanged,
+              ),
+              _LogSelect(
+                label: context.localeText('来源', 'Source'),
+                width: compact ? constraints.maxWidth : 220,
+                value: source,
+                items: [
+                  for (final item in sources)
+                    (
+                      item,
+                      item.isEmpty
+                          ? context.localeText('全部来源', 'All sources')
+                          : _pluginLogSourceLabel(context, item),
+                    ),
+                ],
+                onChanged: onSourceChanged,
+              ),
+              SizedBox(
+                width: compact ? constraints.maxWidth : 360,
+                height: 40,
+                child: TextField(
+                  controller: searchController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: onSearchSubmitted,
+                  decoration: InputDecoration(
+                    hintText: context.localeText(
+                      '搜索消息、事件 ID、运行时或操作...',
+                      'Search message, event ID, runtime, or operation...',
+                    ),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 19),
+                    suffixIcon: IconButton(
+                      tooltip: context.localeText('搜索', 'Search'),
+                      onPressed: () => onSearchSubmitted(searchController.text),
+                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                  ),
+                ),
+              ),
+              IconButton.outlined(
+                tooltip: context.localeText('重置筛选', 'Reset filters'),
+                onPressed: onReset,
+                icon: const Icon(Icons.undo_rounded, size: 19),
+              ),
+            ],
+          );
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                filters,
+                const SizedBox(height: 10),
+                Text(
+                  context.localeText('共 $total 条', '$total total'),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(color: context.mutedText, fontSize: 13),
+                ),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: filters),
+              const SizedBox(width: 12),
+              Text(
+                context.localeText('共 $total 条', '$total total'),
+                style: TextStyle(color: context.mutedText, fontSize: 13),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

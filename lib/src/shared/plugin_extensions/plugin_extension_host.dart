@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -24,9 +25,11 @@ class PluginExtensionHost extends StatefulWidget {
   const PluginExtensionHost({
     super.key,
     required this.bottomOffset,
+    this.enabled = true,
   });
 
   final double bottomOffset;
+  final bool enabled;
 
   @override
   State<PluginExtensionHost> createState() => _PluginExtensionHostState();
@@ -44,6 +47,17 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
   bool _menuOpen = false;
   String? _actionMessage;
   bool _actionFailed = false;
+
+  @override
+  void didUpdateWidget(covariant PluginExtensionHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.enabled && !widget.enabled) {
+      _activeExtension = null;
+      _menuOpen = false;
+      _actionMessage = null;
+      _actionFailed = false;
+    }
+  }
 
   @override
   void didChangeDependencies() {
@@ -119,6 +133,8 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
           .invokePluginCapability(
         pluginId: extension.pluginId,
         capabilityId: extension.capability.id,
+        uiCapabilityId: extension.capability.id,
+        uiGrant: extension.clientGrant,
         params: {
           'slot': extension.slot.value,
           'contexts': extension.contexts,
@@ -140,11 +156,31 @@ class _PluginExtensionHostState extends State<PluginExtensionHost> {
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.enabled) {
+      return const SizedBox.shrink();
+    }
+
+    final app = AppScope.appOf(context);
     final floating =
-        _registry.bySlot[ClientExtensionSlot.globalFloatingAction] ?? const [];
+        (_registry.bySlot[ClientExtensionSlot.globalFloatingAction] ?? const [])
+            .where((extension) => !extension.adminOnly || app.isAdmin)
+            .toList(growable: false);
     final panels =
-        _registry.bySlot[ClientExtensionSlot.globalPanel] ?? const [];
-    final primary = floating.isNotEmpty ? floating : panels;
+        (_registry.bySlot[ClientExtensionSlot.globalPanel] ?? const [])
+            .where((extension) => !extension.adminOnly || app.isAdmin)
+            .toList(growable: false);
+    final primaryByCapability = <String, ClientExtensionDescriptor>{};
+    for (final extension in [...floating, ...panels]) {
+      primaryByCapability.putIfAbsent(
+        '${extension.pluginId}:${extension.capability.id}',
+        () => extension,
+      );
+    }
+    final primary = primaryByCapability.values.toList(growable: false)
+      ..sort((left, right) {
+        final priority = left.priority.compareTo(right.priority);
+        return priority != 0 ? priority : left.id.compareTo(right.id);
+      });
 
     if (primary.isEmpty && _activeExtension == null) {
       return const SizedBox.shrink();
@@ -318,6 +354,8 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
           .invokePluginCapability(
         pluginId: extension.pluginId,
         capabilityId: extension.capability.id,
+        uiCapabilityId: extension.capability.id,
+        uiGrant: extension.clientGrant,
         params: {
           'slot': extension.slot.value,
           'contexts': extension.contexts,
@@ -384,7 +422,10 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot> {
 
   @override
   Widget build(BuildContext context) {
-    final extensions = _registry.bySlot[widget.slot] ?? const [];
+    final app = AppScope.appOf(context);
+    final extensions = (_registry.bySlot[widget.slot] ?? const [])
+        .where((extension) => !extension.adminOnly || app.isAdmin)
+        .toList(growable: false);
     final visible = widget.limit == null
         ? extensions
         : extensions
@@ -596,12 +637,10 @@ class _PluginExtensionMenuButtonState
 IconData _iconForSlot(ClientExtensionSlot slot) {
   return switch (slot) {
     ClientExtensionSlot.globalFloatingAction => Icons.chat_bubble_rounded,
-    ClientExtensionSlot.readerToolbarAction => Icons.auto_stories_rounded,
-    ClientExtensionSlot.readerDocumentViewer => Icons.description_rounded,
-    ClientExtensionSlot.readerSidePanel => Icons.view_sidebar_rounded,
-    ClientExtensionSlot.settingsSection => Icons.tune_rounded,
+    ClientExtensionSlot.appSidebarPage => Icons.dashboard_customize_rounded,
     ClientExtensionSlot.bookDetailAction => Icons.menu_book_rounded,
     ClientExtensionSlot.globalPanel => Icons.extension_rounded,
+    _ => Icons.extension_rounded,
   };
 }
 
@@ -727,10 +766,13 @@ String? _iconType(Object? icon) {
   return null;
 }
 
-bool _isImageIcon(String value) =>
-    value.startsWith('http://') ||
-    value.startsWith('https://') ||
-    value.startsWith('assets/');
+bool _isPluginImageIcon(String value) {
+  if (!value.startsWith('assets/')) return false;
+  final segments = value.split('/');
+  return segments.every(
+    (segment) => segment.isNotEmpty && segment != '.' && segment != '..',
+  );
+}
 
 bool _isEmojiLikeIcon(String value) =>
     value.runes.length <= 4 &&
@@ -752,21 +794,29 @@ class _PluginExtensionIcon extends StatelessWidget {
     final value = _iconText(extension.icon);
     final type = _iconType(extension.icon);
 
-    if (value != null &&
-        (type == 'image' || type == 'url' || _isImageIcon(value))) {
-      final image = value.startsWith('assets/')
-          ? Image.asset(value, width: size, height: size, fit: BoxFit.contain)
-          : Image.network(
-              value,
-              width: size,
-              height: size,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => Icon(
-                _iconForSlot(extension.slot),
-                size: size,
-                color: color,
-              ),
-            );
+    if (value != null && _isPluginImageIcon(value)) {
+      final app = AppScope.appOf(context);
+      final clientGrant = extension.clientGrant;
+      if (clientGrant == null || clientGrant.isEmpty) {
+        return Icon(_iconForSlot(extension.slot), size: size, color: color);
+      }
+      final imageUrl = app.pluginCapabilities.pluginAssetUrl(
+        pluginId: extension.pluginId,
+        clientGrant: clientGrant,
+        entry: value,
+      );
+      final image = Image.network(
+        imageUrl,
+        headers: app.api.authHeaders,
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => Icon(
+          _iconForSlot(extension.slot),
+          size: size,
+          color: color,
+        ),
+      );
       return ClipRRect(
         borderRadius: BorderRadius.circular(4),
         child: image,
@@ -789,6 +839,28 @@ class _PluginExtensionIcon extends StatelessWidget {
     }
 
     return Icon(_iconForSlot(extension.slot), size: size, color: color);
+  }
+}
+
+class PluginExtensionIcon extends StatelessWidget {
+  const PluginExtensionIcon({
+    super.key,
+    required this.extension,
+    required this.size,
+    this.color,
+  });
+
+  final ClientExtensionDescriptor extension;
+  final double size;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PluginExtensionIcon(
+      extension: extension,
+      size: size,
+      color: color,
+    );
   }
 }
 
@@ -963,6 +1035,167 @@ class _PluginLauncherTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(1.2),
+      ),
+    );
+  }
+}
+
+class PluginExtensionPage extends StatefulWidget {
+  const PluginExtensionPage({
+    super.key,
+    required this.extension,
+    this.extensionContext = const <String, Object?>{},
+    this.onBack,
+  });
+
+  final ClientExtensionDescriptor extension;
+  final Map<String, Object?> extensionContext;
+  final VoidCallback? onBack;
+
+  @override
+  State<PluginExtensionPage> createState() => _PluginExtensionPageState();
+}
+
+class _PluginExtensionPageState extends State<PluginExtensionPage> {
+  bool _running = false;
+  bool _failed = false;
+  String? _message;
+
+  @override
+  void didUpdateWidget(covariant PluginExtensionPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.extension.id != widget.extension.id) {
+      _running = false;
+      _failed = false;
+      _message = null;
+    }
+  }
+
+  Future<void> _invoke() async {
+    if (_running) return;
+    setState(() {
+      _running = true;
+      _failed = false;
+      _message = null;
+    });
+    try {
+      final result = await AppScope.appOf(context)
+          .pluginCapabilities
+          .invokePluginCapability<Object?>(
+        pluginId: widget.extension.pluginId,
+        capabilityId: widget.extension.capability.id,
+        uiCapabilityId: widget.extension.capability.id,
+        uiGrant: widget.extension.clientGrant,
+        params: {
+          'slot': widget.extension.slot.value,
+          'contexts': widget.extension.contexts,
+          'context': widget.extensionContext,
+        },
+      );
+      if (!mounted) return;
+      setState(() => _message = _formatActionResult(result));
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _failed = true;
+        _message = error.toString();
+      });
+    } finally {
+      if (mounted) setState(() => _running = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final extension = widget.extension;
+    final isWebContainer =
+        extension.renderMode == ClientExtensionRenderMode.webContainer;
+    final body = _PluginExtensionPanelBody(
+      extension: extension,
+      running: _running,
+      failed: _failed,
+      message: _message,
+      onInvoke: _invoke,
+      extensionContext: widget.extensionContext,
+    );
+
+    return ColoredBox(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              decoration: BoxDecoration(
+                color: context.cardColor,
+                border: Border(bottom: BorderSide(color: context.faintBorder)),
+              ),
+              child: Row(
+                children: [
+                  if (widget.onBack != null) ...[
+                    IconButton(
+                      tooltip: context.localeText('返回', 'Back'),
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back_rounded),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: PluginExtensionIcon(
+                        extension: extension,
+                        size: 20,
+                        color: AppColors.primary600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          extension.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          extension.pluginName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: context.mutedText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: isWebContainer
+                  ? body
+                  : Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: body,
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1271,12 +1504,16 @@ class _PluginBuiltinViewState extends State<_PluginBuiltinView> {
       final result = config.component == 'host_method'
           ? await api.invokePluginHost<Object?>(
               pluginId: widget.extension.pluginId,
+              uiCapabilityId: widget.extension.capability.id,
+              uiGrant: widget.extension.clientGrant ?? '',
               method: config.method,
               params: config.params,
             )
           : await api.invokePluginCapability<Object?>(
               pluginId: widget.extension.pluginId,
               capabilityId: widget.extension.capability.id,
+              uiCapabilityId: widget.extension.capability.id,
+              uiGrant: widget.extension.clientGrant,
               params: {
                 'slot': widget.extension.slot.value,
                 'contexts': widget.extension.contexts,
@@ -1827,6 +2064,8 @@ class _PluginSchemaFormState extends State<_PluginSchemaForm> {
           .invokePluginCapability(
         pluginId: widget.extension.pluginId,
         capabilityId: widget.extension.capability.id,
+        uiCapabilityId: widget.extension.capability.id,
+        uiGrant: widget.extension.clientGrant,
         params: {
           'slot': widget.extension.slot.value,
           'contexts': widget.extension.contexts,
@@ -2072,19 +2311,24 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   String? _error;
   bool _unsupported = false;
   bool _pageLoaded = false;
+  bool _pluginDocumentReady = false;
   String? _appliedThemeSignature;
   int _loadGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _initialize();
-  }
+  Timer? _documentReadyTimer;
+  bool _initialized = false;
+  String _bridgeNonce = _newPluginBridgeNonce();
+  String _bridgeToken = _newPluginBridgeNonce();
+  final List<DateTime> _bridgeRequestTimes = [];
 
   @override
   void didUpdateWidget(covariant _PluginWebContainer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.extension.id != widget.extension.id) {
+    if (oldWidget.extension.id != widget.extension.id ||
+        oldWidget.extension.clientGrant != widget.extension.clientGrant ||
+        jsonEncode(oldWidget.extension.render) !=
+            jsonEncode(widget.extension.render) ||
+        jsonEncode(oldWidget.extensionContext) !=
+            jsonEncode(widget.extensionContext)) {
       _initialize();
     }
   }
@@ -2092,11 +2336,28 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _initialize();
+      return;
+    }
     _syncPluginTheme();
+  }
+
+  @override
+  void dispose() {
+    _documentReadyTimer?.cancel();
+    super.dispose();
   }
 
   void _initialize() {
     final generation = ++_loadGeneration;
+    _documentReadyTimer?.cancel();
+    final bridgeNonce = _newPluginBridgeNonce();
+    final bridgeToken = _newPluginBridgeNonce();
+    _bridgeNonce = bridgeNonce;
+    _bridgeToken = bridgeToken;
+    _bridgeRequestTimes.clear();
     final entry = widget.extension.entry;
     if (entry == null) {
       setState(() {
@@ -2117,8 +2378,18 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     }
 
     final app = AppScope.appOf(context);
+    final clientGrant = widget.extension.clientGrant;
+    if (clientGrant == null || clientGrant.isEmpty) {
+      setState(() {
+        _controller = null;
+        _error = 'Plugin UI authorization is unavailable.';
+        _unsupported = false;
+      });
+      return;
+    }
     final assetUrl = app.pluginCapabilities.pluginAssetUrl(
       pluginId: widget.extension.pluginId,
+      clientGrant: clientGrant,
       entry: entry,
     );
     final loadAssetAsTopLevel = _pluginWebViewLoadsAssetAsTopLevel();
@@ -2132,9 +2403,11 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       extension: widget.extension,
       extensionContext: widget.extensionContext,
       theme: pluginTheme,
+      bridgeToken: bridgeToken,
     );
     _appliedThemeSignature = null;
     _pageLoaded = false;
+    _pluginDocumentReady = false;
 
     final WebViewController controller;
     late final Future<void> controllerSetup;
@@ -2152,18 +2425,23 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           : WebViewController();
       controllerSetup = nextController
           .setJavaScriptMode(JavaScriptMode.unrestricted)
+          .then<void>((_) => nextController.setBackgroundColor(
+                Color(themeVariables is Map
+                    ? _parsePluginCssColor(themeVariables['--bg'])
+                    : 0xfff8fafc),
+              ))
           .then<void>(
             (_) => nextController.setNavigationDelegate(
               NavigationDelegate(
                 onNavigationRequest: (request) {
-                  // The web client loads the plugin document inside an
-                  // iframe. Allow the document and all of its plugin asset
-                  // subresources, including css/js, before applying the
-                  // external-navigation policy.
+                  // Allow the plugin document and its authenticated assets,
+                  // including css/js, before applying the external-navigation
+                  // policy.
                   if (_isPluginAssetUrl(
                     request.url,
                     assetUrl: assetUrl,
                     pluginId: widget.extension.pluginId,
+                    clientGrant: clientGrant,
                   )) {
                     return NavigationDecision.navigate;
                   }
@@ -2179,6 +2457,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                       request.url,
                       assetUrl: assetUrl,
                       pluginId: widget.extension.pluginId,
+                      clientGrant: clientGrant,
                     )) {
                       return NavigationDecision.navigate;
                     }
@@ -2196,7 +2475,9 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                       request.url.startsWith('$assetUrl?')) {
                     return NavigationDecision.navigate;
                   }
-                  _openPluginExternalUrl(request.url);
+                  debugPrint(
+                    '[plugin-webview] blocked untrusted subframe navigation',
+                  );
                   return NavigationDecision.prevent;
                 },
                 onPageFinished: (url) {
@@ -2206,6 +2487,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                         url,
                         assetUrl: assetUrl,
                         pluginId: widget.extension.pluginId,
+                        clientGrant: clientGrant,
                       )) {
                     final parsedUrl = Uri.tryParse(url);
                     final safeUrl = parsedUrl == null
@@ -2229,6 +2511,8 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                         initPayload: initPayload,
                         theme: pluginTheme,
                         assetUrl: assetUrl,
+                        bridgeNonce: bridgeNonce,
+                        bridgeToken: bridgeToken,
                       );
                       _appliedThemeSignature =
                           _pluginThemeSignature(pluginTheme);
@@ -2238,11 +2522,11 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
                       );
                     }());
                   } else {
-                    unawaited(
-                      _probePluginFrame(nextController, assetUrl),
-                    );
+                    unawaited(_probePluginDocument(nextController, url));
                   }
-                  _pageLoaded = true;
+                  if (mounted && generation == _loadGeneration) {
+                    setState(() => _pageLoaded = true);
+                  }
                 },
                 onHttpError: (error) {
                   if (!mounted) return;
@@ -2265,6 +2549,24 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
               'TingPluginBridge',
               onMessageReceived: _handleBridgeMessage,
             ),
+          )
+          .then<void>(
+            (_) => nextController.addJavaScriptChannel(
+              'TingPluginLifecycle',
+              onMessageReceived: (message) {
+                if (message.message != bridgeToken ||
+                    generation != _loadGeneration ||
+                    !mounted) {
+                  return;
+                }
+                _documentReadyTimer?.cancel();
+                setState(() {
+                  _pageLoaded = true;
+                  _pluginDocumentReady = true;
+                  _error = null;
+                });
+              },
+            ),
           );
       controller = nextController;
     } catch (error) {
@@ -2280,6 +2582,8 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       _controller = controller;
       _error = null;
       _unsupported = false;
+      _pageLoaded = false;
+      _pluginDocumentReady = false;
     });
 
     unawaited(
@@ -2290,6 +2594,8 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
         loadAssetAsTopLevel: loadAssetAsTopLevel,
         initPayload: initPayload,
         theme: pluginTheme,
+        bridgeNonce: bridgeNonce,
+        bridgeToken: bridgeToken,
         generation: generation,
         setupFuture: controllerSetup,
       ),
@@ -2303,6 +2609,8 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     required bool loadAssetAsTopLevel,
     required String initPayload,
     required Map<String, Object?> theme,
+    required String bridgeNonce,
+    required String bridgeToken,
     required int generation,
     required Future<void> setupFuture,
   }) async {
@@ -2346,14 +2654,29 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           );
         }
         await controller.loadHtmlString(
-          _pluginWebContainerHtml(
-            initPayload: initPayload,
+          _pluginHtmlForSandbox(
+            html: html,
             assetUrl: assetUrl,
-            assetHtml: _pluginHtmlWithBaseHref(html, assetUrl),
+            initPayload: initPayload,
             theme: theme,
+            bridgeNonce: bridgeNonce,
+            bridgeToken: bridgeToken,
           ),
           baseUrl: app.api.baseUrl,
         );
+        _documentReadyTimer = Timer(const Duration(seconds: 8), () {
+          if (!mounted ||
+              generation != _loadGeneration ||
+              _pluginDocumentReady) {
+            return;
+          }
+          setState(() {
+            _error = context.localeText(
+              '插件页面未能完成渲染，请重试。',
+              'The plugin page did not finish rendering. Please try again.',
+            );
+          });
+        });
       }
     } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
@@ -2434,14 +2757,38 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     controller.runJavaScript(_pluginThemeApplicationScript(pluginTheme));
   }
 
+  bool _acceptBridgeMessage(String raw) {
+    if (raw.length > 256 * 1024) return false;
+    final now = DateTime.now();
+    final cutoff = now.subtract(const Duration(seconds: 10));
+    _bridgeRequestTimes.removeWhere((timestamp) => timestamp.isBefore(cutoff));
+    if (_bridgeRequestTimes.length >= 100) return false;
+    _bridgeRequestTimes.add(now);
+    return true;
+  }
+
   Future<void> _handleBridgeMessage(JavaScriptMessage message) async {
-    final externalUrl = _decodeExternalUrlRequest(message.message);
+    if (!_acceptBridgeMessage(message.message)) {
+      debugPrint(
+          '[plugin-webview] rejected oversized or rate-limited bridge message');
+      return;
+    }
+
+    final externalUrl = _decodeExternalUrlRequest(
+      message.message,
+      expectedNonce: _bridgeNonce,
+      expectedBridgeToken: _bridgeToken,
+    );
     if (externalUrl != null) {
       _openPluginExternalUrl(externalUrl);
       return;
     }
 
-    final request = _decodeBridgeRequest(message.message);
+    final request = _decodeBridgeRequest(
+      message.message,
+      expectedNonce: _bridgeNonce,
+      expectedBridgeToken: _bridgeToken,
+    );
     if (request == null) return;
 
     debugPrint(
@@ -2493,62 +2840,29 @@ JSON.stringify({
     }
   }
 
-  Future<void> _probePluginFrame(
-    WebViewController controller,
-    String assetUrl,
-  ) async {
-    if (defaultTargetPlatform != TargetPlatform.windows) return;
-    await Future<void>.delayed(const Duration(milliseconds: 250));
-    final parsed = Uri.tryParse(assetUrl);
-    final safeUrl = parsed == null
-        ? assetUrl
-        : parsed.replace(query: '', fragment: '').toString();
-    try {
-      final result = await controller.runJavaScriptReturningResult('''
-(function() {
-  const frame = document.getElementById("plugin-frame");
-  const doc = frame && frame.contentDocument;
-  return JSON.stringify({
-    frameReady: Boolean(frame),
-    frameUrl: frame && frame.contentWindow ? frame.contentWindow.location.href : "",
-    frameTitle: doc ? doc.title : "",
-    frameBodyLength: doc && doc.body ? doc.body.innerHTML.length : -1,
-    frameScriptCount: doc ? doc.scripts.length : -1,
-    frameStyleCount: doc ? doc.styleSheets.length : -1,
-    frameText: doc && doc.body ? doc.body.innerText.slice(0, 80) : "",
-    themeBackground: doc && doc.body
-        ? getComputedStyle(doc.body).backgroundColor
-        : "",
-    themeColor: doc && doc.body
-        ? getComputedStyle(doc.body).color
-        : "",
-    themeScheme: doc && doc.documentElement
-        ? getComputedStyle(doc.documentElement).colorScheme
-        : "",
-    themeVariable: doc && doc.documentElement
-        ? getComputedStyle(doc.documentElement).getPropertyValue("--bg")
-        : ""
-  });
-})()
-''');
-      debugPrint('[plugin-webview] iframe probe url=$safeUrl result=$result');
-    } catch (_) {
-      debugPrint('[plugin-webview] iframe probe failed url=$safeUrl');
-    }
-  }
-
   Future<Object?> _invokeBridgeRequest(_PluginBridgeRequest request) {
     final pluginCapabilities = AppScope.appOf(context).pluginCapabilities;
     switch (request.method) {
       case 'capability.invoke':
+        if (!widget.extension.allowsCapabilityInvoke) {
+          throw StateError('Capability invocation is disabled for this view');
+        }
         final params = request.params is Map
             ? Map<String, dynamic>.from(request.params as Map)
             : const <String, dynamic>{};
-        final capabilityId = params['capabilityId']?.toString() ??
-            widget.extension.capability.id;
+        final declaredCapabilityId = params['capabilityId']?.toString().trim();
+        final capabilityId =
+            declaredCapabilityId == null || declaredCapabilityId.isEmpty
+                ? widget.extension.capability.id
+                : declaredCapabilityId;
+        if (!widget.extension.allowedCapabilityIds.contains(capabilityId)) {
+          throw StateError('Capability is not allowed for this view');
+        }
         return pluginCapabilities.invokePluginCapability<Object?>(
           pluginId: widget.extension.pluginId,
           capabilityId: capabilityId,
+          uiCapabilityId: widget.extension.capability.id,
+          uiGrant: widget.extension.clientGrant,
           params: params['params'] ?? const {},
         );
       case 'host.invoke':
@@ -2559,8 +2873,13 @@ JSON.stringify({
         if (method == null || method.trim().isEmpty) {
           throw StateError('Missing host method');
         }
+        if (!widget.extension.allowedHostMethods.contains(method)) {
+          throw StateError('Host method is not allowed for this view');
+        }
         return pluginCapabilities.invokePluginHost<Object?>(
           pluginId: widget.extension.pluginId,
+          uiCapabilityId: widget.extension.capability.id,
+          uiGrant: widget.extension.clientGrant ?? '',
           method: method,
           params: params['params'] ?? const {},
         );
@@ -2581,6 +2900,7 @@ JSON.stringify({
     final payload = jsonEncode({
       'type': 'ting-plugin:response',
       'id': request.id,
+      'bridge_token': request.bridgeToken,
       'ok': ok,
       if (ok) 'result': result,
       if (!ok) 'error': error,
@@ -2615,6 +2935,13 @@ JSON.stringify({
       );
     }
 
+    if (!_pageLoaded || !_pluginDocumentReady) {
+      return ColoredBox(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: WebViewWidget(controller: controller),
@@ -2623,10 +2950,9 @@ JSON.stringify({
 }
 
 bool _pluginWebViewLoadsAssetAsTopLevel() {
-  // Match the web client: fetch the HTML through the authenticated API and
-  // render it in an iframe/srcdoc. Direct top-level navigation is treated as a
-  // normal document by the fnOS gateway and can return the SPA shell instead
-  // of the plugin asset.
+  // Fetch through the authenticated API, then load the hardened HTML string as
+  // the WebView document. Navigating to the asset URL can return the fnOS SPA
+  // shell instead of the plugin asset.
   return false;
 }
 
@@ -2655,15 +2981,27 @@ class _PluginBridgeRequest {
   const _PluginBridgeRequest({
     required this.id,
     required this.method,
+    required this.bridgeToken,
     this.params,
   });
 
   final String id;
   final String method;
+  final String bridgeToken;
   final Object? params;
 }
 
-_PluginBridgeRequest? _decodeBridgeRequest(String raw) {
+String _newPluginBridgeNonce() {
+  final random = Random.secure();
+  final bytes = List<int>.generate(24, (_) => random.nextInt(256));
+  return base64UrlEncode(bytes);
+}
+
+_PluginBridgeRequest? _decodeBridgeRequest(
+  String raw, {
+  required String expectedNonce,
+  required String expectedBridgeToken,
+}) {
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
@@ -2672,19 +3010,31 @@ _PluginBridgeRequest? _decodeBridgeRequest(String raw) {
   }
   if (decoded is! Map) return null;
   if (decoded['type'] != 'ting-plugin:request') return null;
+  if (decoded['bridge_nonce'] != expectedNonce) return null;
+  if (decoded['bridge_token'] != expectedBridgeToken) return null;
   final id = decoded['id']?.toString();
   final method = decoded['method']?.toString();
-  if (id == null || id.isEmpty || method == null || method.isEmpty) {
+  if (id == null ||
+      id.isEmpty ||
+      id.length > 128 ||
+      method == null ||
+      method.isEmpty ||
+      method.length > 64) {
     return null;
   }
   return _PluginBridgeRequest(
     id: id,
     method: method,
+    bridgeToken: expectedBridgeToken,
     params: decoded['params'],
   );
 }
 
-String? _decodeExternalUrlRequest(String raw) {
+String? _decodeExternalUrlRequest(
+  String raw, {
+  required String expectedNonce,
+  required String expectedBridgeToken,
+}) {
   final Object? decoded;
   try {
     decoded = jsonDecode(raw);
@@ -2693,6 +3043,8 @@ String? _decodeExternalUrlRequest(String raw) {
   }
   if (decoded is! Map) return null;
   if (decoded['type'] != 'ting-plugin:external-url') return null;
+  if (decoded['bridge_nonce'] != expectedNonce) return null;
+  if (decoded['bridge_token'] != expectedBridgeToken) return null;
   final url = decoded['url']?.toString().trim();
   return url == null || url.isEmpty ? null : url;
 }
@@ -2702,18 +3054,29 @@ Future<void> _installTopLevelPluginBridge(
   required String initPayload,
   required Map<String, Object?> theme,
   required String assetUrl,
+  required String bridgeNonce,
+  required String bridgeToken,
 }) async {
   final themeScript = _pluginThemeApplicationScript(theme);
   final assetUrlPayload = jsonEncode(assetUrl);
+  final noncePayload = jsonEncode(bridgeNonce);
+  final tokenPayload = jsonEncode(bridgeToken);
+  final secureBridgeScript = buildPluginTopLevelSecureBridgeScript(
+    noncePayload: noncePayload,
+    tokenPayload: tokenPayload,
+  );
+  final safeInitPayload = initPayload.replaceAll('<', r'\u003C');
   await controller.runJavaScript('''
 (function() {
   $themeScript
   if (window.__tingPluginBridgeInstalled) {
-    window.postMessage($initPayload, "*");
+    window.postMessage($safeInitPayload, "*");
     return;
   }
   window.__tingPluginBridgeInstalled = true;
+  $secureBridgeScript
   window.__tingPluginRespond = function(response) {
+    if (!response || response.bridge_token !== bridgeToken) return;
     window.postMessage(response, "*");
   };
   const pluginAssetUrl = $assetUrlPayload;
@@ -2742,14 +3105,17 @@ Future<void> _installTopLevelPluginBridge(
     if (!absoluteUrl) return false;
     TingPluginBridge.postMessage(JSON.stringify({
       type: "ting-plugin:external-url",
-      url: absoluteUrl
+      url: absoluteUrl,
+      bridge_nonce: bridgeNonce,
+      bridge_token: bridgeToken
     }));
     return true;
   }
   const originalWindowOpen = window.open;
   window.open = function(url, target, features) {
     if (url && shouldOpenExternally(url)) {
-      openExternal(url);
+      const activation = navigator.userActivation;
+      if (!activation || activation.isActive) openExternal(url);
       return null;
     }
     return originalWindowOpen
@@ -2757,6 +3123,7 @@ Future<void> _installTopLevelPluginBridge(
       : null;
   };
   document.addEventListener("click", function(event) {
+    if (!event.isTrusted) return;
     const target = event.target;
     const anchor = target && target.closest ? target.closest("a[href]") : null;
     if (!anchor || !shouldOpenExternally(anchor.href)) return;
@@ -2765,19 +3132,51 @@ Future<void> _installTopLevelPluginBridge(
     openExternal(anchor.href);
   }, true);
   window.addEventListener("message", function(event) {
+    if (event.source !== window) return;
     const data = event.data;
     if (!data || data.type !== "ting-plugin:request" || !data.id) return;
-    TingPluginBridge.postMessage(JSON.stringify(data));
+    postBridgeMessage(data);
   });
-  window.postMessage($initPayload, "*");
+  window.postMessage($safeInitPayload, "*");
 })();
 ''');
+}
+
+@visibleForTesting
+String buildPluginTopLevelSecureBridgeScript({
+  required String noncePayload,
+  required String tokenPayload,
+}) {
+  return '''
+  const bridgeToken = $tokenPayload;
+  const bridgeNonce = $noncePayload;
+  function postBridgeMessage(message) {
+    TingPluginBridge.postMessage(JSON.stringify(Object.assign({}, message, {
+      bridge_nonce: bridgeNonce,
+      bridge_token: bridgeToken
+    })));
+  }
+  const secureBridge = Object.freeze({
+    postMessage: function(message) {
+      if (!message || typeof message !== "object" ||
+          message.type !== "ting-plugin:request") return;
+      postBridgeMessage(message);
+    }
+  });
+  Object.defineProperty(window, "__TING_PLUGIN_BRIDGE__", {
+    value: secureBridge,
+    configurable: false,
+    enumerable: false,
+    writable: false
+  });
+''';
 }
 
 bool _isPluginAssetUrl(
   String url, {
   required String assetUrl,
   required String pluginId,
+  required String clientGrant,
 }) {
   final uri = Uri.tryParse(url);
   final assetUri = Uri.tryParse(assetUrl);
@@ -2795,23 +3194,48 @@ bool _isPluginAssetUrl(
   final requestSegments = uri.pathSegments;
   final pluginAssetsIndex = assetSegments.indexOf('plugin-assets');
   if (pluginAssetsIndex < 0 ||
-      pluginAssetsIndex + 1 >= assetSegments.length ||
-      requestSegments.length <= pluginAssetsIndex + 1) {
+      pluginAssetsIndex + 2 >= assetSegments.length ||
+      requestSegments.length <= pluginAssetsIndex + 2) {
     return false;
   }
   for (var index = 0; index <= pluginAssetsIndex; index++) {
     if (requestSegments[index] != assetSegments[index]) return false;
   }
 
-  final pluginSegment = requestSegments[pluginAssetsIndex + 1];
-  return pluginSegment == pluginId ||
-      pluginSegment == Uri.encodeComponent(pluginId);
+  final grantSegment = requestSegments[pluginAssetsIndex + 1];
+  final pluginSegment = requestSegments[pluginAssetsIndex + 2];
+  return grantSegment == clientGrant &&
+      (pluginSegment == pluginId ||
+          pluginSegment == Uri.encodeComponent(pluginId));
+}
+
+@visibleForTesting
+bool isPluginAssetUrlForTesting(
+  String url, {
+  required String assetUrl,
+  required String pluginId,
+  required String clientGrant,
+}) {
+  return _isPluginAssetUrl(
+    url,
+    assetUrl: assetUrl,
+    pluginId: pluginId,
+    clientGrant: clientGrant,
+  );
+}
+
+int _parsePluginCssColor(Object? value) {
+  final raw = value?.toString().trim() ?? '';
+  final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(raw);
+  if (match == null) return 0xfff8fafc;
+  return 0xff000000 | int.parse(match.group(1)!, radix: 16);
 }
 
 String _pluginInitPayloadJson({
   required ClientExtensionDescriptor extension,
   required Map<String, Object?> extensionContext,
   required Map<String, Object?> theme,
+  required String bridgeToken,
 }) {
   return jsonEncode({
     'type': 'ting-plugin:init',
@@ -2822,6 +3246,7 @@ String _pluginInitPayloadJson({
     'contexts': extension.contexts,
     'context': extensionContext,
     'theme': theme,
+    'bridgeToken': bridgeToken,
   });
 }
 
@@ -2858,26 +3283,218 @@ Map<String, Object?> _pluginThemePayload(BuildContext context) {
 
 String _pluginThemeSignature(Map<String, Object?> theme) => jsonEncode(theme);
 
-String _escapePluginHtmlAttribute(String value) {
-  return value
-      .replaceAll('&', '&amp;')
-      .replaceAll('"', '&quot;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
+String _pluginHtmlForSandbox({
+  required String html,
+  required String assetUrl,
+  required String initPayload,
+  required Map<String, Object?> theme,
+  required String bridgeNonce,
+  required String bridgeToken,
+}) {
+  final origin = Uri.parse(assetUrl).origin;
+  final policy = [
+    "default-src 'none'",
+    "script-src 'unsafe-inline' $origin",
+    "style-src 'unsafe-inline' $origin",
+    "font-src data: $origin",
+    'img-src data: blob: $origin',
+    'media-src data: blob: $origin',
+    "connect-src 'none'",
+    "object-src 'none'",
+    "frame-src 'none'",
+    "worker-src 'none'",
+    "form-action 'none'",
+    'base-uri $origin',
+  ].join('; ');
+  final bootstrap = _pluginTopLevelBootstrapScript(
+    initPayload: initPayload,
+    theme: theme,
+    assetUrl: assetUrl,
+    bridgeNonce: bridgeNonce,
+    bridgeToken: bridgeToken,
+  );
+  const attributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
+  final injectedHead = '''
+<meta http-equiv="Content-Security-Policy" content="${attributeEscape.convert(policy)}">
+<base href="${attributeEscape.convert(assetUrl)}">
+<script>$bootstrap</script>
+''';
+  final document = html
+      .replaceAll(RegExp(r'<base\b[^>]*>', caseSensitive: false), '')
+      .replaceAll(
+        RegExp(
+          r'''<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']?\s*content-security-policy\b)[^>]*>''',
+          caseSensitive: false,
+        ),
+        '',
+      );
+  final head =
+      RegExp(r'<head\b[^>]*>', caseSensitive: false).firstMatch(document);
+  if (head != null) {
+    return document.replaceRange(head.end, head.end, injectedHead);
+  }
+  final htmlTag =
+      RegExp(r'<html\b[^>]*>', caseSensitive: false).firstMatch(document);
+  if (htmlTag != null) {
+    return document.replaceRange(
+      htmlTag.end,
+      htmlTag.end,
+      '<head>$injectedHead</head>',
+    );
+  }
+  return '<!doctype html><html><head>$injectedHead</head><body>'
+      '$document</body></html>';
 }
 
-String _pluginHtmlWithBaseHref(String html, String assetUrl) {
-  if (RegExp(r'<base\b', caseSensitive: false).hasMatch(html)) {
-    return html;
+String _pluginTopLevelBootstrapScript({
+  required String initPayload,
+  required Map<String, Object?> theme,
+  required String assetUrl,
+  required String bridgeNonce,
+  required String bridgeToken,
+}) {
+  final assetPayload = jsonEncode(assetUrl).replaceAll('<', r'\u003C');
+  final themePayload = jsonEncode(theme).replaceAll('<', r'\u003C');
+  final noncePayload = jsonEncode(bridgeNonce);
+  final tokenPayload = jsonEncode(bridgeToken);
+  final safeInitPayload = initPayload.replaceAll('<', r'\u003C');
+  final secureBridgeScript = buildPluginTopLevelSecureBridgeScript(
+    noncePayload: noncePayload,
+    tokenPayload: tokenPayload,
+  );
+  return '''
+(function() {
+  if (window.__tingPluginBridgeInstalled) return;
+  Object.defineProperty(window, "__tingPluginBridgeInstalled", {
+    value: true, configurable: false, enumerable: false, writable: false
+  });
+  const assetUrl = $assetPayload;
+  const initialTheme = $themePayload;
+  $secureBridgeScript
+  const scheduleTask = window.setTimeout.bind(window);
+  const bootstrapScript = document.currentScript;
+  if (bootstrapScript) bootstrapScript.remove();
+  let externalNavigationPermit = false;
+  let permitGeneration = 0;
+
+  function applyTheme(theme) {
+    const rawScheme = String(theme && (theme.colorScheme || theme.brightness) || "light").toLowerCase();
+    const colorScheme = rawScheme.indexOf("dark") >= 0 ? "dark" : "light";
+    const root = document.documentElement;
+    const vars = theme && theme.cssVariables || {};
+    root.style.setProperty("color-scheme", colorScheme, "important");
+    root.dataset.tingTheme = colorScheme;
+    root.dataset.theme = colorScheme;
+    root.classList.toggle("dark", colorScheme === "dark");
+    root.classList.toggle("light", colorScheme === "light");
+    Object.keys(vars).forEach(function(key) {
+      root.style.setProperty(key, String(vars[key]), "important");
+    });
+    if (document.body) {
+      if (vars["--bg"]) document.body.style.setProperty("background-color", String(vars["--bg"]), "important");
+      if (vars["--text"]) document.body.style.setProperty("color", String(vars["--text"]), "important");
+    }
+    let style = document.getElementById("ting-plugin-host-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "ting-plugin-host-style";
+      (document.head || root).appendChild(style);
+    }
+    const thumb = colorScheme === "dark"
+      ? "rgba(148, 163, 184, 0.48)"
+      : "rgba(100, 116, 139, 0.34)";
+    style.textContent =
+      "html, body, .generate-panel, .saved-panel { scrollbar-width: thin; scrollbar-color: " + thumb + " transparent; }" +
+      "html::-webkit-scrollbar, body::-webkit-scrollbar, .generate-panel::-webkit-scrollbar, .saved-panel::-webkit-scrollbar { width: 8px; height: 8px; }" +
+      "html::-webkit-scrollbar-track, body::-webkit-scrollbar-track, .generate-panel::-webkit-scrollbar-track, .saved-panel::-webkit-scrollbar-track { background: transparent; }" +
+      "html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb, .generate-panel::-webkit-scrollbar-thumb, .saved-panel::-webkit-scrollbar-thumb { background: " + thumb + "; border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }";
+    window.__tingPluginTheme = theme;
   }
-  final baseTag = '<base href="${_escapePluginHtmlAttribute(assetUrl)}">';
-  final headPattern = RegExp(r'<head([^>]*)>', caseSensitive: false);
-  final match = headPattern.firstMatch(html);
-  if (match != null) {
-    final end = match.end;
-    return '${html.substring(0, end)}$baseTag${html.substring(end)}';
+  Object.defineProperty(window, "__tingPluginApplyTheme", {
+    value: applyTheme, configurable: false, enumerable: false, writable: false
+  });
+  Object.defineProperty(window, "__tingPluginRespond", {
+    value: function(response) {
+      if (!response || response.bridge_token !== bridgeToken) return;
+      window.postMessage(response, "*");
+    },
+    configurable: false, enumerable: false, writable: false
+  });
+
+  function absolutePluginUrl(url) {
+    try { return new URL(url, assetUrl).href; } catch (_) { return ""; }
   }
-  return '$baseTag$html';
+
+  function shouldOpenExternally(url) {
+    const absoluteUrl = absolutePluginUrl(url);
+    if (!absoluteUrl) return false;
+    try {
+      const parsed = new URL(absoluteUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+      return absoluteUrl !== assetUrl &&
+        !absoluteUrl.startsWith(assetUrl + "#") &&
+        !absoluteUrl.startsWith(assetUrl + "?");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function openExternal(url) {
+    if (!externalNavigationPermit) return;
+    externalNavigationPermit = false;
+    const absoluteUrl = absolutePluginUrl(url);
+    if (!absoluteUrl || !shouldOpenExternally(absoluteUrl)) return;
+    postBridgeMessage({
+      type: "ting-plugin:external-url",
+      url: absoluteUrl
+    });
+  }
+
+  const originalWindowOpen = window.open;
+  window.open = function(url, target, features) {
+    if (url && shouldOpenExternally(url)) {
+      openExternal(url);
+      return null;
+    }
+    return originalWindowOpen
+      ? originalWindowOpen.call(window, url, target, features)
+      : null;
+  };
+  window.addEventListener("click", function(event) {
+    if (event.isTrusted) {
+      const generation = ++permitGeneration;
+      externalNavigationPermit = true;
+      queueMicrotask(function() {
+        if (permitGeneration === generation) externalNavigationPermit = false;
+      });
+    }
+    const target = event.target;
+    const anchor = target && target.closest ? target.closest("a[href]") : null;
+    if (!anchor || !shouldOpenExternally(anchor.href)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    openExternal(anchor.href);
+  }, { capture: true });
+  window.addEventListener("message", function(event) {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || data.type !== "ting-plugin:request" || !data.id) return;
+    postBridgeMessage(data);
+  });
+  function finishBootstrap() {
+    applyTheme(initialTheme);
+    window.postMessage($safeInitPayload, "*");
+    TingPluginLifecycle.postMessage(bridgeToken);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function() {
+      scheduleTask(finishBootstrap, 0);
+    }, { capture: true, once: true });
+  } else {
+    scheduleTask(finishBootstrap, 0);
+  }
+})();
+''';
 }
 
 bool _looksLikeTingReaderShell(String html) {
@@ -2928,180 +3545,23 @@ String _pluginThemeApplicationScript(Map<String, Object?> theme) {
 ''';
 }
 
-String _pluginWebContainerHtml({
-  required String initPayload,
+@visibleForTesting
+String buildPluginTopLevelDocumentForTesting({
+  required String html,
   required String assetUrl,
-  required String assetHtml,
+  required String initPayload,
   required Map<String, Object?> theme,
+  required String bridgeNonce,
+  required String bridgeToken,
 }) {
-  final assetPayload = jsonEncode(assetUrl);
-  // A plugin document contains </script>. Escape '<' in the JSON string so
-  // embedding it inside this wrapper's script cannot terminate that script.
-  final assetHtmlPayload = jsonEncode(assetHtml).replaceAll('<', r'\u003C');
-  final themePayload = jsonEncode(theme);
-
-  return '''
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <style>
-    html, body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      overflow: hidden;
-      background: transparent;
-    }
-    iframe {
-      display: block;
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      border: 0;
-      overflow: hidden;
-      background: transparent;
-    }
-  </style>
-</head>
-<body>
-  <iframe id="plugin-frame" scrolling="no" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"></iframe>
-  <script>
-    const frame = document.getElementById('plugin-frame');
-    const initPayload = $initPayload;
-    const assetUrl = $assetPayload;
-    const assetHtml = $assetHtmlPayload;
-    const pluginTheme = $themePayload;
-
-    function installPluginHostStyles(doc, colorScheme) {
-      let style = doc.getElementById("ting-plugin-host-style");
-      if (!style) {
-        style = doc.createElement("style");
-        style.id = "ting-plugin-host-style";
-        (doc.head || doc.documentElement).appendChild(style);
-      }
-      const thumb = colorScheme === "dark"
-        ? "rgba(148, 163, 184, 0.48)"
-        : "rgba(100, 116, 139, 0.34)";
-      style.textContent =
-        "html, body, .generate-panel, .saved-panel {" +
-        "scrollbar-width: thin; scrollbar-color: " + thumb + " transparent; }" +
-        "html::-webkit-scrollbar, body::-webkit-scrollbar, " +
-        ".generate-panel::-webkit-scrollbar, .saved-panel::-webkit-scrollbar " +
-        "{ width: 8px; height: 8px; }" +
-        "html::-webkit-scrollbar-track, body::-webkit-scrollbar-track, " +
-        ".generate-panel::-webkit-scrollbar-track, .saved-panel::-webkit-scrollbar-track " +
-        "{ background: transparent; }" +
-        "html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb, " +
-        ".generate-panel::-webkit-scrollbar-thumb, .saved-panel::-webkit-scrollbar-thumb " +
-        "{ background: " + thumb + "; border: 2px solid transparent; " +
-        "border-radius: 999px; background-clip: padding-box; }" +
-        "html::-webkit-scrollbar-button, body::-webkit-scrollbar-button, " +
-        ".generate-panel::-webkit-scrollbar-button, .saved-panel::-webkit-scrollbar-button " +
-        "{ display: none; width: 0; height: 0; }";
-    }
-
-    function applyPluginTheme(theme) {
-      const rawScheme = String(
-        theme && (theme.colorScheme || theme.brightness) || "light"
-      ).toLowerCase();
-      const colorScheme = rawScheme.indexOf("dark") >= 0 ? "dark" : "light";
-      const doc = frame.contentDocument;
-      if (!doc || !doc.documentElement) return;
-      const root = doc.documentElement;
-      const vars = (theme && theme.cssVariables) || {};
-      installPluginHostStyles(doc, colorScheme);
-      root.style.setProperty("color-scheme", colorScheme, "important");
-      root.dataset.tingTheme = colorScheme;
-      root.dataset.theme = colorScheme;
-      root.classList.toggle("dark", colorScheme === "dark");
-      root.classList.toggle("light", colorScheme === "light");
-      Object.keys(vars).forEach(function(key) {
-        root.style.setProperty(key, String(vars[key]), "important");
-      });
-      if (doc.body) {
-        if (vars["--bg"]) doc.body.style.setProperty("background-color", String(vars["--bg"]), "important");
-        if (vars["--text"]) doc.body.style.setProperty("color", String(vars["--text"]), "important");
-      }
-      if (frame.contentWindow) {
-        frame.contentWindow.postMessage({ type: "ting-plugin:theme", theme: theme }, "*");
-      }
-    }
-
-    window.__tingPluginApplyTheme = applyPluginTheme;
-
-    function absolutePluginUrl(url) {
-      try {
-        return new URL(url, assetUrl).href;
-      } catch (_) {
-        return "";
-      }
-    }
-
-    function shouldOpenExternally(url) {
-      const absoluteUrl = absolutePluginUrl(url);
-      if (!absoluteUrl) return false;
-      try {
-        const parsed = new URL(absoluteUrl);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
-        return absoluteUrl !== assetUrl &&
-          !absoluteUrl.startsWith(assetUrl + "#") &&
-          !absoluteUrl.startsWith(assetUrl + "?");
-      } catch (_) {
-        return false;
-      }
-    }
-
-    window.__tingPluginRespond = function(response) {
-      const frameWindow = frame.contentWindow;
-      if (frameWindow) frameWindow.postMessage(response, '*');
-    };
-
-    window.addEventListener('message', function(event) {
-      const data = event.data;
-      if (!data || data.type !== 'ting-plugin:request' || !data.id) return;
-      TingPluginBridge.postMessage(JSON.stringify(data));
-    });
-
-    frame.addEventListener('load', function() {
-      if (frame.contentWindow) {
-        applyPluginTheme(pluginTheme);
-        // WebView2 can expose the srcdoc document one tick after the iframe
-        // load event. Reapply after layout so plugin CSS cannot win a race.
-        window.setTimeout(function() { applyPluginTheme(pluginTheme); }, 0);
-        window.setTimeout(function() { applyPluginTheme(pluginTheme); }, 120);
-        try {
-          frame.contentWindow.open = function(url) {
-            if (url && shouldOpenExternally(url)) {
-              TingPluginBridge.postMessage(JSON.stringify({
-                type: "ting-plugin:external-url",
-                url: absolutePluginUrl(url)
-              }));
-              return null;
-            }
-            return null;
-          };
-          frame.contentDocument.addEventListener("click", function(event) {
-            const target = event.target;
-            const anchor = target && target.closest ? target.closest("a[href]") : null;
-            if (!anchor || !shouldOpenExternally(anchor.href)) return;
-            event.preventDefault();
-            event.stopPropagation();
-            TingPluginBridge.postMessage(JSON.stringify({
-              type: "ting-plugin:external-url",
-              url: absolutePluginUrl(anchor.href)
-            }));
-          }, true);
-        } catch (_) {}
-        frame.contentWindow.postMessage(initPayload, '*');
-      }
-    });
-    frame.srcdoc = assetHtml;
-  </script>
-</body>
-</html>
-''';
+  return _pluginHtmlForSandbox(
+    html: html,
+    assetUrl: assetUrl,
+    initPayload: initPayload,
+    theme: theme,
+    bridgeNonce: bridgeNonce,
+    bridgeToken: bridgeToken,
+  );
 }
 
 class _PluginActionMessage extends StatelessWidget {

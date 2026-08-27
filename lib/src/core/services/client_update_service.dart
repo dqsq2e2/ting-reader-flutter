@@ -59,7 +59,16 @@ class ClientUpdateService {
   Future<ClientReleaseInfo?> fetchLatest() async {
     final endpoint = _clientEndpoint;
     if (endpoint == null) return null;
-    final response = await _dio.get<Object?>(endpoint);
+    final response = await _dio.get<Object?>(
+      endpoint,
+      queryParameters: const {'fresh': '1'},
+      options: Options(
+        headers: const {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+        },
+      ),
+    );
     final data = response.data;
     if (data is! Map) return null;
     return ClientReleaseInfo.fromJson(Map<String, dynamic>.from(data));

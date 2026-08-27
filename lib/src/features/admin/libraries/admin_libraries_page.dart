@@ -732,6 +732,8 @@ const Map<String, dynamic> _defaultLibraryScraperConfig = {
   'metadata_writing_enabled': false,
   'disable_watcher': false,
   'cloud_mode': false,
+  'scheduled_sync_enabled': false,
+  'scheduled_sync_interval': 'daily',
 };
 
 String _prettyLibraryJson(Object? value) {

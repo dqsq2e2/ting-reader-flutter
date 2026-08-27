@@ -1,15 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/models/models.dart';
-import '../../../core/plugin_extensions/types.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/home_layout.dart';
 import '../../../core/utils/application_time_zone.dart';
 import '../../../core/utils/locale.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
-import '../../../shared/plugin_extensions/plugin_extension_host.dart';
 
 part 'settings_sections.dart';
 part 'settings_components.dart';
@@ -30,15 +30,12 @@ class PersonalizationPage extends StatefulWidget {
 }
 
 class _PersonalizationPageState extends State<PersonalizationPage> {
-  final _usernameController = TextEditingController();
-  final _passwordController = TextEditingController();
   final _widgetCssController = TextEditingController();
 
   bool _loading = true;
   bool _saving = false;
-  bool _accountSaving = false;
   bool _saved = false;
-  bool _accountSaved = false;
+  final Map<String, dynamic> _pendingSettingsPatch = {};
 
   String _theme = 'system';
   String _language = 'zh';
@@ -47,6 +44,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   bool _autoPreload = true;
   bool _autoCache = false;
   bool _ignoreAudioFocus = false;
+  bool _pluginToolMenuEnabled = true;
   String _widgetEmbedType = 'private';
   String _applicationTimeZone = defaultApplicationTimeZone;
   bool _timeZoneSaving = false;
@@ -54,21 +52,17 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   @override
   void initState() {
     super.initState();
-    _usernameController.text = '';
     _load();
   }
 
   @override
   void dispose() {
-    _usernameController.dispose();
-    _passwordController.dispose();
     _widgetCssController.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final appState = AppScope.appOf(context);
-    _usernameController.text = appState.user?.username ?? '';
     try {
       await appState.loadSettings(silent: true);
       await appState.loadApplicationTimeZone(silent: true);
@@ -108,6 +102,12 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       nested: nested,
       fallback: false,
     );
+    _pluginToolMenuEnabled = _boolValue(
+      data,
+      'plugin_tool_menu_enabled',
+      nested: nested,
+      fallback: true,
+    );
     final widgetCss = _stringValue(
       data,
       'widget_css',
@@ -122,7 +122,10 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   String get appStateLanguage => AppScope.appOf(context).languageCode;
 
   Future<void> _saveSettings(Map<String, dynamic> patch) async {
-    if (_saving) return;
+    if (_saving) {
+      _pendingSettingsPatch.addAll(patch);
+      return;
+    }
     setState(() {
       _saving = true;
       _saved = false;
@@ -149,9 +152,18 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (!mounted) return;
+      _applySettings(appState.settings);
+      setState(() {});
       _showSnack(context.l10n.commonSaveFailed(error.toString()));
     } finally {
-      if (mounted) setState(() => _saving = false);
+      final pending = Map<String, dynamic>.from(_pendingSettingsPatch);
+      _pendingSettingsPatch.clear();
+      if (mounted) {
+        setState(() => _saving = false);
+        if (pending.isNotEmpty) {
+          unawaited(_saveSettings(pending));
+        }
+      }
     }
   }
 
@@ -211,48 +223,6 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       }
     } finally {
       if (mounted) setState(() => _timeZoneSaving = false);
-    }
-  }
-
-  Future<void> _saveAccount() async {
-    if (_accountSaving) return;
-    final appState = AppScope.appOf(context);
-    final patch = <String, dynamic>{};
-    final username = _usernameController.text.trim();
-    if (username.isNotEmpty && username != appState.user?.username) {
-      patch['username'] = username;
-    }
-    if (_passwordController.text.isNotEmpty) {
-      patch['password'] = _passwordController.text;
-    }
-
-    if (patch.isEmpty) {
-      setState(() => _accountSaved = true);
-      Future<void>.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _accountSaved = false);
-      });
-      return;
-    }
-
-    setState(() {
-      _accountSaving = true;
-      _accountSaved = false;
-    });
-    try {
-      final res = await appState.api.patch('/api/me', data: patch);
-      final user = User.fromJson(asMap(res.data));
-      await appState.updateCurrentUser(user);
-      _passwordController.clear();
-      if (!mounted) return;
-      setState(() => _accountSaved = true);
-      Future<void>.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _accountSaved = false);
-      });
-    } catch (error) {
-      if (!mounted) return;
-      _showSnack(context.l10n.settingsAccountUpdateFailed(error.toString()));
-    } finally {
-      if (mounted) setState(() => _accountSaving = false);
     }
   }
 
@@ -362,33 +332,17 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
                 );
               },
             ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: PluginExtensionSlot(
-                slot: ClientExtensionSlot.settingsSection,
-                extensionContext: {
-                  'page': 'settings',
-                  'user_id': appState.user?.id,
-                  'role': appState.user?.role,
-                  'language': _language,
-                  'theme': _theme,
-                },
-              ),
-            ),
-            const SizedBox(height: 24),
-            _AccountSection(
-              usernameController: _usernameController,
-              passwordController: _passwordController,
-              saving: _accountSaving,
-              saved: _accountSaved,
-              onSave: _saveAccount,
-            ),
             const SizedBox(height: 24),
             _AppearanceSection(
               theme: _theme,
               onTheme: (value) {
                 setState(() => _theme = value);
                 _saveSettings({'theme': value});
+              },
+              toolMenuEnabled: _pluginToolMenuEnabled,
+              onToolMenuEnabled: (value) {
+                setState(() => _pluginToolMenuEnabled = value);
+                _saveSettings({'plugin_tool_menu_enabled': value});
               },
             ),
             const SizedBox(height: 24),

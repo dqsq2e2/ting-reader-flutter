@@ -22,4 +22,5 @@ part 'libraries/library_folder_picker.dart';
 part 'libraries/library_scraper_config.dart';
 part 'libraries/library_editor_dialog.dart';
 part 'logs_page.dart';
+part 'plugin_logs_page.dart';
 part 'plugins_page.dart';

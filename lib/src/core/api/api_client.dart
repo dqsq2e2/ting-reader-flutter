@@ -128,6 +128,7 @@ class ApiClient {
     Object? data,
     Map<String, dynamic>? params,
     CancelToken? cancelToken,
+    Duration? receiveTimeout,
   }) {
     final idempotencyKey = _idempotencyKey();
     if (cancelToken != null) {
@@ -136,7 +137,10 @@ class ApiClient {
           path,
           data: data,
           queryParameters: params,
-          options: _authOptions(idempotencyKey: idempotencyKey),
+          options: _authOptions(
+            idempotencyKey: idempotencyKey,
+            receiveTimeout: receiveTimeout,
+          ),
           cancelToken: cancelToken,
         ),
         cancelToken: cancelToken,
@@ -151,7 +155,10 @@ class ApiClient {
         path,
         data: data,
         queryParameters: params,
-        options: _authOptions(idempotencyKey: idempotencyKey),
+        options: _authOptions(
+          idempotencyKey: idempotencyKey,
+          receiveTimeout: receiveTimeout,
+        ),
       ),
     );
   }
@@ -384,7 +391,10 @@ class ApiClient {
     return status == 502 || status == 503 || status == 504;
   }
 
-  Options _authOptions({String? idempotencyKey}) {
+  Options _authOptions({
+    String? idempotencyKey,
+    Duration? receiveTimeout,
+  }) {
     final headers = <String, dynamic>{
       'Content-Type': 'application/json',
       'Accept-Language': _languageCode,
@@ -399,6 +409,6 @@ class ApiClient {
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;
     }
-    return Options(headers: headers);
+    return Options(headers: headers, receiveTimeout: receiveTimeout);
   }
 }

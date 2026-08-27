@@ -18,6 +18,7 @@ class Book {
     this.updatedAt,
     this.isFavorite = false,
     this.libraryType,
+    this.manualCorrected = false,
     this.skipIntro = 0,
     this.skipOutro = 0,
     this.tags,
@@ -42,6 +43,7 @@ class Book {
   final String? updatedAt;
   final bool isFavorite;
   final String? libraryType;
+  final bool manualCorrected;
   final int skipIntro;
   final int skipOutro;
   final String? tags;
@@ -67,6 +69,7 @@ class Book {
       updatedAt: readString(json, 'updated_at'),
       isFavorite: readBool(json, 'is_favorite') ?? false,
       libraryType: readString(json, 'library_type'),
+      manualCorrected: readBool(json, 'manual_corrected') ?? false,
       skipIntro: readInt(json, 'skip_intro') ?? 0,
       skipOutro: readInt(json, 'skip_outro') ?? 0,
       tags: readString(json, 'tags'),
@@ -84,6 +87,7 @@ class Book {
     String? coverUrl,
     String? themeColor,
     bool? isFavorite,
+    bool? manualCorrected,
     int? skipIntro,
     int? skipOutro,
     String? tags,
@@ -108,6 +112,7 @@ class Book {
       updatedAt: updatedAt,
       isFavorite: isFavorite ?? this.isFavorite,
       libraryType: libraryType,
+      manualCorrected: manualCorrected ?? this.manualCorrected,
       skipIntro: skipIntro ?? this.skipIntro,
       skipOutro: skipOutro ?? this.skipOutro,
       tags: tags ?? this.tags,

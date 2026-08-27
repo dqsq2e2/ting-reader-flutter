@@ -831,6 +831,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
         };
         final res = await api.post(
           '/api/scraper/search',
+          receiveTimeout: const Duration(minutes: 2),
           data: {
             'source': source.id,
             'search_params': values,

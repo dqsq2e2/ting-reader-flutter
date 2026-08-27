@@ -1,7 +1,9 @@
 part of 'admin_pages.dart';
 
 class PluginsPage extends StatefulWidget {
-  const PluginsPage({super.key});
+  const PluginsPage({super.key, this.onViewLogs});
+
+  final ValueChanged<PluginItem>? onViewLogs;
 
   @override
   State<PluginsPage> createState() => _PluginsPageState();
@@ -405,6 +407,7 @@ class _PluginsPageState extends State<PluginsPage> {
             onReload: _reload,
             onDelete: _delete,
             onConfigure: _configure,
+            onViewLogs: widget.onViewLogs,
           ),
         const SafeBottomSpacer(),
       ],
@@ -745,6 +748,7 @@ class _PluginGrid extends StatelessWidget {
     required this.onReload,
     required this.onDelete,
     required this.onConfigure,
+    this.onViewLogs,
   });
 
   final List<PluginItem> items;
@@ -758,6 +762,7 @@ class _PluginGrid extends StatelessWidget {
   final ValueChanged<String> onReload;
   final ValueChanged<PluginItem> onDelete;
   final ValueChanged<PluginItem> onConfigure;
+  final ValueChanged<PluginItem>? onViewLogs;
 
   @override
   Widget build(BuildContext context) {
@@ -797,6 +802,9 @@ class _PluginGrid extends StatelessWidget {
                   tab == _PluginTab.installed && item.configSchema != null
                       ? () => onConfigure(item)
                       : null,
+              onViewLogs: tab == _PluginTab.installed && onViewLogs != null
+                  ? () => onViewLogs!(item)
+                  : null,
             );
           },
         );
@@ -818,6 +826,7 @@ class _PluginCard extends StatelessWidget {
     this.onReload,
     this.onDelete,
     this.onConfigure,
+    this.onViewLogs,
   });
 
   final PluginItem item;
@@ -831,6 +840,7 @@ class _PluginCard extends StatelessWidget {
   final VoidCallback? onReload;
   final VoidCallback? onDelete;
   final VoidCallback? onConfigure;
+  final VoidCallback? onViewLogs;
 
   @override
   Widget build(BuildContext context) {
@@ -1015,6 +1025,12 @@ class _PluginCard extends StatelessWidget {
                   onPressed: () => openRepositoryUrl(item.repo!),
                 ),
               const Spacer(),
+              if (onViewLogs != null)
+                _PluginIconAction(
+                  icon: Icons.description_outlined,
+                  tooltip: context.localeText('插件日志', 'Plugin logs'),
+                  onPressed: onViewLogs!,
+                ),
               if (onConfigure != null)
                 _PluginIconAction(
                   icon: Icons.settings_rounded,

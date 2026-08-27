@@ -110,12 +110,14 @@ class PluginCapabilityRegistration {
     required this.pluginId,
     required this.pluginName,
     this.adminOnly = false,
+    this.clientGrant,
     required this.capability,
   });
 
   final String pluginId;
   final String pluginName;
   final bool adminOnly;
+  final String? clientGrant;
   final PluginCapability capability;
 
   factory PluginCapabilityRegistration.fromJson(Map<String, dynamic> json) {
@@ -123,6 +125,7 @@ class PluginCapabilityRegistration {
       pluginId: readString(json, 'plugin_id') ?? '',
       pluginName: readString(json, 'plugin_name') ?? '',
       adminOnly: readBool(json, 'admin_only') ?? false,
+      clientGrant: readString(json, 'client_grant'),
       capability: PluginCapability.fromJson(asMap(json['capability'])),
     );
   }
@@ -133,6 +136,7 @@ class ToolProviderRegistration extends PluginCapabilityRegistration {
     required super.pluginId,
     required super.pluginName,
     super.adminOnly = false,
+    super.clientGrant,
     required super.capability,
     this.tool,
   });
@@ -144,6 +148,7 @@ class ToolProviderRegistration extends PluginCapabilityRegistration {
       pluginId: readString(json, 'plugin_id') ?? '',
       pluginName: readString(json, 'plugin_name') ?? '',
       adminOnly: readBool(json, 'admin_only') ?? false,
+      clientGrant: readString(json, 'client_grant'),
       capability: PluginCapability.fromJson(asMap(json['capability'])),
       tool: json['tool'],
     );

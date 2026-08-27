@@ -81,6 +81,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'The main menu is in the bottom navigation.';
 
   @override
+  String get navPluginPages => 'Plugin Pages';
+
+  @override
+  String get navCollapseSidebar => 'Collapse sidebar';
+
+  @override
+  String get navExpandSidebar => 'Expand sidebar';
+
+  @override
+  String get pluginPageUnavailable => 'Plugin page unavailable';
+
+  @override
+  String get pluginPageUnavailableDescription =>
+      'This plugin page is disabled or temporarily unavailable.';
+
+  @override
   String get startupConnecting => 'Connecting to server';
 
   @override
@@ -204,6 +220,16 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get settingsHomeCollectionsDescription =>
       'Show entries for playlists and series';
+
+  @override
+  String get settingsPluginEntries => 'Plugin Entries';
+
+  @override
+  String get settingsPluginToolMenu => 'Bottom-right plugin tools';
+
+  @override
+  String get settingsPluginToolMenuDescription =>
+      'Show plugin shortcuts in the bottom-right corner. Enabled by default.';
 
   @override
   String get settingsPlayback => 'Playback';

@@ -13,7 +13,9 @@ ClientExtensionRegistrySnapshot buildClientExtensionRegistry(
           registration.capability.kind == 'client_extension')
       .expand((registration) {
     final slots = _normalizeSlots(registration.capability.extra);
-    return slots.map((slot) => _createDescriptor(registration, slot));
+    return slots
+        .where((slot) => slot.rendersInClient)
+        .map((slot) => _createDescriptor(registration, slot));
   }).toList()
     ..sort(
       (left, right) {
@@ -54,6 +56,7 @@ ClientExtensionDescriptor _createDescriptor(
     pluginId: registration.pluginId,
     pluginName: registration.pluginName,
     adminOnly: registration.adminOnly,
+    clientGrant: registration.clientGrant,
     slot: slot,
     renderMode: renderMode,
     render: Map.unmodifiable(render),
@@ -75,6 +78,10 @@ Object? _normalizeIcon(Object? value) {
 }
 
 List<ClientExtensionSlot> _normalizeSlots(Map<String, dynamic> extra) {
+  final declaredValues = <Object?>[
+    if (extra['slots'] is List) ...(extra['slots'] as List),
+    if (extra.containsKey('slot')) extra['slot'],
+  ];
   final slots = <ClientExtensionSlot>{};
   for (final value in readStringList(extra['slots'])) {
     final slot = ClientExtensionSlot.fromValue(value);
@@ -82,7 +89,11 @@ List<ClientExtensionSlot> _normalizeSlots(Map<String, dynamic> extra) {
   }
   final single = ClientExtensionSlot.fromValue(extra['slot']);
   if (single != null) slots.add(single);
-  return slots.isEmpty ? _defaultSlots : slots.toList();
+  if (slots.isNotEmpty) return slots.toList();
+
+  // An explicit legacy, unknown, or malformed slot must not silently gain a
+  // global entry. The fallback only applies when the manifest omits slots.
+  return declaredValues.isEmpty ? _defaultSlots : const [];
 }
 
 List<String> _normalizeContexts(Map<String, dynamic> extra) {
