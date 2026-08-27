@@ -17,7 +17,6 @@ class FnosGateway {
   static const _gatewaySuffixes = <String>[
     '.fnos.net',
     '.5ddd.com',
-    '.trzznas.com',
   ];
 
   static String _normalizedHostOrLabel(String rawFnId) {

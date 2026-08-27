@@ -37,24 +37,6 @@ String formatDurationHumanForLocale(BuildContext context, num seconds) {
   return '$minutes min';
 }
 
-({String value, String unit}) formatMinutesMetricForLocale(
-  BuildContext context,
-  num minutes,
-) {
-  final safeMinutes = minutes < 0 ? 0 : minutes.round();
-  if (safeMinutes > 60) {
-    final value = (safeMinutes / 60).toStringAsFixed(0);
-    return (
-      value: value,
-      unit: context.isEnglishLocale ? (value == '1' ? 'hr' : 'hrs') : '小时',
-    );
-  }
-  return (
-    value: safeMinutes.toString(),
-    unit: context.isEnglishLocale ? 'min' : '分钟',
-  );
-}
-
 String formatDateCn(String? raw) {
   if (raw == null || raw.isEmpty) return '从未';
   final date = backendDateTimeInApplicationTimeZone(raw);

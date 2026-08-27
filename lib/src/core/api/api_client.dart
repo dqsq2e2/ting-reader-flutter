@@ -2,8 +2,6 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
-import 'api_http_adapter.dart';
-
 class ApiClient {
   ApiClient() {
     _dio = Dio(
@@ -14,10 +12,6 @@ class ApiClient {
         maxRedirects: 0,
         headers: {'Content-Type': 'application/json'},
       ),
-    );
-    configureApiHttpAdapter(
-      _dio,
-      allowBadCertificate: () => allowBadCertificate?.call() ?? false,
     );
   }
 
@@ -32,8 +26,7 @@ class ApiClient {
   Future<String?> Function(String failedBaseUrl, CancelToken? cancelToken)?
       recoverBaseUrl;
   bool Function()? isGatewaySession;
-  bool Function()? allowBadCertificate;
-  Future<bool> Function()? onGatewaySessionExpired;
+  Future<void> Function()? onGatewaySessionExpired;
 
   String get baseUrl => _baseUrl;
   String? get token => _token;
@@ -268,7 +261,6 @@ class ApiClient {
   Future<Response<dynamic>> _send(
     Future<Response<dynamic>> Function() request, {
     bool retrying = false,
-    bool authRetrying = false,
     CancelToken? cancelToken,
   }) async {
     var gatewaySessionExpiredNotified = false;
@@ -276,15 +268,7 @@ class ApiClient {
       final response = await request();
       if (_isGatewaySessionInvalidResponse(response)) {
         gatewaySessionExpiredNotified = true;
-        final recovered = !authRetrying && await _notifyGatewaySessionExpired();
-        if (recovered) {
-          return _send(
-            request,
-            retrying: retrying,
-            authRetrying: true,
-            cancelToken: cancelToken,
-          );
-        }
+        await _notifyGatewaySessionExpired();
         throw DioException(
           requestOptions: response.requestOptions,
           response: response,
@@ -306,25 +290,7 @@ class ApiClient {
       if (!gatewaySessionExpiredNotified &&
           _isGatewaySessionInvalidResponse(error.response)) {
         gatewaySessionExpiredNotified = true;
-        final recovered = !authRetrying && await _notifyGatewaySessionExpired();
-        if (recovered) {
-          return _send(
-            request,
-            retrying: retrying,
-            authRetrying: true,
-            cancelToken: cancelToken,
-          );
-        }
-      } else if (!authRetrying && _isExpiredAppSession(error)) {
-        final recovered = await _notifyGatewaySessionExpired();
-        if (recovered) {
-          return _send(
-            request,
-            retrying: retrying,
-            authRetrying: true,
-            cancelToken: cancelToken,
-          );
-        }
+        await _notifyGatewaySessionExpired();
       }
       if (retrying || !_shouldTryRecover(error) || recoverBaseUrl == null) {
         rethrow;
@@ -340,32 +306,18 @@ class ApiClient {
       }
       if (recovered == null || recovered.isEmpty) rethrow;
       configure(baseUrl: recovered, token: _token, cookie: _cookie);
-      return _send(
-        request,
-        retrying: true,
-        authRetrying: authRetrying,
-        cancelToken: cancelToken,
-      );
+      return _send(request, retrying: true, cancelToken: cancelToken);
     }
   }
 
-  Future<bool> _notifyGatewaySessionExpired() async {
+  Future<void> _notifyGatewaySessionExpired() async {
     final handler = onGatewaySessionExpired;
-    if (handler == null) return false;
+    if (handler == null) return;
     try {
-      return await handler();
+      await handler();
     } catch (_) {
       // Session detection must not hide the original API response.
-      return false;
     }
-  }
-
-  bool _isExpiredAppSession(DioException error) {
-    if (!(isGatewaySession?.call() ?? false)) return false;
-    if (error.response?.statusCode != 401) return false;
-    final path = error.requestOptions.uri.path;
-    return !path.endsWith('/api/auth/login') &&
-        !path.endsWith('/api/auth/token-login');
   }
 
   bool _isGatewaySessionInvalidResponse(Response<dynamic>? response) {

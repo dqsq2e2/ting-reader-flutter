@@ -6,12 +6,6 @@ const privacyPolicyUrl = '$tingReaderWebsiteUrl/about/privacy-policy';
 const changelogUrl = '$tingReaderWebsiteUrl/about/changelog';
 const serverUpdateGuideUrl = '$tingReaderWebsiteUrl/guide/update';
 
-String localizedTingReaderWebsiteUrl(String languageCode) {
-  return languageCode.toLowerCase().startsWith('en')
-      ? '$tingReaderWebsiteUrl/en'
-      : tingReaderWebsiteUrl;
-}
-
 Future<bool> openExternalUrl(String rawUrl) async {
   final normalized = _normalizeUrl(rawUrl);
   final uri = Uri.tryParse(normalized);
