@@ -17,6 +17,8 @@ class SavedServerProfile {
     required this.label,
     this.mode = ServerProfileMode.direct,
     this.fnId = '',
+    this.fnosUsername = '',
+    this.fnosPassword = '',
     this.gatewayCookie = '',
     this.gatewayCookieAt,
     this.lastLoginAt,
@@ -30,6 +32,8 @@ class SavedServerProfile {
   final String label;
   final ServerProfileMode mode;
   final String fnId;
+  final String fnosUsername;
+  final String fnosPassword;
   final String gatewayCookie;
   final DateTime? gatewayCookieAt;
   final DateTime? lastLoginAt;
@@ -52,6 +56,8 @@ class SavedServerProfile {
           ? ServerProfileMode.fnosGateway
           : ServerProfileMode.direct,
       fnId: rawFnId,
+      fnosUsername: json['fnos_username']?.toString() ?? '',
+      fnosPassword: json['fnos_password']?.toString() ?? '',
       gatewayCookie: json['gateway_cookie']?.toString() ?? '',
       gatewayCookieAt:
           DateTime.tryParse(json['gateway_cookie_at']?.toString() ?? ''),
@@ -68,6 +74,8 @@ class SavedServerProfile {
     String? label,
     ServerProfileMode? mode,
     String? fnId,
+    String? fnosUsername,
+    String? fnosPassword,
     String? gatewayCookie,
     DateTime? gatewayCookieAt,
     DateTime? lastLoginAt,
@@ -81,21 +89,26 @@ class SavedServerProfile {
       label: label ?? this.label,
       mode: mode ?? this.mode,
       fnId: fnId ?? this.fnId,
+      fnosUsername: fnosUsername ?? this.fnosUsername,
+      fnosPassword: fnosPassword ?? this.fnosPassword,
       gatewayCookie: gatewayCookie ?? this.gatewayCookie,
       gatewayCookieAt: gatewayCookieAt ?? this.gatewayCookieAt,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
     );
   }
 
-  Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson({bool includeSecrets = false}) => {
         'server_url': serverUrl,
         'local_server_url': localServerUrl,
         'active_url': activeUrl,
         'username': username,
-        'password': password,
+        if (includeSecrets) 'password': password,
         'label': label,
         'mode': mode.name,
         if (fnId.isNotEmpty) 'fn_id': fnId,
+        if (fnosUsername.isNotEmpty) 'fnos_username': fnosUsername,
+        if (includeSecrets && fnosPassword.isNotEmpty)
+          'fnos_password': fnosPassword,
         if (gatewayCookie.isNotEmpty) 'gateway_cookie': gatewayCookie,
         if (gatewayCookieAt != null)
           'gateway_cookie_at': gatewayCookieAt!.toIso8601String(),

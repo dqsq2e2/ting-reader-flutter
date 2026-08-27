@@ -2,9 +2,11 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../auth/fn_connect_client.dart';
 import '../auth/fnos_gateway_auth.dart';
 import '../api/plugin_capabilities_api.dart';
 import '../document_reader/document_reader.dart';
@@ -32,6 +34,8 @@ class AppState extends ChangeNotifier {
     app_time_zone.initializeApplicationTimeZones();
     api.isGatewaySession = () =>
         serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty;
+    api.allowBadCertificate =
+        () => serverMode == ServerProfileMode.fnosGateway && fnConnectIgnoreSsl;
     api.onGatewaySessionExpired = _handleGatewaySessionExpired;
   }
 
@@ -49,6 +53,9 @@ class AppState extends ChangeNotifier {
   static const _fnIdPrefsKey = 'fn_id';
   static const _gatewayCookiePrefsKey = 'gateway_cookie';
   static const _gatewayReloginRequiredPrefsKey = 'gateway_relogin_required';
+  static const _fnConnectOrderPrefsKey = 'fn_connect_order';
+  static const _fnConnectDisabledPrefsKey = 'fn_connect_disabled';
+  static const _fnConnectIgnoreSslPrefsKey = 'fn_connect_ignore_ssl';
   static const _localOnlySettingKeys = <String>{
     'ignore_audio_focus',
     'resume_after_interruption',
@@ -59,9 +66,11 @@ class AppState extends ChangeNotifier {
   };
 
   SharedPreferences? _prefs;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+  bool? _secureCredentialStorageAvailable;
   Map<String, String> _redirectCache = {};
   Future<String?>? _activeUrlRecovery;
-  Future<void>? _gatewaySessionRecovery;
+  Future<bool>? _gatewaySessionRecovery;
   Future<void> Function()? onGatewayLoginRequired;
   Future<void> Function()? onGatewayLoginRestored;
   CancelToken? _startupCancelToken;
@@ -80,9 +89,16 @@ class AppState extends ChangeNotifier {
   String? connectionError;
   bool offlineMode = false;
   List<SavedServerProfile> savedServers = [];
+  List<FnConnectCandidateGroup> fnConnectOrder = List.of(defaultFnConnectOrder);
+  Set<FnConnectCandidateGroup> fnConnectDisabledGroups = {};
+  bool fnConnectIgnoreSsl = true;
+  bool fnConnectProbing = false;
+  List<FnConnectCandidateResult> fnConnectCandidates = const [];
   RedirectResolution? lastRedirectResolution;
   bool resolvingRedirect = false;
   int _pluginExtensionRevision = 0;
+
+  final FnConnectClient fnConnect = FnConnectClient();
 
   bool get isAuthenticated {
     final currentToken = token?.trim() ?? '';
@@ -109,6 +125,28 @@ class AppState extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  SavedServerProfile? get activeProfile {
+    if (serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty) {
+      return savedGatewayProfile;
+    }
+    for (final profile in savedServers) {
+      if (profile.mode == ServerProfileMode.direct &&
+          _normalizeOptionalServerUrl(profile.serverUrl) ==
+              _normalizeOptionalServerUrl(serverUrl) &&
+          _normalizeOptionalServerUrl(profile.localServerUrl) ==
+              _normalizeOptionalServerUrl(localServerUrl) &&
+          profile.username == user?.username) {
+        return profile;
+      }
+    }
+    return null;
+  }
+
+  bool get fnConnectCurrentIsRelay {
+    final cookie = gatewayCookie?.toLowerCase() ?? '';
+    return cookie.split(';').any((part) => part.trim() == 'mode=relay');
   }
 
   ThemeMode get themeMode {
@@ -146,34 +184,104 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> handleGatewaySessionExpired() {
-    return _handleGatewaySessionExpired();
+  Future<void> handleGatewaySessionExpired() async {
+    await _handleGatewaySessionExpired();
   }
 
-  Future<void> _handleGatewaySessionExpired() async {
+  Future<bool> _handleGatewaySessionExpired() async {
     if (serverMode != ServerProfileMode.fnosGateway ||
         fnId.trim().isEmpty ||
         token == null ||
         token!.trim().isEmpty ||
         offlineMode) {
-      return;
+      return false;
     }
 
     final activeRecovery = _gatewaySessionRecovery;
     if (activeRecovery != null) {
-      await activeRecovery;
-      return;
+      return activeRecovery;
     }
 
-    final recovery = _markGatewayLoginRequired();
+    final recovery = _recoverGatewaySessionSilently();
     _gatewaySessionRecovery = recovery;
     try {
-      await recovery;
+      return await recovery;
     } finally {
       if (identical(_gatewaySessionRecovery, recovery)) {
         _gatewaySessionRecovery = null;
       }
     }
+  }
+
+  Future<bool> _recoverGatewaySessionSilently() async {
+    final profile = savedGatewayProfile;
+    if (profile == null ||
+        profile.fnosUsername.trim().isEmpty ||
+        profile.fnosPassword.isEmpty ||
+        profile.username.trim().isEmpty ||
+        profile.password.isEmpty) {
+      await _markGatewayLoginRequired();
+      return false;
+    }
+
+    try {
+      final result = await fnConnect.loginAndConnect(
+        fnId: profile.fnId,
+        username: profile.fnosUsername,
+        password: profile.fnosPassword,
+        order: fnConnectOrder,
+        disabledGroups: fnConnectDisabledGroups,
+        ignoreSsl: fnConnectIgnoreSsl,
+      );
+      fnConnectCandidates = result.candidates;
+      serverMode = ServerProfileMode.fnosGateway;
+      fnId = result.session.relayHost;
+      serverUrl = 'https://${result.session.relayHost}';
+      activeUrl = result.appBaseUrl;
+      gatewayCookie = result.cookie;
+      token = null;
+      user = null;
+      api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
+
+      final map = await _loginToTingReader(profile.username, profile.password);
+      token = map['token']?.toString();
+      user = _requireAuthenticatedUser(map['user']);
+      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+      needsGatewayLogin = false;
+      connectionError = null;
+
+      await _persistAuthenticatedGatewayState();
+      await _saveServerProfile(
+        profile.copyWith(
+          serverUrl: serverUrl,
+          activeUrl: activeUrl,
+          mode: ServerProfileMode.fnosGateway,
+          fnId: fnId,
+          gatewayCookie: gatewayCookie,
+          gatewayCookieAt: DateTime.now(),
+          lastLoginAt: DateTime.now(),
+        ),
+        replaceProfile: profile,
+      );
+      notifyListeners();
+      await _notifyGatewayLoginRestored();
+      return true;
+    } catch (_) {
+      await _markGatewayLoginRequired();
+      return false;
+    }
+  }
+
+  Future<void> _persistAuthenticatedGatewayState() async {
+    await _prefs?.setString('server_url', serverUrl);
+    await _prefs?.setString('local_server_url', localServerUrl);
+    await _prefs?.setString('active_url', activeUrl);
+    await _prefs?.setString(_serverModePrefsKey, serverMode.name);
+    await _prefs?.setString(_fnIdPrefsKey, fnId);
+    await _prefs?.setString(_gatewayCookiePrefsKey, gatewayCookie ?? '');
+    await _prefs?.setString('auth_token', token ?? '');
+    await _prefs?.setString('user', user!.encode());
+    await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
   }
 
   Future<void> _markGatewayLoginRequired() async {
@@ -255,7 +363,8 @@ class AppState extends ChangeNotifier {
       needsGatewayLogin =
           _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
       token = _prefs!.getString('auth_token');
-      savedServers = _loadSavedServers();
+      savedServers = await _loadSavedServers();
+      _loadFnConnectSettings();
       _loadLocalLanguage();
       _loadLocalApplicationTimeZone();
       api.setClientHeaders(await buildClientDeviceHeaders());
@@ -368,7 +477,8 @@ class AppState extends ChangeNotifier {
       );
       if (persistedGatewayHost != null) fnId = persistedGatewayHost;
       needsGatewayLogin = requireGatewayLogin && persistedGatewayHost != null;
-      savedServers = _loadSavedServers();
+      savedServers = await _loadSavedServers();
+      _loadFnConnectSettings();
       await _prefs?.remove('auth_token');
       await _prefs?.remove('user');
     } catch (_) {
@@ -579,6 +689,8 @@ class AppState extends ChangeNotifier {
     required String password,
     ServerProfileMode mode = ServerProfileMode.direct,
     String fnId = '',
+    String fnosUsername = '',
+    String fnosPassword = '',
     String gatewayCookie = '',
     SavedServerProfile? replaceProfile,
   }) async {
@@ -605,6 +717,11 @@ class AppState extends ChangeNotifier {
       label: username,
       mode: resolvedMode,
       fnId: gatewayHost ?? '',
+      fnosUsername: resolvedMode == ServerProfileMode.fnosGateway
+          ? fnosUsername.trim()
+          : '',
+      fnosPassword:
+          resolvedMode == ServerProfileMode.fnosGateway ? fnosPassword : '',
       gatewayCookie: gatewayCookie,
     );
     await _saveServerProfile(profile, replaceProfile: replaceProfile);
@@ -620,6 +737,25 @@ class AppState extends ChangeNotifier {
   }) async {
     fnId = gatewayHost;
     localServerUrl = _normalizeOptionalServerUrl(localServerUrl);
+
+    final persistedActiveUri = Uri.tryParse(activeUrl);
+    final persistedDirectFnConnectRoute = quick &&
+        persistedActiveUri != null &&
+        (persistedActiveUri.scheme == 'http' ||
+            persistedActiveUri.scheme == 'https') &&
+        (persistedActiveUri.path == '/app/ting-reader' ||
+            persistedActiveUri.path.startsWith('/app/ting-reader/')) &&
+        !FnosGateway.isGatewayHostForFnId(
+          gatewayHost,
+          persistedActiveUri.host,
+        ) &&
+        FnConnectClient.tokenFromCookie(gatewayCookie) != null;
+    if (persistedDirectFnConnectRoute) {
+      serverMode = ServerProfileMode.fnosGateway;
+      needsGatewayLogin = false;
+      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+      return;
+    }
 
     if (localServerUrl.isNotEmpty) {
       final localResolution = await _tryResolveLocalServer(
@@ -663,7 +799,10 @@ class AppState extends ChangeNotifier {
     required String password,
     ServerProfileMode mode = ServerProfileMode.direct,
     String fnId = '',
+    String fnosUsername = '',
+    String fnosPassword = '',
     String? gatewayCookie,
+    ValueChanged<FnConnectStage>? onFnConnectStage,
     Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
   }) async {
@@ -682,67 +821,103 @@ class AppState extends ChangeNotifier {
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
     var usedWebGatewayLogin = false;
 
+    Future<Map<String, dynamic>> loginWithGatewaySession(
+      String gatewayHost,
+    ) async {
+      final localResolution = localServerUrl.isEmpty
+          ? null
+          : await _tryResolveLocalServer(localServerUrl, quick: true);
+      if (localResolution != null) {
+        serverMode = ServerProfileMode.direct;
+        activeUrl = localResolution.resolvedUrl;
+        api.configure(baseUrl: activeUrl, token: null, cookie: null);
+        return _loginToTingReader(username, password);
+      }
+
+      serverMode = ServerProfileMode.fnosGateway;
+      activeUrl = FnosGateway.appUriForHost(gatewayHost).toString();
+      api.configure(
+        baseUrl: activeUrl,
+        token: null,
+        cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
+      );
+      try {
+        return await _loginToTingReader(username, password);
+      } catch (error) {
+        if (resolvedGatewayCookie.isNotEmpty &&
+            !_shouldRefreshGatewayCookie(error)) {
+          rethrow;
+        }
+
+        onFnConnectStage?.call(FnConnectStage.webFallback);
+        final refreshedLogin = await acquireGatewayLogin?.call();
+        if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
+          throw StateError(textForLocale(
+            '飞牛登录已取消或未完成',
+            'fnOS login was cancelled or not completed',
+          ));
+        }
+        resolvedGatewayCookie = refreshedLogin.cookie.trim();
+        if (FnosGateway.isGatewayHostForFnId(
+          this.fnId,
+          refreshedLogin.gatewayHost,
+        )) {
+          final refreshedHost = refreshedLogin.gatewayHost;
+          activeUrl = FnosGateway.appUriForHost(refreshedHost).toString();
+          serverUrl = FnosGateway.originUriForHost(refreshedHost).toString();
+          this.fnId = refreshedHost;
+        }
+        api.configure(
+          baseUrl: activeUrl,
+          token: null,
+          cookie: resolvedGatewayCookie,
+        );
+        final result = await _loginToTingReader(username, password);
+        usedWebGatewayLogin = true;
+        return result;
+      }
+    }
+
     if (hasGatewayProfile) {
       final gatewayHost = detectedGatewayHost;
       this.fnId = gatewayHost;
       serverUrl = FnosGateway.originUriForHost(gatewayHost).toString();
       localServerUrl = _normalizeOptionalServerUrl(localServer);
 
-      final localResolution = localServerUrl.isEmpty
-          ? null
-          : await _tryResolveLocalServer(localServerUrl, quick: true);
-      if (localResolution != null) {
-        // A FNID in the WAN field is a gateway fallback, not a forced route.
-        // Use the reachable LAN backend directly when the current network
-        // can reach it.
-        serverMode = ServerProfileMode.direct;
-        activeUrl = localResolution.resolvedUrl;
-        api.configure(baseUrl: activeUrl, token: null, cookie: null);
-        map = await _loginToTingReader(username, password);
-      } else {
-        serverMode = ServerProfileMode.fnosGateway;
-        activeUrl = FnosGateway.appUriForHost(gatewayHost).toString();
-        api.configure(
-          baseUrl: activeUrl,
-          token: null,
-          cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
-        );
-
+      if (fnosUsername.trim().isNotEmpty && fnosPassword.isNotEmpty) {
         try {
-          map = await _loginToTingReader(username, password);
-        } catch (error) {
-          if (resolvedGatewayCookie.isNotEmpty &&
-              !_shouldRefreshGatewayCookie(error)) {
-            rethrow;
-          }
-
-          final refreshedLogin = await acquireGatewayLogin?.call();
-          if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
-            throw StateError(textForLocale(
-              '飞牛登录已取消或未完成',
-              'fnOS login was cancelled or not completed',
-            ));
-          }
-          resolvedGatewayCookie = refreshedLogin.cookie.trim();
-          if (FnosGateway.isGatewayHostForFnId(
-            this.fnId,
-            refreshedLogin.gatewayHost,
-          )) {
-            final refreshedHost = refreshedLogin.gatewayHost;
-            activeUrl = FnosGateway.appUriForHost(refreshedHost).toString();
-            serverUrl = FnosGateway.originUriForHost(refreshedHost).toString();
-            this.fnId = refreshedHost;
-          }
-          // The WebView only acquires the fnOS session cookie. Complete the
-          // Ting Reader login through the normal API client after it closes.
+          final result = await fnConnect.loginAndConnect(
+            fnId: gatewayHost,
+            username: fnosUsername.trim(),
+            password: fnosPassword,
+            order: fnConnectOrder,
+            disabledGroups: fnConnectDisabledGroups,
+            ignoreSsl: fnConnectIgnoreSsl,
+            onStage: onFnConnectStage,
+          );
+          fnConnectCandidates = result.candidates;
+          this.fnId = result.session.relayHost;
+          serverUrl = 'https://${result.session.relayHost}';
+          activeUrl = result.appBaseUrl;
+          serverMode = ServerProfileMode.fnosGateway;
+          resolvedGatewayCookie = result.cookie;
           api.configure(
             baseUrl: activeUrl,
             token: null,
             cookie: resolvedGatewayCookie,
           );
+          onFnConnectStage?.call(FnConnectStage.tingReaderLogin);
           map = await _loginToTingReader(username, password);
-          usedWebGatewayLogin = true;
+        } on FnConnectAuthenticationException {
+          throw StateError(textForLocale(
+            '飞牛账号或密码错误',
+            'Incorrect fnOS username or password',
+          ));
+        } on FnConnectProtocolException {
+          map = await loginWithGatewaySession(gatewayHost);
         }
+      } else {
+        map = await loginWithGatewaySession(gatewayHost);
       }
     } else {
       serverUrl = _normalizeOptionalServerUrl(server);
@@ -762,14 +937,15 @@ class AppState extends ChangeNotifier {
 
     token = map['token']?.toString();
     user = _requireAuthenticatedUser(map['user']);
-    gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
+    this.gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
         ? resolvedGatewayCookie
         : null;
     api.configure(
       baseUrl: activeUrl,
       token: token,
-      cookie:
-          serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+      cookie: serverMode == ServerProfileMode.fnosGateway
+          ? this.gatewayCookie
+          : null,
     );
     needsGatewayLogin = false;
 
@@ -802,11 +978,16 @@ class AppState extends ChangeNotifier {
         username: username,
         password: password,
         label: username,
-        mode: serverMode,
+        mode: hasGatewayProfile
+            ? ServerProfileMode.fnosGateway
+            : ServerProfileMode.direct,
         fnId: hasGatewayProfile ? this.fnId : '',
-        gatewayCookie: hasGatewayProfile ? (gatewayCookie ?? '') : '',
-        gatewayCookieAt:
-            hasGatewayProfile && gatewayCookie != null ? DateTime.now() : null,
+        fnosUsername: hasGatewayProfile ? fnosUsername.trim() : '',
+        fnosPassword: hasGatewayProfile ? fnosPassword : '',
+        gatewayCookie: hasGatewayProfile ? (this.gatewayCookie ?? '') : '',
+        gatewayCookieAt: hasGatewayProfile && this.gatewayCookie != null
+            ? DateTime.now()
+            : null,
         lastLoginAt: DateTime.now(),
       ),
       replaceProfile: replaceProfile,
@@ -865,6 +1046,145 @@ class AppState extends ChangeNotifier {
     final data = error.response?.data;
     if (data is Map && data['error'] != null) return false;
     return true;
+  }
+
+  Future<void> setFnConnectOrder(List<FnConnectCandidateGroup> order) async {
+    final normalized = <FnConnectCandidateGroup>[];
+    for (final group in [...order, ...defaultFnConnectOrder]) {
+      if (!normalized.contains(group)) normalized.add(group);
+    }
+    fnConnectOrder = normalized;
+    await _prefs?.setStringList(
+      _fnConnectOrderPrefsKey,
+      normalized.map((group) => group.name).toList(growable: false),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setFnConnectGroupEnabled(
+    FnConnectCandidateGroup group,
+    bool enabled,
+  ) async {
+    final next = Set<FnConnectCandidateGroup>.from(fnConnectDisabledGroups);
+    if (enabled) {
+      next.remove(group);
+    } else {
+      final enabledCount = FnConnectCandidateGroup.values
+          .where((item) => !next.contains(item))
+          .length;
+      if (enabledCount <= 1) return;
+      next.add(group);
+    }
+    fnConnectDisabledGroups = next;
+    await _prefs?.setStringList(
+      _fnConnectDisabledPrefsKey,
+      next.map((item) => item.name).toList(growable: false),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setFnConnectIgnoreSsl(bool value) async {
+    fnConnectIgnoreSsl = value;
+    await _prefs?.setBool(_fnConnectIgnoreSslPrefsKey, value);
+    notifyListeners();
+  }
+
+  Future<void> reprobeFnConnect() async {
+    if (fnConnectProbing) return;
+    final profile = savedGatewayProfile;
+    final sessionToken = FnConnectClient.tokenFromCookie(gatewayCookie);
+    if (profile == null || sessionToken == null) {
+      throw StateError(textForLocale(
+        '当前登录方式不支持 FN Connect',
+        'The current login does not support FN Connect',
+      ));
+    }
+
+    fnConnectProbing = true;
+    notifyListeners();
+    try {
+      FnConnectDiscovery discovery;
+      try {
+        discovery = await fnConnect.discover(profile.fnId);
+      } catch (_) {
+        discovery = FnConnectDiscovery.fallback(profile.fnId);
+      }
+      final candidates = fnConnect.buildCandidates(
+        discovery: discovery,
+        order: fnConnectOrder,
+        disabledGroups: fnConnectDisabledGroups,
+      );
+      fnConnectCandidates = await fnConnect.probeCandidates(
+        candidates: candidates,
+        token: sessionToken,
+        ignoreSsl: fnConnectIgnoreSsl,
+      );
+      final best =
+          fnConnectCandidates.where((result) => result.reachable).firstOrNull;
+      if (best != null &&
+          ApiClient.normalizeServerUrl(best.candidate.appBaseUrl) !=
+              ApiClient.normalizeServerUrl(activeUrl)) {
+        await switchFnConnectCandidate(best.candidate);
+      }
+    } finally {
+      fnConnectProbing = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> switchFnConnectCandidate(FnConnectCandidate candidate) async {
+    final sessionToken = FnConnectClient.tokenFromCookie(gatewayCookie);
+    final profile = savedGatewayProfile;
+    if (sessionToken == null || profile == null) {
+      throw StateError(textForLocale(
+        '飞牛登录会话不可用',
+        'The fnOS login session is unavailable',
+      ));
+    }
+
+    final verification = (await fnConnect.probeCandidates(
+      candidates: [candidate],
+      token: sessionToken,
+      ignoreSsl: fnConnectIgnoreSsl,
+    ))
+        .single;
+    if (!verification.reachable) {
+      throw StateError(textForLocale(
+        '链路校验失败：${verification.error ?? '不可用'}',
+        'Link verification failed: ${verification.error ?? 'unavailable'}',
+      ));
+    }
+
+    final previousUrl = activeUrl;
+    final previousCookie = gatewayCookie;
+    final nextCookie = FnConnectClient.cookieHeader(
+      sessionToken,
+      relay: candidate.isRelay,
+    );
+    activeUrl = candidate.appBaseUrl;
+    serverMode = ServerProfileMode.fnosGateway;
+    gatewayCookie = nextCookie;
+    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+    try {
+      await _prefs?.setString('active_url', activeUrl);
+      await _prefs?.setString(_serverModePrefsKey, serverMode.name);
+      await _prefs?.setString(_gatewayCookiePrefsKey, nextCookie);
+      await _saveServerProfile(
+        profile.copyWith(
+          activeUrl: activeUrl,
+          mode: ServerProfileMode.fnosGateway,
+          gatewayCookie: nextCookie,
+          gatewayCookieAt: DateTime.now(),
+        ),
+        replaceProfile: profile,
+      );
+      notifyListeners();
+    } catch (_) {
+      activeUrl = previousUrl;
+      gatewayCookie = previousCookie;
+      api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+      rethrow;
+    }
   }
 
   Future<void> enterOfflineMode() async {
@@ -1378,20 +1698,151 @@ class AppState extends ChangeNotifier {
     await _prefs?.setString('redirect_cache', jsonEncode(_redirectCache));
   }
 
-  List<SavedServerProfile> _loadSavedServers() {
+  void _loadFnConnectSettings() {
+    final storedOrder = _prefs?.getStringList(_fnConnectOrderPrefsKey);
+    final order = <FnConnectCandidateGroup>[];
+    for (final name in storedOrder ?? const <String>[]) {
+      final group = _fnConnectCandidateGroupFromName(name);
+      if (group != null && !order.contains(group)) order.add(group);
+    }
+    for (final group in defaultFnConnectOrder) {
+      if (!order.contains(group)) order.add(group);
+    }
+    fnConnectOrder = order;
+
+    fnConnectDisabledGroups =
+        (_prefs?.getStringList(_fnConnectDisabledPrefsKey) ?? const <String>[])
+            .map(_fnConnectCandidateGroupFromName)
+            .whereType<FnConnectCandidateGroup>()
+            .toSet();
+    if (fnConnectDisabledGroups.length ==
+        FnConnectCandidateGroup.values.length) {
+      fnConnectDisabledGroups = {};
+    }
+    fnConnectIgnoreSsl = _prefs?.getBool(_fnConnectIgnoreSslPrefsKey) ?? true;
+  }
+
+  FnConnectCandidateGroup? _fnConnectCandidateGroupFromName(String name) {
+    for (final group in FnConnectCandidateGroup.values) {
+      if (group.name == name) return group;
+    }
+    return null;
+  }
+
+  Future<List<SavedServerProfile>> _loadSavedServers() async {
     final raw = _prefs?.getString('saved_servers');
     if (raw == null || raw.isEmpty) return const [];
     try {
       final decoded = jsonDecode(raw);
       if (decoded is! List) return const [];
-      return decoded
+      final profiles = decoded
           .map((item) => SavedServerProfile.fromJson(asMap(item)))
           .where((item) =>
               item.serverUrl.isNotEmpty || item.localServerUrl.isNotEmpty)
           .toList();
+      final hydrated = <SavedServerProfile>[];
+      for (final profile in profiles) {
+        hydrated.add(await _hydrateServerProfileSecrets(profile));
+      }
+      if (_secureCredentialStorageAvailable == true &&
+          profiles.any(
+            (profile) =>
+                profile.password.isNotEmpty || profile.fnosPassword.isNotEmpty,
+          )) {
+        await _persistSavedServers(hydrated);
+      }
+      return hydrated;
     } catch (_) {
       return const [];
     }
+  }
+
+  Future<SavedServerProfile> _hydrateServerProfileSecrets(
+    SavedServerProfile profile,
+  ) async {
+    try {
+      final key = _serverProfileSecretKey(profile);
+      final storedPassword = await _secureStorage.read(key: '$key.tr');
+      final storedFnosPassword = await _secureStorage.read(key: '$key.fnos');
+      final password = storedPassword ?? profile.password;
+      final fnosPassword = storedFnosPassword ?? profile.fnosPassword;
+      if (storedPassword == null && profile.password.isNotEmpty) {
+        await _secureStorage.write(key: '$key.tr', value: profile.password);
+      }
+      if (storedFnosPassword == null && profile.fnosPassword.isNotEmpty) {
+        await _secureStorage.write(
+          key: '$key.fnos',
+          value: profile.fnosPassword,
+        );
+      }
+      _secureCredentialStorageAvailable = true;
+      return profile.copyWith(
+        password: password,
+        fnosPassword: fnosPassword,
+      );
+    } catch (_) {
+      _secureCredentialStorageAvailable = false;
+      return profile;
+    }
+  }
+
+  Future<void> _storeServerProfileSecrets(
+    SavedServerProfile profile, {
+    SavedServerProfile? replaceProfile,
+  }) async {
+    try {
+      final key = _serverProfileSecretKey(profile);
+      await _secureStorage.write(key: '$key.tr', value: profile.password);
+      if (profile.fnosPassword.isEmpty) {
+        await _secureStorage.delete(key: '$key.fnos');
+      } else {
+        await _secureStorage.write(
+          key: '$key.fnos',
+          value: profile.fnosPassword,
+        );
+      }
+      if (replaceProfile != null) {
+        final replacedKey = _serverProfileSecretKey(replaceProfile);
+        if (replacedKey != key) {
+          await _secureStorage.delete(key: '$replacedKey.tr');
+          await _secureStorage.delete(key: '$replacedKey.fnos');
+        }
+      }
+      _secureCredentialStorageAvailable = true;
+    } catch (_) {
+      _secureCredentialStorageAvailable = false;
+    }
+  }
+
+  Future<void> _deleteServerProfileSecrets(SavedServerProfile profile) async {
+    try {
+      final key = _serverProfileSecretKey(profile);
+      await _secureStorage.delete(key: '$key.tr');
+      await _secureStorage.delete(key: '$key.fnos');
+    } catch (_) {
+      // The profile is still deleted when a platform keychain is unavailable.
+    }
+  }
+
+  String _serverProfileSecretKey(SavedServerProfile profile) {
+    final gatewayIdentity = _normalizedGatewayIdentity(profile.fnId);
+    final identity = gatewayIdentity.isNotEmpty
+        ? 'gateway|$gatewayIdentity|${profile.username}'
+        : 'direct|${_normalizeOptionalServerUrl(profile.serverUrl)}|${_normalizeOptionalServerUrl(profile.localServerUrl)}|${profile.username}';
+    final encoded = base64UrlEncode(utf8.encode(identity)).replaceAll('=', '');
+    return 'server_profile.$encoded';
+  }
+
+  Future<void> _persistSavedServers(List<SavedServerProfile> profiles) async {
+    final includeSecrets = _secureCredentialStorageAvailable == false;
+    await _prefs?.setString(
+      'saved_servers',
+      jsonEncode(
+        profiles
+            .map((item) => item.toJson(includeSecrets: includeSecrets))
+            .toList(),
+      ),
+    );
   }
 
   Future<void> _saveServerProfile(
@@ -1465,10 +1916,11 @@ class AppState extends ChangeNotifier {
       ),
     ];
     savedServers = next.take(8).toList();
-    await _prefs?.setString(
-      'saved_servers',
-      jsonEncode(savedServers.map((item) => item.toJson()).toList()),
+    await _storeServerProfileSecrets(
+      profile,
+      replaceProfile: replaceProfile,
     );
+    await _persistSavedServers(savedServers);
   }
 
   Future<void> deleteSavedServerProfile(SavedServerProfile profile) async {
@@ -1491,10 +1943,8 @@ class AppState extends ChangeNotifier {
             _normalizeOptionalServerUrl(item.serverUrl) != normalizedServer;
       },
     ).toList();
-    await _prefs?.setString(
-      'saved_servers',
-      jsonEncode(savedServers.map((item) => item.toJson()).toList()),
-    );
+    await _deleteServerProfileSecrets(profile);
+    await _persistSavedServers(savedServers);
     notifyListeners();
   }
 

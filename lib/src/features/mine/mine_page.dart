@@ -12,6 +12,7 @@ import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/fnos_logo.dart';
 
 part 'statistics_pages.dart';
 part 'notification_pages.dart';
@@ -23,6 +24,7 @@ class MyPage extends StatefulWidget {
     required this.openFavorites,
     required this.openDownloads,
     required this.openPersonalization,
+    required this.openFnConnect,
     required this.openNotifications,
     required this.openStatistics,
     required this.openAbout,
@@ -33,6 +35,7 @@ class MyPage extends StatefulWidget {
   final VoidCallback openFavorites;
   final VoidCallback openDownloads;
   final VoidCallback openPersonalization;
+  final VoidCallback openFnConnect;
   final VoidCallback openNotifications;
   final VoidCallback openStatistics;
   final ValueChanged<String?> openAbout;
@@ -171,6 +174,8 @@ class _MyPageState extends State<MyPage> {
             ) /
             60)
         .round();
+    final listenedDuration =
+        formatMinutesMetricForLocale(context, listenedMinutes);
     final recentBookCount = _recent
         .map((item) => item.bookId)
         .where((id) => id.isNotEmpty)
@@ -208,8 +213,10 @@ class _MyPageState extends State<MyPage> {
                       title: l10n.mineHistoryTitle,
                       description: _recent.isEmpty
                           ? l10n.mineHistoryEmptyDescription
-                          : l10n.mineHistoryDescription(
-                              recentBookCount, _recent.length, listenedMinutes),
+                          : context.localeText(
+                              '最近听过 $recentBookCount 本 / ${_recent.length} 章，约 ${listenedDuration.value} ${listenedDuration.unit}',
+                              'Recently listened to $recentBookCount books / ${_recent.length} chapters, about ${listenedDuration.value} ${listenedDuration.unit}',
+                            ),
                       color: AppColors.primary600,
                       backgroundColor: AppColors.primary50,
                       onTap: widget.openHistory,
@@ -246,6 +253,18 @@ class _MyPageState extends State<MyPage> {
                       backgroundColor: Colors.blue.shade50,
                       onTap: widget.openPersonalization,
                     ),
+                    if (appState.activeProfile?.isFnosGateway == true)
+                      _EntryRow(
+                        leading: const FnosLogo(width: 28, height: 23),
+                        title: context.localeText('FN Connect', 'FN Connect'),
+                        description: context.localeText(
+                          '连接偏好与候选链路管理',
+                          'Connection preferences and link management',
+                        ),
+                        color: Colors.teal.shade600,
+                        backgroundColor: Colors.teal.shade50,
+                        onTap: widget.openFnConnect,
+                      ),
                     if (appState.isAdmin)
                       _EntryRow(
                         icon: Icons.notifications_none_rounded,
@@ -1058,7 +1077,8 @@ class _EntrySection extends StatelessWidget {
 
 class _EntryRow extends StatelessWidget {
   const _EntryRow({
-    required this.icon,
+    this.icon,
+    this.leading,
     required this.title,
     required this.description,
     required this.color,
@@ -1066,7 +1086,8 @@ class _EntryRow extends StatelessWidget {
     required this.onTap,
   });
 
-  final IconData icon;
+  final IconData? icon;
+  final Widget? leading;
   final String title;
   final String description;
   final Color color;
@@ -1090,7 +1111,9 @@ class _EntryRow extends StatelessWidget {
                   color: backgroundColor,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Center(
+                  child: leading ?? Icon(icon, color: color, size: 24),
+                ),
               ),
               const SizedBox(width: 16),
               Expanded(
