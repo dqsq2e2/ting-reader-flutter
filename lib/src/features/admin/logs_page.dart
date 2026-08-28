@@ -664,10 +664,29 @@ class _SystemPluginLogFilters extends StatelessWidget {
                   ),
                 ),
               ),
-              IconButton.outlined(
-                tooltip: context.localeText('重置筛选', 'Reset filters'),
-                onPressed: onReset,
-                icon: const Icon(Icons.undo_rounded, size: 19),
+              Tooltip(
+                message: context.localeText('重置筛选', 'Reset filters'),
+                child: Material(
+                  color: context.cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: onReset,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: context.faintBorder),
+                      ),
+                      child: Icon(
+                        LucideIcons.rotateCcw,
+                        size: 18,
+                        color: context.mutedText,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ],
           );
