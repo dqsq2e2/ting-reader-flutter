@@ -183,8 +183,8 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                     _numStat(overview, 'total_listen_seconds'),
                   ),
                   detail: context.localeText(
-                      '${_statText(overview, 'total_progress_records')} 条进度记录',
-                      '${_statText(overview, 'total_progress_records')} progress records'),
+                      '当前 ${_statText(overview, 'total_progress_records')} 条进度记录',
+                      '${_statText(overview, 'total_progress_records')} current progress records'),
                 ),
                 _StatisticsMetricTile(
                   width: width,
@@ -463,7 +463,7 @@ class _TrendChart extends StatelessWidget {
               children: [
                 _TrendStat(
                     width: width,
-                    label: context.localeText('更新次数', 'Updates'),
+                    label: context.localeText('近14天更新', 'Updates (14d)'),
                     value:
                         context.localeText('$totalUpdates 次', '$totalUpdates')),
                 _TrendStat(
@@ -1200,7 +1200,7 @@ class _TopBookCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: context.localeText('记录', 'Records'),
+                  label: context.localeText('近90天更新', 'Updates (90d)'),
                   value: _statText(item, 'progress_updates'),
                 ),
               ),
