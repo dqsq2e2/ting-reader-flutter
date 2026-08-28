@@ -4,6 +4,8 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:html/dom.dart' as html_dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:lucide_icons_flutter/test_icons.dart' as lucide_catalog;
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_win_floating/webview_plugin.dart';
@@ -20,6 +22,9 @@ import '../../core/utils/locale.dart';
 import '../app_scope.dart';
 
 const _missingPluginUiEntryError = '__missing_plugin_ui_entry__';
+const _maxPluginDocumentBytes = 2 * 1024 * 1024;
+const _maxPluginTextAssetBytes = 2 * 1024 * 1024;
+const _maxBundledPluginBytes = 8 * 1024 * 1024;
 
 class PluginExtensionHost extends StatefulWidget {
   const PluginExtensionHost({
@@ -2639,24 +2644,33 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           headers: app.api.authHeaders,
         );
       } else {
-        final response = await app.api.getTextUri(assetUri);
-        final responseData = response.data;
-        final html = responseData is List<int>
-            ? utf8.decode(responseData, allowMalformed: false)
-            : responseData?.toString() ?? '';
+        final html = await _fetchPluginTextAsset(
+          app: app,
+          uri: assetUri,
+          kind: _PluginTextAssetKind.document,
+        );
         final safeUrl = assetUri.replace(query: '', fragment: '').toString();
         debugPrint(
           '[plugin-webview] fetched plugin html url=$safeUrl '
-          'status=${response.statusCode} length=${html.length}',
+          'length=${html.length}',
         );
         if (_looksLikeTingReaderShell(html)) {
           throw StateError(
             'Plugin asset request returned the Ting Reader app shell',
           );
         }
+        final bundledHtml = await _bundlePluginTextAssets(
+          html: html,
+          assetUri: assetUri,
+          loadAsset: (uri, kind) => _fetchPluginTextAsset(
+            app: app,
+            uri: uri,
+            kind: kind,
+          ),
+        );
         await controller.loadHtmlString(
           _pluginHtmlForSandbox(
-            html: html,
+            html: bundledHtml,
             assetUrl: assetUrl,
             initPayload: initPayload,
             theme: theme,
@@ -3284,6 +3298,176 @@ Map<String, Object?> _pluginThemePayload(BuildContext context) {
 
 String _pluginThemeSignature(Map<String, Object?> theme) => jsonEncode(theme);
 
+enum _PluginTextAssetKind { document, stylesheet, script }
+
+extension on _PluginTextAssetKind {
+  String get label => switch (this) {
+        _PluginTextAssetKind.document => 'document',
+        _PluginTextAssetKind.stylesheet => 'stylesheet',
+        _PluginTextAssetKind.script => 'script',
+      };
+
+  String get accept => switch (this) {
+        _PluginTextAssetKind.document => 'text/html,application/xhtml+xml',
+        _PluginTextAssetKind.stylesheet => 'text/css',
+        _PluginTextAssetKind.script =>
+          'text/javascript,application/javascript,application/ecmascript',
+      };
+
+  bool acceptsContentType(String contentType) => switch (this) {
+        _PluginTextAssetKind.document => contentType.contains('text/html') ||
+            contentType.contains('application/xhtml+xml'),
+        _PluginTextAssetKind.stylesheet => contentType.contains('text/css'),
+        _PluginTextAssetKind.script => contentType.contains('javascript') ||
+            contentType.contains('ecmascript'),
+      };
+}
+
+Future<String> _fetchPluginTextAsset({
+  required AppState app,
+  required Uri uri,
+  required _PluginTextAssetKind kind,
+}) async {
+  final response = await app.api.getTextUri(uri, accept: kind.accept);
+  final contentType =
+      response.headers.value('content-type')?.toLowerCase() ?? '';
+  if (!kind.acceptsContentType(contentType)) {
+    throw StateError(
+      'Plugin ${kind.label} returned an invalid content type '
+      '(${contentType.isEmpty ? 'missing' : contentType})',
+    );
+  }
+
+  final responseData = response.data;
+  final bytes = responseData is List<int>
+      ? responseData
+      : utf8.encode(responseData?.toString() ?? '');
+  final limit = kind == _PluginTextAssetKind.document
+      ? _maxPluginDocumentBytes
+      : _maxPluginTextAssetBytes;
+  if (bytes.length > limit) {
+    throw StateError('Plugin ${kind.label} exceeds the size limit');
+  }
+  return utf8.decode(bytes, allowMalformed: false);
+}
+
+typedef _PluginTextAssetLoader = Future<String> Function(
+  Uri uri,
+  _PluginTextAssetKind kind,
+);
+
+Future<String> _bundlePluginTextAssets({
+  required String html,
+  required Uri assetUri,
+  required _PluginTextAssetLoader loadAsset,
+}) async {
+  final document = html_parser.parse(html);
+  var bundledBytes = utf8.encode(html).length;
+
+  void reserveBytes(String source) {
+    bundledBytes += utf8.encode(source).length;
+    if (bundledBytes > _maxBundledPluginBytes) {
+      throw StateError('Plugin UI exceeds the bundled asset size limit');
+    }
+  }
+
+  final stylesheets = document.querySelectorAll('link[href]').where((link) {
+    final rel = link.attributes['rel']?.toLowerCase().split(RegExp(r'\s+')) ??
+        const <String>[];
+    return rel.contains('stylesheet');
+  }).toList(growable: false);
+  for (final stylesheet in stylesheets) {
+    final href = stylesheet.attributes['href']?.trim() ?? '';
+    final uri = _resolvePluginTextAssetUri(assetUri, href);
+    final source = await loadAsset(uri, _PluginTextAssetKind.stylesheet);
+    if (RegExp(r'@import\b|url\s*\(', caseSensitive: false).hasMatch(source)) {
+      throw StateError(
+        'Plugin stylesheet contains a resource that cannot be bundled',
+      );
+    }
+    reserveBytes(source);
+    final replacement = html_dom.Element.tag('style')
+      ..attributes['data-ting-bundled-asset'] = uri.toString()
+      ..text = source;
+    stylesheet.replaceWith(replacement);
+  }
+
+  final scripts =
+      document.querySelectorAll('script[src]').toList(growable: false);
+  for (final script in scripts) {
+    if ((script.attributes['type'] ?? '').trim().toLowerCase() == 'module') {
+      throw StateError('Plugin module scripts are not supported');
+    }
+    final src = script.attributes['src']?.trim() ?? '';
+    final uri = _resolvePluginTextAssetUri(assetUri, src);
+    final source = await loadAsset(uri, _PluginTextAssetKind.script);
+    reserveBytes(source);
+    final replacement = html_dom.Element.tag('script');
+    for (final attribute in script.attributes.entries) {
+      final attributeName = attribute.key.toString();
+      if (const {'src', 'crossorigin', 'integrity', 'nonce'}
+          .contains(attributeName.toLowerCase())) {
+        continue;
+      }
+      replacement.attributes[attributeName] = attribute.value;
+    }
+    replacement.attributes['data-ting-bundled-asset'] = uri.toString();
+    replacement.nodes.add(
+      html_dom.Text(
+        source.replaceAll(
+          RegExp(r'</script', caseSensitive: false),
+          r'<\/script',
+        ),
+      ),
+    );
+    script.replaceWith(replacement);
+  }
+
+  return document.outerHtml;
+}
+
+Uri _resolvePluginTextAssetUri(Uri documentUri, String reference) {
+  if (reference.isEmpty) {
+    throw StateError('Plugin asset reference is empty');
+  }
+  final resolved = documentUri.resolve(reference);
+  final identity = _pluginAssetIdentity(documentUri);
+  if (!_isPluginAssetUrl(
+    resolved.toString(),
+    assetUrl: documentUri.toString(),
+    pluginId: identity.pluginId,
+    clientGrant: identity.clientGrant,
+  )) {
+    throw StateError('Plugin asset is outside the authorized package');
+  }
+  return resolved;
+}
+
+({String clientGrant, String pluginId}) _pluginAssetIdentity(Uri uri) {
+  final segments = uri.pathSegments;
+  final index = segments.indexOf('plugin-assets');
+  if (index < 0 || index + 2 >= segments.length) {
+    throw StateError('Plugin asset URL is invalid');
+  }
+  return (
+    clientGrant: segments[index + 1],
+    pluginId: segments[index + 2],
+  );
+}
+
+@visibleForTesting
+Future<String> bundlePluginTextAssetsForTesting({
+  required String html,
+  required String assetUrl,
+  required Future<String> Function(Uri uri, String kind) loadAsset,
+}) {
+  return _bundlePluginTextAssets(
+    html: html,
+    assetUri: Uri.parse(assetUrl),
+    loadAsset: (uri, kind) => loadAsset(uri, kind.label),
+  );
+}
+
 String _pluginHtmlForSandbox({
   required String html,
   required String assetUrl,
@@ -3317,7 +3501,7 @@ String _pluginHtmlForSandbox({
   const attributeEscape = HtmlEscape(HtmlEscapeMode.attribute);
   final injectedHead = '''
 <meta http-equiv="Content-Security-Policy" content="${attributeEscape.convert(policy)}">
-<base href="${attributeEscape.convert(assetUrl)}">
+<base href="${attributeEscape.convert(Uri.parse(assetUrl).resolve('.').toString())}">
 <script>$bootstrap</script>
 ''';
   final document = html

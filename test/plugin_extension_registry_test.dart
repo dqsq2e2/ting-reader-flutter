@@ -171,13 +171,66 @@ void main() {
     );
 
     expect(html, contains('TingPluginLifecycle.postMessage(bridgeToken)'));
-    expect(html, contains('<base href="$assetUrl">'));
+    expect(
+      html,
+      contains(
+        '<base href="https://example.test/api/v1/plugin-assets/grant-123/'
+        'ai-booklist-assistant/ui/">',
+      ),
+    );
     expect(html, contains('const bridgeToken = "token-123"'));
     expect(html, contains('<body>Ready</body>'));
     expect(html, isNot(contains('<iframe')));
     expect(
       html.indexOf('Object.defineProperty(window, "__TING_PLUGIN_BRIDGE__"'),
       lessThan(html.indexOf('./assistant.js')),
+    );
+  });
+
+  test('bundles plugin stylesheets and scripts before loading the WebView',
+      () async {
+    const assetUrl = 'https://example.test/api/v1/plugin-assets/grant-123/'
+        'ai-cover-generator/ui/cover.html';
+    final requested = <String>[];
+    final html = await bundlePluginTextAssetsForTesting(
+      html: '<!doctype html><html><head>'
+          '<link rel="stylesheet" href="./cover.css">'
+          '</head><body><script src="./cover.js"></script></body></html>',
+      assetUrl: assetUrl,
+      loadAsset: (uri, kind) async {
+        requested.add('$kind:$uri');
+        return kind == 'stylesheet'
+            ? 'body { color: rgb(1, 2, 3); }'
+            : 'window.coverLoaded = 1 < 2; // </script>';
+      },
+    );
+
+    expect(
+      requested,
+      [
+        'stylesheet:https://example.test/api/v1/plugin-assets/grant-123/'
+            'ai-cover-generator/ui/cover.css',
+        'script:https://example.test/api/v1/plugin-assets/grant-123/'
+            'ai-cover-generator/ui/cover.js',
+      ],
+    );
+    expect(html, contains('body { color: rgb(1, 2, 3); }'));
+    expect(html, contains('window.coverLoaded = 1 < 2;'));
+    expect(html, contains(r'<\/script>'));
+    expect(html, isNot(contains('href="./cover.css"')));
+    expect(html, isNot(contains('src="./cover.js"')));
+  });
+
+  test('rejects plugin text assets outside the authorized package', () async {
+    await expectLater(
+      bundlePluginTextAssetsForTesting(
+        html: '<html><head><script src="../../other/ui/pwn.js"></script>'
+            '</head></html>',
+        assetUrl: 'https://example.test/api/v1/plugin-assets/grant-123/'
+            'demo/ui/index.html',
+        loadAsset: (_, __) async => 'throw new Error("no");',
+      ),
+      throwsA(isA<StateError>()),
     );
   });
 }

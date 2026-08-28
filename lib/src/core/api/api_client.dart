@@ -113,7 +113,10 @@ class ApiClient {
   /// requests. Plugin UI HTML is an API asset, not an SPA fallback, so callers
   /// need a plain-text response and must not rely on the WebView's document
   /// navigation semantics.
-  Future<Response<dynamic>> getTextUri(Uri uri) {
+  Future<Response<dynamic>> getTextUri(
+    Uri uri, {
+    String accept = 'text/html,application/xhtml+xml',
+  }) {
     return _send(
       () => _dio.getUri<dynamic>(
         uri,
@@ -122,7 +125,7 @@ class ApiClient {
           // responses omit charset even though their files are UTF-8.
           responseType: ResponseType.bytes,
           headers: {
-            'Accept': 'text/html,application/xhtml+xml',
+            'Accept': accept,
             ...authHeaders,
           },
         ),
