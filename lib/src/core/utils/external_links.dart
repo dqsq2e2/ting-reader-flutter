@@ -1,15 +1,39 @@
 import 'package:url_launcher/url_launcher.dart';
 
 const tingReaderWebsiteUrl = 'https://www.tingreader.cn';
-const userAgreementUrl = '$tingReaderWebsiteUrl/about/user-agreement';
-const privacyPolicyUrl = '$tingReaderWebsiteUrl/about/privacy-policy';
-const changelogUrl = '$tingReaderWebsiteUrl/about/changelog';
-const serverUpdateGuideUrl = '$tingReaderWebsiteUrl/guide/update';
 
 String localizedTingReaderWebsiteUrl(String languageCode) {
-  return languageCode.toLowerCase().startsWith('en')
+  return _isEnglish(languageCode)
       ? '$tingReaderWebsiteUrl/en'
       : tingReaderWebsiteUrl;
+}
+
+String localizedUserAgreementUrl(String languageCode) {
+  return _localizedDocumentUrl('/about/user-agreement', languageCode);
+}
+
+String localizedPrivacyPolicyUrl(String languageCode) {
+  return _localizedDocumentUrl('/about/privacy-policy', languageCode);
+}
+
+String localizedChangelogUrl(String languageCode) {
+  return _localizedDocumentUrl('/about/changelog', languageCode);
+}
+
+String localizedServerUpdateGuideUrl(String languageCode) {
+  return _localizedDocumentUrl('/guide/update', languageCode);
+}
+
+String localizedDownloadPageUrl(String languageCode) {
+  return '${localizedTingReaderWebsiteUrl(languageCode)}#download';
+}
+
+String _localizedDocumentUrl(String path, String languageCode) {
+  return '$tingReaderWebsiteUrl$path${_isEnglish(languageCode) ? '/en' : ''}';
+}
+
+bool _isEnglish(String languageCode) {
+  return languageCode.toLowerCase().startsWith('en');
 }
 
 Future<bool> openExternalUrl(String rawUrl) async {

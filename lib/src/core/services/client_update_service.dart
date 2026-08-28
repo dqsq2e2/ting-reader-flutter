@@ -41,8 +41,6 @@ class ClientUpdateService {
               ),
             );
 
-  static const downloadPageUrl = '$tingReaderWebsiteUrl/#download';
-
   final Dio _dio;
 
   Future<PackageInfo> packageInfo() => PackageInfo.fromPlatform();
@@ -87,9 +85,10 @@ class ClientUpdateService {
   Future<void> openOrInstall(
     ClientReleaseInfo release, {
     ValueChanged<double>? onProgress,
+    String languageCode = 'zh',
   }) async {
     if (!release.hasDownload) {
-      await openExternalUrl(downloadPageUrl);
+      await openExternalUrl(localizedDownloadPageUrl(languageCode));
       return;
     }
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
@@ -103,7 +102,9 @@ class ClientUpdateService {
     await openExternalUrl(release.downloadUrl);
   }
 
-  Future<void> openDownloadPage() => openExternalUrl(downloadPageUrl);
+  Future<void> openDownloadPage(String languageCode) {
+    return openExternalUrl(localizedDownloadPageUrl(languageCode));
+  }
 
   String? get _clientEndpoint {
     if (kIsWeb) return null;

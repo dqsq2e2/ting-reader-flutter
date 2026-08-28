@@ -77,6 +77,7 @@ class _AboutPageState extends State<AboutPage> {
 
   Future<void> _checkBackendUpdate() async {
     if (_checkingBackend) return;
+    final languageCode = Localizations.localeOf(context).languageCode;
     setState(() => _checkingBackend = true);
     try {
       final res =
@@ -97,7 +98,9 @@ class _AboutPageState extends State<AboutPage> {
           actionLabel: context.localeText('前往官网更新', 'Open Guide'),
         );
         if (open == true) {
-          await openExternalUrl(serverUpdateGuideUrl);
+          await openExternalUrl(
+            localizedServerUpdateGuideUrl(languageCode),
+          );
         }
       } else {
         _showLocalizedSnack(
@@ -118,6 +121,7 @@ class _AboutPageState extends State<AboutPage> {
 
   Future<void> _checkClientUpdate() async {
     if (_checkingClient) return;
+    final languageCode = Localizations.localeOf(context).languageCode;
     setState(() => _checkingClient = true);
     try {
       final latest = await _clientUpdateService.fetchLatest();
@@ -126,7 +130,7 @@ class _AboutPageState extends State<AboutPage> {
           '当前平台请前往官网下载客户端',
           'Download the client from the website for this platform',
         );
-        await _clientUpdateService.openDownloadPage();
+        await _clientUpdateService.openDownloadPage(languageCode);
         return;
       }
 
@@ -161,6 +165,7 @@ class _AboutPageState extends State<AboutPage> {
       }
       await _clientUpdateService.openOrInstall(
         latest,
+        languageCode: languageCode,
         onProgress: (progress) {
           if (!mounted) return;
           setState(() {
@@ -375,6 +380,7 @@ class _AboutPageState extends State<AboutPage> {
 
   @override
   Widget build(BuildContext context) {
+    final languageCode = Localizations.localeOf(context).languageCode;
     return PageListView(
       onRefresh: _loadBackendVersion,
       children: [
@@ -464,10 +470,10 @@ class _AboutPageState extends State<AboutPage> {
                       icon: Icons.public_rounded,
                       label: context.localeText('官方网站', 'Official Website'),
                       value: localizedTingReaderWebsiteUrl(
-                        Localizations.localeOf(context).languageCode,
+                        languageCode,
                       ),
                       url: localizedTingReaderWebsiteUrl(
-                        Localizations.localeOf(context).languageCode,
+                        languageCode,
                       ),
                       iconColor: Colors.blue.shade600,
                       iconBackground: Colors.blue.shade50,
@@ -479,7 +485,7 @@ class _AboutPageState extends State<AboutPage> {
                         '使用许可与免责声明',
                         'License and disclaimer',
                       ),
-                      url: userAgreementUrl,
+                      url: localizedUserAgreementUrl(languageCode),
                       iconColor: Colors.indigo.shade500,
                       iconBackground: Colors.indigo.shade50,
                     ),
@@ -490,7 +496,7 @@ class _AboutPageState extends State<AboutPage> {
                         '个人信息与隐私说明',
                         'Personal information and privacy',
                       ),
-                      url: privacyPolicyUrl,
+                      url: localizedPrivacyPolicyUrl(languageCode),
                       iconColor: Colors.green.shade600,
                       iconBackground: const Color(0xFFEAFBF3),
                     ),
@@ -501,7 +507,7 @@ class _AboutPageState extends State<AboutPage> {
                         '版本迭代与修复记录',
                         'Versions and fixes',
                       ),
-                      url: changelogUrl,
+                      url: localizedChangelogUrl(languageCode),
                       iconColor: Colors.orange.shade600,
                       iconBackground: Colors.orange.shade50,
                     ),

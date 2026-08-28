@@ -23,6 +23,8 @@ class _LoginPageState extends State<LoginPage> {
   String? _loginStage;
   String? _activeProfileKey;
   bool _automaticGatewayLoginStarted = false;
+  bool _languageChanged = false;
+  bool _themeChanged = false;
 
   @override
   void initState() {
@@ -105,7 +107,12 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      await AppScope.appOf(context).login(
+      final appState = AppScope.appOf(context);
+      final loginSettingsPatch = <String, dynamic>{
+        if (_languageChanged) 'language': appState.languageCode,
+        if (_themeChanged) 'theme': appState.theme,
+      };
+      await appState.login(
         server: server,
         localServer: localServer,
         username: username,
@@ -167,6 +174,7 @@ class _LoginPageState extends State<LoginPage> {
               }
             : null,
         replaceProfile: replaceProfile,
+        loginSettingsPatch: loginSettingsPatch,
       );
     } on DioException catch (error) {
       if (!mounted) return;
@@ -249,6 +257,16 @@ class _LoginPageState extends State<LoginPage> {
     await AppScope.appOf(context).enterOfflineMode();
   }
 
+  Future<void> _changeLanguage(String value) async {
+    setState(() => _languageChanged = true);
+    await AppScope.appOf(context).setLanguage(value, syncRemote: false);
+  }
+
+  Future<void> _changeTheme(String value) async {
+    setState(() => _themeChanged = true);
+    await AppScope.appOf(context).setTheme(value, syncRemote: false);
+  }
+
   String _loginErrorMessage(Object error) {
     if (error is DioException) {
       final data = error.response?.data;
@@ -299,7 +317,23 @@ class _LoginPageState extends State<LoginPage> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const _LoginBrand(),
+                    Stack(
+                      alignment: Alignment.topCenter,
+                      children: [
+                        const _LoginBrand(),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: _LoginPreferencesBar(
+                            language: appState.languageCode,
+                            theme: appState.theme,
+                            enabled: !_loading,
+                            onLanguage: _changeLanguage,
+                            onTheme: _changeTheme,
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 22),
                     Row(
                       children: [
@@ -376,6 +410,164 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+class _LoginPreferencesBar extends StatelessWidget {
+  const _LoginPreferencesBar({
+    required this.language,
+    required this.theme,
+    required this.enabled,
+    required this.onLanguage,
+    required this.onTheme,
+  });
+
+  final String language;
+  final String theme;
+  final bool enabled;
+  final ValueChanged<String> onLanguage;
+  final ValueChanged<String> onTheme;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final languageName =
+        language == 'en' ? l10n.settingsLanguageEn : l10n.settingsLanguageZh;
+    final themeName = switch (theme) {
+      'light' => l10n.settingsLight,
+      'dark' => l10n.settingsDark,
+      _ => l10n.settingsSystem,
+    };
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '${l10n.settingsLanguage}: $languageName',
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            onPressed: enabled
+                ? () => onLanguage(language == 'en' ? 'zh' : 'en')
+                : null,
+            icon: _LoginLanguageIcon(
+              reversed: language == 'en',
+              color: context.mutedText,
+            ),
+          ),
+          IconButton(
+            tooltip: '${l10n.settingsAppearance}: $themeName',
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            onPressed: enabled
+                ? () => onTheme(switch (theme) {
+                      'system' => 'light',
+                      'light' => 'dark',
+                      _ => 'system',
+                    })
+                : null,
+            icon: Icon(
+              switch (theme) {
+                'light' => Icons.light_mode_rounded,
+                'dark' => Icons.dark_mode_rounded,
+                _ => Icons.monitor_rounded,
+              },
+              size: 20,
+              color: context.mutedText,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoginLanguageIcon extends StatelessWidget {
+  const _LoginLanguageIcon({
+    required this.reversed,
+    required this.color,
+  });
+
+  final bool reversed;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size.square(20),
+      painter: _LoginLanguageIconPainter(
+        reversed: reversed,
+        color: color,
+      ),
+    );
+  }
+}
+
+class _LoginLanguageIconPainter extends CustomPainter {
+  const _LoginLanguageIconPainter({
+    required this.reversed,
+    required this.color,
+  });
+
+  final bool reversed;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final scale = size.shortestSide / 26;
+    final translationOffset = reversed ? const Offset(10, 10) : Offset.zero;
+    final letterOffset = reversed ? const Offset(-10, -10) : const Offset(2, 2);
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.15
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    canvas.save();
+    canvas.scale(scale, scale);
+
+    canvas.drawLine(
+      const Offset(5, 8) + translationOffset,
+      const Offset(11, 14) + translationOffset,
+      paint,
+    );
+    canvas.drawPath(
+      Path()
+        ..moveTo(4 + translationOffset.dx, 14 + translationOffset.dy)
+        ..lineTo(10 + translationOffset.dx, 8 + translationOffset.dy)
+        ..lineTo(12 + translationOffset.dx, 5 + translationOffset.dy),
+      paint,
+    );
+    canvas.drawLine(
+      const Offset(2, 5) + translationOffset,
+      const Offset(14, 5) + translationOffset,
+      paint,
+    );
+    canvas.drawLine(
+      const Offset(7, 2) + translationOffset,
+      const Offset(8, 2) + translationOffset,
+      paint,
+    );
+
+    canvas.drawPath(
+      Path()
+        ..moveTo(22 + letterOffset.dx, 22 + letterOffset.dy)
+        ..lineTo(17 + letterOffset.dx, 12 + letterOffset.dy)
+        ..lineTo(12 + letterOffset.dx, 22 + letterOffset.dy),
+      paint,
+    );
+    canvas.drawLine(
+      const Offset(14, 18) + letterOffset,
+      const Offset(20, 18) + letterOffset,
+      paint,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _LoginLanguageIconPainter oldDelegate) {
+    return oldDelegate.reversed != reversed || oldDelegate.color != color;
+  }
+}
+
 class _LoginBrand extends StatelessWidget {
   const _LoginBrand();
 
@@ -410,6 +602,7 @@ class _LegalLinks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final languageCode = Localizations.localeOf(context).languageCode;
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -417,20 +610,20 @@ class _LegalLinks extends StatelessWidget {
       runSpacing: 4,
       children: [
         Text(
-          context.localeText('登录即表示您已阅读并同意', 'By signing in, you agree to'),
+          context.localeText('登录即表示您已阅读并同意', 'I agree to'),
           style: TextStyle(color: context.mutedText, fontSize: 12),
         ),
         _LegalLink(
           label: context.localeText('用户协议', 'User Agreement'),
-          url: userAgreementUrl,
+          url: localizedUserAgreementUrl(languageCode),
         ),
         Text(
-          context.localeText('和', 'and'),
+          context.localeText('和', '&'),
           style: TextStyle(color: context.mutedText, fontSize: 12),
         ),
         _LegalLink(
           label: context.localeText('隐私协议', 'Privacy Policy'),
-          url: privacyPolicyUrl,
+          url: localizedPrivacyPolicyUrl(languageCode),
         ),
       ],
     );

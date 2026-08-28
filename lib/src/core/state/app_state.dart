@@ -87,6 +87,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> settings = {};
   Locale? locale;
   String? connectionError;
+  String? _startupConnectionTarget;
   bool offlineMode = false;
   List<SavedServerProfile> savedServers = [];
   List<FnConnectCandidateGroup> fnConnectOrder = List.of(defaultFnConnectOrder);
@@ -111,6 +112,7 @@ class AppState extends ChangeNotifier {
   }
 
   bool get isAdmin => user?.isAdmin ?? false;
+  String? get startupConnectionTarget => _startupConnectionTarget;
   String get applicationTimeZone => app_time_zone.applicationTimeZone;
   int get pluginExtensionRevision => _pluginExtensionRevision;
 
@@ -149,8 +151,17 @@ class AppState extends ChangeNotifier {
     return cookie.split(';').any((part) => part.trim() == 'mode=relay');
   }
 
+  String get theme {
+    final nested = asMap(settings['settings_json']);
+    final value = (settings['theme'] ?? nested['theme'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    if (value == 'light' || value == 'dark') return value;
+    return 'system';
+  }
+
   ThemeMode get themeMode {
-    final theme = (settings['theme'] ?? '').toString();
     if (theme == 'light') return ThemeMode.light;
     if (theme == 'dark') return ThemeMode.dark;
     return ThemeMode.system;
@@ -353,9 +364,17 @@ class AppState extends ChangeNotifier {
       _loadRedirectCache();
       api.recoverBaseUrl = (_, requestCancelToken) =>
           recoverActiveUrl(cancelToken: requestCancelToken);
-      serverUrl = _prefs!.getString('server_url') ?? serverUrl;
-      localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
-      activeUrl = _prefs!.getString('active_url') ??
+      final storedServerUrl = _prefs!.getString('server_url');
+      final storedLocalServerUrl = _prefs!.getString('local_server_url');
+      final storedActiveUrl = _prefs!.getString('active_url');
+      _startupConnectionTarget = _firstNonEmptyUrl([
+        storedActiveUrl,
+        storedLocalServerUrl,
+        storedServerUrl,
+      ]);
+      serverUrl = storedServerUrl ?? serverUrl;
+      localServerUrl = storedLocalServerUrl ?? localServerUrl;
+      activeUrl = storedActiveUrl ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
       serverMode = _serverProfileModeFromPrefs();
       fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
@@ -366,7 +385,9 @@ class AppState extends ChangeNotifier {
       savedServers = await _loadSavedServers();
       _loadFnConnectSettings();
       _loadLocalLanguage();
+      _loadCachedSettings();
       _loadLocalApplicationTimeZone();
+      notifyListeners();
       api.setClientHeaders(await buildClientDeviceHeaders());
       checkCancelled();
       final hasPersistedServerConfig = _prefs!.containsKey('server_url') ||
@@ -407,12 +428,16 @@ class AppState extends ChangeNotifier {
           isCancelled: isStartupCancelled,
           cancelToken: cancelToken,
         );
+        _startupConnectionTarget = _firstNonEmptyUrl([activeUrl]);
+        notifyListeners();
         checkCancelled();
       } else if (token != null && user != null && hasPersistedServerConfig) {
         await _selectActiveUrlForCurrentNetwork(
           isCancelled: isStartupCancelled,
           cancelToken: cancelToken,
         );
+        _startupConnectionTarget = _firstNonEmptyUrl([activeUrl]);
+        notifyListeners();
         checkCancelled();
       }
       api.configure(
@@ -442,8 +467,6 @@ class AppState extends ChangeNotifier {
           );
           checkCancelled();
         }
-      } else {
-        _loadCachedSettings();
       }
     } on DioException catch (error) {
       if (CancelToken.isCancel(error) && isStartupCancelled()) {
@@ -463,9 +486,17 @@ class AppState extends ChangeNotifier {
     try {
       _prefs ??= await SharedPreferences.getInstance();
       _loadRedirectCache();
-      serverUrl = _prefs!.getString('server_url') ?? serverUrl;
-      localServerUrl = _prefs!.getString('local_server_url') ?? localServerUrl;
-      activeUrl = _prefs!.getString('active_url') ??
+      final storedServerUrl = _prefs!.getString('server_url');
+      final storedLocalServerUrl = _prefs!.getString('local_server_url');
+      final storedActiveUrl = _prefs!.getString('active_url');
+      _startupConnectionTarget = _firstNonEmptyUrl([
+        storedActiveUrl,
+        storedLocalServerUrl,
+        storedServerUrl,
+      ]);
+      serverUrl = storedServerUrl ?? serverUrl;
+      localServerUrl = storedLocalServerUrl ?? localServerUrl;
+      activeUrl = storedActiveUrl ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
       serverMode = _serverProfileModeFromPrefs();
       fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
@@ -805,6 +836,7 @@ class AppState extends ChangeNotifier {
     ValueChanged<FnConnectStage>? onFnConnectStage,
     Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
+    Map<String, dynamic> loginSettingsPatch = const {},
   }) async {
     connectionError = null;
     api.setClientHeaders(await buildClientDeviceHeaders());
@@ -992,7 +1024,18 @@ class AppState extends ChangeNotifier {
       ),
       replaceProfile: replaceProfile,
     );
-    await loadSettings(silent: true);
+    if (loginSettingsPatch.isEmpty) {
+      await loadSettings(silent: true);
+    } else {
+      try {
+        await updateSettings(loginSettingsPatch);
+      } catch (_) {
+        await loadSettings(silent: true);
+        _applySettingsPatch(loginSettingsPatch);
+        await _applyLanguageFromSettings();
+        await _cacheSettings(settings);
+      }
+    }
     await loadApplicationTimeZone(silent: true);
     notifyListeners();
     if (resumePlaybackAfterGatewayLogin) {
@@ -1413,17 +1456,23 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    final loginPreferences = <String, dynamic>{
+      'language': languageCode,
+      'theme': theme,
+    };
     token = null;
     user = null;
     offlineMode = false;
     connectionError = null;
     settings = {};
+    _applySettingsPatch(loginPreferences);
     needsGatewayLogin = false;
     api.configure(baseUrl: activeUrl, token: null, cookie: null);
     await _prefs?.remove('auth_token');
     await _prefs?.remove('user');
     await _prefs?.remove(_gatewayCookiePrefsKey);
     await _prefs?.remove(_gatewayReloginRequiredPrefsKey);
+    await _cacheSettings(settings);
     notifyListeners();
   }
 
@@ -1588,6 +1637,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> setTheme(String value, {bool syncRemote = true}) async {
+    final normalized = switch (value.trim().toLowerCase()) {
+      'light' => 'light',
+      'dark' => 'dark',
+      _ => 'system',
+    };
+    _applySettingsPatch({'theme': normalized});
+    await _cacheSettings(settings);
+    notifyListeners();
+    if (syncRemote && token != null && !offlineMode) {
+      try {
+        await updateSettings({'theme': normalized});
+      } catch (_) {
+        // Keep the local theme choice even if account sync is unavailable.
+      }
+    }
+  }
+
   Future<void> _applyLanguageFromSettings() async {
     final next = _languageFromSettings();
     if (next == null) return;
@@ -1671,6 +1738,14 @@ class AppState extends ChangeNotifier {
   ) {
     final normalized = {...patch};
     return normalized;
+  }
+
+  String? _firstNonEmptyUrl(Iterable<String?> values) {
+    for (final value in values) {
+      final normalized = value?.trim() ?? '';
+      if (normalized.isNotEmpty) return normalized;
+    }
+    return null;
   }
 
   Future<void> updateCurrentUser(User next) async {

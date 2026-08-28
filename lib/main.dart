@@ -209,11 +209,7 @@ class StartupConnectionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final l10n = context.l10n;
-    final target = appState.activeUrl.isNotEmpty
-        ? appState.activeUrl
-        : (appState.localServerUrl.isNotEmpty
-            ? appState.localServerUrl
-            : appState.serverUrl);
+    final target = appState.startupConnectionTarget;
 
     return Scaffold(
       body: SafeArea(
@@ -265,6 +261,9 @@ class StartupConnectionPage extends StatelessWidget {
                         border: Border.all(color: context.faintBorder),
                       ),
                       child: Row(
+                        mainAxisAlignment: target == null
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.start,
                         children: [
                           const SizedBox(
                             width: 20,
@@ -274,20 +273,22 @@ class StartupConnectionPage extends StatelessWidget {
                               color: AppColors.primary600,
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              target,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: context.isDark
-                                    ? AppColors.slate200
-                                    : AppColors.slate700,
-                                fontSize: 13,
+                          if (target != null) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                target,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: context.isDark
+                                      ? AppColors.slate200
+                                      : AppColors.slate700,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ],
                       ),
                     ),

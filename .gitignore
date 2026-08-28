@@ -52,6 +52,7 @@ tool/
 test/
 !test/
 test/*
+!test/external_links_test.dart
 !test/plugin_extension_registry_test.dart
 preview_screenshots/
 real_compare_screenshots/
