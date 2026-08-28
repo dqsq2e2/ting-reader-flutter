@@ -130,18 +130,92 @@ class FnConnectCandidate {
   String get appBaseUrl => '$rootUrl/app/ting-reader';
 }
 
+/// 候选链路探测失败的归类，用于 UI 展示简短的中英文原因文案，
+/// 不再透出底层异常（如 DioException）的长串英文报错。
+enum FnConnectProbeErrorKind {
+  /// 连接被拒绝（端口不通或服务未启动）
+  refused,
+
+  /// 连接超时（端口无响应）
+  timeout,
+
+  /// 网络不可达（目标主机不在当前网络）
+  unreachable,
+
+  /// 无法解析主机（DNS）
+  dns,
+
+  /// TLS 握手失败（证书或 HTTPS 端口异常）
+  tls,
+
+  /// 网关返回 invalid token（飞牛登录会话失效）
+  invalidToken,
+
+  /// 服务返回异常 HTTP 状态码
+  httpStatus,
+
+  /// 其他连接失败
+  connectionFailed,
+}
+
 class FnConnectCandidateResult {
   const FnConnectCandidateResult({
     required this.candidate,
     required this.reachable,
     required this.latency,
     this.error,
+    this.errorKind,
   });
 
   final FnConnectCandidate candidate;
   final bool reachable;
   final Duration latency;
+
+  /// 原始错误描述（调试用；UI 展示请用 [localizedErrorText]）。
   final String? error;
+
+  /// 失败原因归类；可达时为 null。
+  final FnConnectProbeErrorKind? errorKind;
+}
+
+extension FnConnectCandidateResultErrorText on FnConnectCandidateResult {
+  /// 探测失败原因的简短文案；[chinese] 为 true 返回中文，否则英文。
+  String localizedErrorText({required bool chinese}) {
+    String pick(String zh, String en) => chinese ? zh : en;
+    return switch (errorKind) {
+      null => pick('不可用', 'Unavailable'),
+      FnConnectProbeErrorKind.refused => pick(
+          '连接被拒绝（端口不通或服务未启动）',
+          'Connection refused (port closed or service down)',
+        ),
+      FnConnectProbeErrorKind.timeout => pick(
+          '连接超时（端口无响应）',
+          'Timed out (no response from port)',
+        ),
+      FnConnectProbeErrorKind.unreachable => pick(
+          '网络不可达（目标主机不在当前网络）',
+          'Network unreachable',
+        ),
+      FnConnectProbeErrorKind.dns => pick(
+          '无法解析主机（DNS）',
+          'Host resolution failed (DNS)',
+        ),
+      FnConnectProbeErrorKind.tls => pick(
+          'TLS 握手失败（证书或 HTTPS 端口异常）',
+          'TLS handshake failed',
+        ),
+      FnConnectProbeErrorKind.invalidToken => pick(
+          '飞牛登录已失效，请重新登录',
+          'fnOS session expired, sign in again',
+        ),
+      FnConnectProbeErrorKind.httpStatus => pick(
+          '服务返回错误（$error）',
+          'Server error ($error)',
+        ),
+      FnConnectProbeErrorKind.connectionFailed =>
+        pick('连接失败', 'Connection failed'),
+    };
+  }
 }
 
 class FnConnectLoginResult {
@@ -488,6 +562,11 @@ class FnConnectClient {
                 : invalidToken
                     ? 'invalid token'
                     : 'HTTP $status',
+            errorKind: reachable
+                ? null
+                : invalidToken
+                    ? FnConnectProbeErrorKind.invalidToken
+                    : FnConnectProbeErrorKind.httpStatus,
           );
         } catch (error) {
           return FnConnectCandidateResult(
@@ -497,6 +576,7 @@ class FnConnectClient {
             error: error is DioException
                 ? (error.message ?? error.type.name)
                 : error.toString(),
+            errorKind: _classifyProbeError(error),
           );
         }
       }),
@@ -570,6 +650,49 @@ class FnConnectClient {
     };
     return text.trim().toLowerCase() == 'invalid token';
   }
+}
+
+/// 将探测抛出的底层异常归类为 [FnConnectProbeErrorKind]。
+/// 关键词匹配参考 FeiNiuMusic 的错误识别（SocketException 文本含
+/// "Connection refused" / errno 等），超时类先用 DioException.type 判定。
+FnConnectProbeErrorKind _classifyProbeError(Object error) {
+  if (error is DioException) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.sendTimeout:
+        return FnConnectProbeErrorKind.timeout;
+      case DioExceptionType.badCertificate:
+        return FnConnectProbeErrorKind.tls;
+      default:
+        break;
+    }
+  }
+  final lower = error.toString().toLowerCase();
+  if (lower.contains('connection refused') ||
+      lower.contains('econnrefused') ||
+      lower.contains('10061')) {
+    return FnConnectProbeErrorKind.refused;
+  }
+  if (lower.contains('timed out') || lower.contains('timeout')) {
+    return FnConnectProbeErrorKind.timeout;
+  }
+  if (lower.contains('network is unreachable') ||
+      lower.contains('network unreachable') ||
+      lower.contains('ehostunreach') ||
+      lower.contains('enetunreach')) {
+    return FnConnectProbeErrorKind.unreachable;
+  }
+  if (lower.contains('host not found') ||
+      lower.contains('cannot resolve') ||
+      lower.contains('failed to resolve') ||
+      lower.contains('name or service not known')) {
+    return FnConnectProbeErrorKind.dns;
+  }
+  if (lower.contains('handshake') || lower.contains('certificate')) {
+    return FnConnectProbeErrorKind.tls;
+  }
+  return FnConnectProbeErrorKind.connectionFailed;
 }
 
 Map<String, dynamic> _stringMap(Object? value) {

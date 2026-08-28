@@ -204,8 +204,8 @@ class _FnConnectPageState extends State<FnConnectPage> {
                 ),
                 subtitle: Text(
                   context.localeText(
-                    '兼容自签名证书和 HTTPS IP 直连',
-                    'Allows self-signed certificates and HTTPS IP links',
+                    '签名证书或 IP 直连时开启',
+                    'Allows signed certificates and IP links',
                   ),
                 ),
               ),
@@ -683,7 +683,7 @@ class _CandidateRow extends StatelessWidget {
                   '可连接 · ${result.latency.inMilliseconds} ms',
                   'Reachable · ${result.latency.inMilliseconds} ms',
                 )
-              : result.error ?? context.localeText('不可用', 'Unavailable'),
+              : result.localizedErrorText(chinese: !context.isEnglishLocale),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),

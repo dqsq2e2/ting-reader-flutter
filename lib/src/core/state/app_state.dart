@@ -1193,8 +1193,9 @@ class AppState extends ChangeNotifier {
         .single;
     if (!verification.reachable) {
       throw StateError(textForLocale(
-        '链路校验失败：${verification.error ?? '不可用'}',
-        'Link verification failed: ${verification.error ?? 'unavailable'}',
+        '链路校验失败：${verification.localizedErrorText(chinese: !isEnglish)}',
+        'Link verification failed: '
+            '${verification.localizedErrorText(chinese: false)}',
       ));
     }
 
