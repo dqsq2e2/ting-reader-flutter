@@ -25,6 +25,7 @@ class ApiClient {
   String _baseUrl = 'http://localhost:3000';
   String? _token;
   String? _cookie;
+  int _authRevision = 0;
   Map<String, String> _clientHeaders = const {};
   String _languageCode = 'zh';
   final Map<String, Future<Response<dynamic>>> _inFlightMutations = {};
@@ -38,6 +39,7 @@ class ApiClient {
   String get baseUrl => _baseUrl;
   String? get token => _token;
   String? get cookie => _cookie;
+  int get authRevision => _authRevision;
   Map<String, String> get clientHeaders => _clientHeaders;
 
   /// Headers required by native media clients as well as ordinary API calls.
@@ -59,7 +61,11 @@ class ApiClient {
   }
 
   void configure({required String baseUrl, String? token, String? cookie}) {
-    _baseUrl = normalizeServerUrl(baseUrl);
+    final normalizedBaseUrl = normalizeServerUrl(baseUrl);
+    if (_baseUrl != normalizedBaseUrl || _token != token || _cookie != cookie) {
+      _authRevision++;
+    }
+    _baseUrl = normalizedBaseUrl;
     _token = token;
     _cookie = cookie;
     _dio.options.baseUrl = _baseUrl;
@@ -275,10 +281,19 @@ class ApiClient {
     CancelToken? cancelToken,
   }) async {
     var gatewaySessionExpiredNotified = false;
+    final requestAuthRevision = _authRevision;
     try {
       final response = await request();
-      if (_isGatewaySessionInvalidResponse(response)) {
+      if (_isExpiredGatewaySessionResponse(response)) {
         gatewaySessionExpiredNotified = true;
+        if (!authRetrying && requestAuthRevision != _authRevision) {
+          return await _send(
+            request,
+            retrying: retrying,
+            authRetrying: true,
+            cancelToken: cancelToken,
+          );
+        }
         final recovered = !authRetrying && await _notifyGatewaySessionExpired();
         if (recovered) {
           return await _send(
@@ -307,10 +322,9 @@ class ApiClient {
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) rethrow;
       if (!gatewaySessionExpiredNotified &&
-          _isGatewaySessionInvalidResponse(error.response)) {
+          _isExpiredGatewaySessionResponse(error.response)) {
         gatewaySessionExpiredNotified = true;
-        final recovered = !authRetrying && await _notifyGatewaySessionExpired();
-        if (recovered) {
+        if (!authRetrying && requestAuthRevision != _authRevision) {
           return await _send(
             request,
             retrying: retrying,
@@ -318,8 +332,7 @@ class ApiClient {
             cancelToken: cancelToken,
           );
         }
-      } else if (!authRetrying && _isExpiredAppSession(error)) {
-        final recovered = await _notifyGatewaySessionExpired();
+        final recovered = !authRetrying && await _notifyGatewaySessionExpired();
         if (recovered) {
           return await _send(
             request,
@@ -363,24 +376,24 @@ class ApiClient {
     }
   }
 
-  bool _isExpiredAppSession(DioException error) {
-    if (!(isGatewaySession?.call() ?? false)) return false;
-    if (error.response?.statusCode != 401) return false;
-    final path = error.requestOptions.uri.path;
-    return !path.endsWith('/api/auth/login') &&
-        !path.endsWith('/api/auth/token-login');
-  }
-
-  bool _isGatewaySessionInvalidResponse(Response<dynamic>? response) {
+  bool _isExpiredGatewaySessionResponse(Response<dynamic>? response) {
     if (response == null) return false;
     if (!(isGatewaySession?.call() ?? false)) return false;
-    final status = response.statusCode;
-    // fnOS Connect can return a plain "invalid token" body with HTTP 200.
-    // Only an explicit token marker in a successful response is handled here;
-    // ordinary HTTP failures remain ordinary API failures.
-    if (status == null || status < 200 || status >= 300) return false;
+    final path = response.requestOptions.uri.path;
+    if (path.endsWith('/api/auth/login') ||
+        path.endsWith('/api/auth/token-login')) {
+      return false;
+    }
 
-    return isInvalidGatewayTokenPayload(response.data);
+    final status = response.statusCode;
+    if (status == 401) return true;
+    if (status != null && status >= 300 && status < 400) return true;
+    if (isInvalidGatewayTokenPayload(response.data)) return true;
+
+    // Expired fnOS cookies may return the gateway login/SPA HTML with HTTP
+    // 200. API endpoints never legitimately return HTML apart from the plugin
+    // document routes explicitly exempted by [_isHtmlFallbackForApi].
+    return _isHtmlFallbackForApi(response);
   }
 
   /// Whether a gateway response explicitly reports an expired fnOS session.

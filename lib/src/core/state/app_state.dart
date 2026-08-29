@@ -200,17 +200,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<bool> _handleGatewaySessionExpired() async {
+    final activeRecovery = _gatewaySessionRecovery;
+    if (activeRecovery != null) {
+      return activeRecovery;
+    }
+
     if (serverMode != ServerProfileMode.fnosGateway ||
         fnId.trim().isEmpty ||
         token == null ||
         token!.trim().isEmpty ||
         offlineMode) {
       return false;
-    }
-
-    final activeRecovery = _gatewaySessionRecovery;
-    if (activeRecovery != null) {
-      return activeRecovery;
     }
 
     final recovery = _recoverGatewaySessionSilently();

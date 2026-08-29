@@ -127,6 +127,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   int? _handlingGatewayMediaCompletionGeneration;
   bool _gatewayReauthenticationPending = false;
   bool _resumeAfterGatewayReauthentication = false;
+  int _mediaAuthRevision = -1;
   double _furthestChapterPosition = 0;
   // 睡眠定时按集数：集数用完时阻止 playChapter 的 _playWithSession 自动起播，
   // 并在 _playWithSession 中暂停仍在播放的旧音频。
@@ -1019,15 +1020,18 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     String url,
     MediaItem mediaItem, {
     Duration? initialPosition,
-  }) {
+  }) async {
+    final authRevision = appState.api.authRevision;
     if (kIsWeb) {
-      return _audio.setAudioSource(
+      await _audio.setAudioSource(
         audio.AudioSource.uri(Uri.parse(url), tag: mediaItem),
         initialPosition: initialPosition,
       );
+      _mediaAuthRevision = authRevision;
+      return;
     }
     final headers = appState.api.authHeaders;
-    return _audio.setAudioSource(
+    await _audio.setAudioSource(
       audio.AudioSource.uri(
         Uri.parse(url),
         headers: headers.isEmpty ? null : headers,
@@ -1035,6 +1039,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       ),
       initialPosition: initialPosition,
     );
+    _mediaAuthRevision = authRevision;
   }
 
   Future<void> _setGatewaySingleChapterSource(
@@ -1051,6 +1056,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           milliseconds: (position * 1000).round(),
         ),
       );
+      _mediaAuthRevision = appState.api.authRevision;
       return;
     }
 
@@ -1124,6 +1130,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     required int initialIndex,
     required Duration initialPosition,
   }) async {
+    final authRevision = appState.api.authRevision;
     final headers = _streamHeaders;
     final sources = <audio.AudioSource>[];
     for (final chapter in chapterList) {
@@ -1145,6 +1152,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       initialIndex: initialIndex,
       initialPosition: initialPosition,
     );
+    _mediaAuthRevision = authRevision;
   }
 
   Map<String, String> get _streamHeaders {
@@ -1247,10 +1255,17 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
       // Native media requests bypass Dio and fnOS may return HTTP 200 with an
       // "invalid token" body. Verify the gateway before advancing.
+      final sourceAuthWasStale =
+          _mediaAuthRevision != appState.api.authRevision;
       final probeResult = await _probeGatewaySession();
       if (!_isActivePlay(playGeneration, chapter.id)) return;
       if (probeResult == _GatewaySessionProbeResult.expired) return;
       if (probeResult == _GatewaySessionProbeResult.unavailable) {
+        if ((sourceAuthWasStale ||
+                _mediaAuthRevision != appState.api.authRevision) &&
+            await _resumeAfterSilentGatewayRenewal(shouldResume)) {
+          return;
+        }
         _resumeAfterGatewayReauthentication = false;
         await _pauseAfterGatewayMediaFailure();
         error = appState.textForLocale(
@@ -1265,11 +1280,17 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
-      if (!usingLocalFile &&
+      final prematureCompletion = !usingLocalFile &&
           isPrematureGatewayMediaCompletion(
             positionSeconds: observedPosition,
             expectedDurationSeconds: chapter.duration.toDouble(),
-          )) {
+          );
+      if (prematureCompletion &&
+          _mediaAuthRevision != appState.api.authRevision &&
+          await _resumeAfterSilentGatewayRenewal(shouldResume)) {
+        return;
+      }
+      if (prematureCompletion) {
         _resumeAfterGatewayReauthentication = false;
         await _pauseAfterGatewayMediaFailure();
         error = appState.textForLocale(
@@ -1295,6 +1316,22 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (shouldAdvance) {
       unawaited(nextChapter());
+    }
+  }
+
+  Future<bool> _resumeAfterSilentGatewayRenewal(bool shouldResume) async {
+    try {
+      await _refreshPlaybackSourceAfterGatewayLogin();
+      _resumeAfterGatewayReauthentication = false;
+      error = null;
+      if (shouldResume) {
+        await _playWithSession();
+      }
+      if (_audio.playing) _startProgressTimer();
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
