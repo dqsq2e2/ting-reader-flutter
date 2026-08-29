@@ -234,15 +234,6 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
-          title: context.localeText('馆藏数据', 'Library Data'),
-          icon: Icons.library_books_rounded,
-          child: stats.libraryBreakdown.isEmpty
-              ? _StatisticsEmpty(
-                  text: context.localeText('暂无媒体库数据', 'No library data'))
-              : _LibraryBreakdownGrid(items: stats.libraryBreakdown),
-        ),
-        const SizedBox(height: 24),
-        _StatisticsPanel(
           title: context.localeText('用户使用情况', 'User Activity'),
           icon: Icons.insights_rounded,
           child: stats.userActivity.isEmpty
@@ -252,6 +243,15 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                   items: stats.userActivity,
                   maxListen: maxUserListen,
                 ),
+        ),
+        const SizedBox(height: 24),
+        _StatisticsPanel(
+          title: context.localeText('馆藏数据', 'Library Data'),
+          icon: Icons.library_books_rounded,
+          child: stats.libraryBreakdown.isEmpty
+              ? _StatisticsEmpty(
+                  text: context.localeText('暂无媒体库数据', 'No library data'))
+              : _LibraryBreakdownGrid(items: stats.libraryBreakdown),
         ),
         const SizedBox(height: 24),
         _StatisticsPanel(
@@ -821,12 +821,12 @@ class _LibraryBreakdownGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 820
+        final columns = constraints.maxWidth >= 1100
             ? 3
-            : constraints.maxWidth >= 560
+            : constraints.maxWidth >= 805
                 ? 2
                 : 1;
-        final gap = constraints.maxWidth < 430 ? 10.0 : 16.0;
+        const gap = 12.0;
         final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
         return Wrap(
           spacing: gap,
@@ -851,7 +851,7 @@ class _LibraryBreakdownCard extends StatelessWidget {
     final type = (item['library_type'] ?? '').toString();
     final compact = MediaQuery.sizeOf(context).width < 430;
     return Container(
-      padding: EdgeInsets.all(compact ? 16 : 22),
+      padding: EdgeInsets.all(compact ? 13 : 16),
       decoration: BoxDecoration(
         color: context.isDark
             ? AppColors.slate950.withValues(alpha: 0.45)
@@ -1093,7 +1093,11 @@ class _TopBooksLeaderboard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 1100 ? 3 : 1;
+        final columns = constraints.maxWidth >= 1100
+            ? 3
+            : constraints.maxWidth >= 805
+                ? 2
+                : 1;
         const gap = 12.0;
         final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
         return Wrap(
@@ -1214,8 +1218,7 @@ class _TopBookCard extends StatelessWidget {
               Expanded(
                 child: _CompactStat(
                   label: context.localeText('收听', 'Listened'),
-                  value: formatDurationHumanForLocale(
-                    context,
+                  value: _formatShortDurationLabel(
                     _numStat(item, 'listen_seconds'),
                   ),
                 ),

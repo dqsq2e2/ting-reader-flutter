@@ -70,6 +70,7 @@ bool _isMineDestination(AppDestination destination) {
 }
 
 bool _hidesMiniPlayer(AppDestination destination) {
+  if (_isMineDestination(destination)) return true;
   return switch (destination) {
     AppDestination.personalization ||
     AppDestination.fnConnect ||
