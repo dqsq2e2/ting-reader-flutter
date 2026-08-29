@@ -1076,7 +1076,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 const SizedBox(height: 14),
                 _Field(
                   controller: _fnosUsernameController,
-                  label: context.localeText('飞牛用户名', 'fnOS username'),
+                  label: context.localeText('用户名', 'Uername'),
                   hint: context.localeText('请输入飞牛用户名', 'Enter fnOS username'),
                   icon: Icons.person_outline_rounded,
                   validator: (value) => value == null || value.trim().isEmpty
@@ -1089,7 +1089,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                 const SizedBox(height: 14),
                 _Field(
                   controller: _fnosPasswordController,
-                  label: context.localeText('飞牛密码', 'fnOS password'),
+                  label: context.localeText('密码', 'Password'),
                   hint: context.localeText('请输入飞牛密码', 'Enter fnOS password'),
                   icon: Icons.lock_outline_rounded,
                   obscureText: true,
@@ -1131,7 +1131,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
               const SizedBox(height: 14),
               _Field(
                 controller: _usernameController,
-                label: context.localeText('TR 用户名', 'TR username'),
+                label: context.localeText('用户名', 'Username'),
                 hint: l10n.authUsernameHint,
                 icon: Icons.person_rounded,
                 validator: (value) => value == null || value.trim().isEmpty
@@ -1141,7 +1141,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
               const SizedBox(height: 14),
               _Field(
                 controller: _passwordController,
-                label: context.localeText('TR 密码', 'TR password'),
+                label: context.localeText('密码', 'Password'),
                 hint: l10n.authPasswordHint,
                 icon: Icons.lock_rounded,
                 obscureText: true,
@@ -1150,16 +1150,6 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                     ? l10n.authPasswordHint
                     : null,
               ),
-              if (_mode == _ServerLoginMode.fnid) ...[
-                const SizedBox(height: 14),
-                _InfoBox(
-                  icon: Icons.auto_awesome_rounded,
-                  text: context.localeText(
-                    '登录后将自动连接最快链路，会话过期自动续期，无需重复登录。',
-                    'Auto-connects to the fastest link and renews sessions automatically.',
-                  ),
-                ),
-              ],
               const SizedBox(height: 20),
               _ServerLoginActions(
                 canDelete: widget.profile != null,
