@@ -612,6 +612,51 @@ class _SystemPluginLogFilters extends StatelessWidget {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 760;
+          final searchField = SizedBox(
+            height: 40,
+            child: TextField(
+              controller: searchController,
+              textInputAction: TextInputAction.search,
+              onSubmitted: onSearchSubmitted,
+              decoration: InputDecoration(
+                hintText: context.localeText(
+                  '搜索消息、事件 ID、运行时或操作...',
+                  'Search message, event ID, runtime, or operation...',
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 19),
+                suffixIcon: IconButton(
+                  tooltip: context.localeText('搜索', 'Search'),
+                  onPressed: () => onSearchSubmitted(searchController.text),
+                  icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          );
+          final resetButton = Tooltip(
+            message: context.localeText('重置筛选', 'Reset filters'),
+            child: Material(
+              color: context.cardColor,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                onTap: onReset,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.faintBorder),
+                  ),
+                  child: Icon(
+                    LucideIcons.rotateCcw,
+                    size: 18,
+                    color: context.mutedText,
+                  ),
+                ),
+              ),
+            ),
+          );
           final filters = Wrap(
             spacing: 10,
             runSpacing: 10,
@@ -642,52 +687,21 @@ class _SystemPluginLogFilters extends StatelessWidget {
                 ],
                 onChanged: onSourceChanged,
               ),
-              SizedBox(
-                width: compact ? constraints.maxWidth : 360,
-                height: 40,
-                child: TextField(
-                  controller: searchController,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: onSearchSubmitted,
-                  decoration: InputDecoration(
-                    hintText: context.localeText(
-                      '搜索消息、事件 ID、运行时或操作...',
-                      'Search message, event ID, runtime, or operation...',
-                    ),
-                    prefixIcon: const Icon(Icons.search_rounded, size: 19),
-                    suffixIcon: IconButton(
-                      tooltip: context.localeText('搜索', 'Search'),
-                      onPressed: () => onSearchSubmitted(searchController.text),
-                      icon: const Icon(Icons.arrow_forward_rounded, size: 18),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(vertical: 8),
+              if (compact)
+                SizedBox(
+                  width: constraints.maxWidth,
+                  child: Row(
+                    children: [
+                      Expanded(child: searchField),
+                      const SizedBox(width: 10),
+                      resetButton,
+                    ],
                   ),
-                ),
-              ),
-              Tooltip(
-                message: context.localeText('重置筛选', 'Reset filters'),
-                child: Material(
-                  color: context.cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: onReset,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.faintBorder),
-                      ),
-                      child: Icon(
-                        LucideIcons.rotateCcw,
-                        size: 18,
-                        color: context.mutedText,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+                )
+              else ...[
+                SizedBox(width: 360, child: searchField),
+                resetButton,
+              ],
             ],
           );
           if (compact) {
