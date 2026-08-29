@@ -463,7 +463,10 @@ class _TrendChart extends StatelessWidget {
               children: [
                 _TrendStat(
                     width: width,
-                    label: context.localeText('近14天更新', 'Updates (14d)'),
+                    label: context.localeText(
+                      '近14天活跃记录',
+                      'Activity records (14d)',
+                    ),
                     value:
                         context.localeText('$totalUpdates 次', '$totalUpdates')),
                 _TrendStat(
@@ -1200,7 +1203,10 @@ class _TopBookCard extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: _CompactStat(
-                  label: context.localeText('近90天更新', 'Updates (90d)'),
+                  label: context.localeText(
+                    '近90天活跃记录',
+                    'Activity records (90d)',
+                  ),
                   value: _statText(item, 'progress_updates'),
                 ),
               ),
