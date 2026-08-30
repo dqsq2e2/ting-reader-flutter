@@ -403,7 +403,6 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
               ),
             ],
             const SizedBox(height: 34),
-            const SafeBottomSpacer(),
           ],
         ),
       ],

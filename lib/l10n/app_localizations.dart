@@ -413,7 +413,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsTimeZoneDescription.
   ///
   /// In zh, this message translates to:
-  /// **'仅管理员可设置全站时间显示；服务端和数据库仍统一使用 UTC。'**
+  /// **'设置全站时间显示时区，服务端仍统一使用 UTC。'**
   String get settingsTimeZoneDescription;
 
   /// No description provided for @settingsHomeLayout.
@@ -509,7 +509,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsPluginToolMenuDescription.
   ///
   /// In zh, this message translates to:
-  /// **'显示插件声明的右下角快捷入口，默认开启。'**
+  /// **'显示插件右下角快捷入口，默认开启。'**
   String get settingsPluginToolMenuDescription;
 
   /// No description provided for @settingsPlayback.

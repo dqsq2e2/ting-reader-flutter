@@ -66,7 +66,7 @@
   "settingsLanguageZh": "简体中文",
   "settingsLanguageEn": "English",
   "settingsTimeZone": "Application time zone",
-  "settingsTimeZoneDescription": "Only administrators can change time display across the app. The server and database remain in UTC.",
+  "settingsTimeZoneDescription": "Set the time display for the app. The server remains in UTC.",
   "settingsHomeLayout": "Home Layout",
   "settingsHomeHero": "Hero Recommendation",
   "settingsHomeHeroDescription": "Show continue listening and a large switchable cover hero",

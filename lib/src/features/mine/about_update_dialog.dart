@@ -513,7 +513,6 @@ class _AboutPageState extends State<AboutPage> {
                     ),
                   ],
                 ),
-                const SafeBottomSpacer(),
               ],
             ),
           ),

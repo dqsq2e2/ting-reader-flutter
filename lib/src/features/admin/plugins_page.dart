@@ -409,7 +409,6 @@ class _PluginsPageState extends State<PluginsPage> {
             onConfigure: _configure,
             onViewLogs: widget.onViewLogs,
           ),
-        const SafeBottomSpacer(),
       ],
     );
   }

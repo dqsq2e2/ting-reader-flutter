@@ -283,7 +283,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
             ],
           ),
         ),
-        const SafeBottomSpacer(),
       ],
     );
   }

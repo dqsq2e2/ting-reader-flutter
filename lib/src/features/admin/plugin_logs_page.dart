@@ -214,7 +214,6 @@ class _PluginLogsPageState extends State<PluginLogsPage> {
             ],
           ),
         ],
-        const SafeBottomSpacer(),
       ],
     );
   }

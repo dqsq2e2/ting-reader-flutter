@@ -247,7 +247,6 @@ class _FnConnectPageState extends State<FnConnectPage> {
               textAlign: TextAlign.center,
               style: TextStyle(color: context.mutedText, fontSize: 12),
             ),
-            const SafeBottomSpacer(),
           ],
         );
       },

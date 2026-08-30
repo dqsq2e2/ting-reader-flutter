@@ -116,7 +116,6 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
               ],
             ],
           ),
-        const SafeBottomSpacer(),
       ],
     );
   }

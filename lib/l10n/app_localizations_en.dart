@@ -174,7 +174,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsTimeZoneDescription =>
-      'Only administrators can change time display across the app. The server and database remain in UTC.';
+      'Set the time display for the app. The server remains in UTC.';
 
   @override
   String get settingsHomeLayout => 'Home Layout';

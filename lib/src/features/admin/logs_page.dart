@@ -340,7 +340,6 @@ class _LogsPageState extends State<LogsPage> {
             ],
           ),
         ),
-        const SafeBottomSpacer(),
       ],
     );
   }

@@ -130,7 +130,6 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
             onDelete: _delete,
           ),
         ),
-        const SafeBottomSpacer(),
       ],
     );
   }

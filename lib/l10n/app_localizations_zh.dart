@@ -169,7 +169,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsTimeZone => '应用时区';
 
   @override
-  String get settingsTimeZoneDescription => '仅管理员可设置全站时间显示；服务端和数据库仍统一使用 UTC。';
+  String get settingsTimeZoneDescription => '设置全站时间显示时区，服务端仍统一使用 UTC。';
 
   @override
   String get settingsHomeLayout => '首页调整';
@@ -217,7 +217,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsPluginToolMenu => '右下角插件工具菜单';
 
   @override
-  String get settingsPluginToolMenuDescription => '显示插件声明的右下角快捷入口，默认开启。';
+  String get settingsPluginToolMenuDescription => '显示插件右下角快捷入口，默认开启。';
 
   @override
   String get settingsPlayback => '播放偏好';

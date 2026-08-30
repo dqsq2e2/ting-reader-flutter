@@ -266,7 +266,6 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                   maxHeat: maxBookHeat,
                 ),
         ),
-        const SafeBottomSpacer(),
       ],
     );
   }
