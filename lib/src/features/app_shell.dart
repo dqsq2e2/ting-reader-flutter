@@ -70,10 +70,12 @@ bool _isMineDestination(AppDestination destination) {
 }
 
 bool _hidesMiniPlayer(AppDestination destination) {
-  if (_isMineDestination(destination)) return true;
   return switch (destination) {
     AppDestination.personalization ||
     AppDestination.fnConnect ||
+    AppDestination.notifications ||
+    AppDestination.statistics ||
+    AppDestination.about ||
     AppDestination.libraries ||
     AppDestination.plugins ||
     AppDestination.logs ||
@@ -470,7 +472,7 @@ class _AppShellState extends State<AppShell> {
                   final collapsedMini = player.isMiniCollapsed;
                   final showMiniPlayer = player.hasChapter &&
                       !player.isExpanded &&
-                      !_hidesMiniPlayer(_destination);
+                      !_hidesMiniPlayer(navDestination);
                   final pluginExtensionBottom = showMiniPlayer
                       ? (desktop ? 128.0 : 150.0 + bottomInset)
                       : (desktop ? 24.0 : 84.0 + bottomInset);

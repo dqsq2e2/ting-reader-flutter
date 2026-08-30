@@ -43,7 +43,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   double _playbackSpeed = 1.0;
   bool _autoPreload = true;
   bool _autoCache = false;
-  bool _ignoreAudioFocus = false;
+  bool _ignoreAudioFocus = true;
   bool _pluginToolMenuEnabled = true;
   String _widgetEmbedType = 'private';
   String _applicationTimeZone = defaultApplicationTimeZone;
@@ -100,7 +100,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       data,
       'ignore_audio_focus',
       nested: nested,
-      fallback: false,
+      fallback: true,
     );
     _pluginToolMenuEnabled = _boolValue(
       data,

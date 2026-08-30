@@ -149,7 +149,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   double playbackSpeed = 1;
   double volume = 1;
   String? error;
-  bool ignoreAudioFocus = false;
+  // Allow other apps to keep playing audio by default.
+  bool ignoreAudioFocus = true;
   bool usingLocalFile = false;
   bool _advancingFromOutro = false;
   // Always enabled: an interruption resumes only if playback was active when
@@ -198,7 +199,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       settings,
       'ignore_audio_focus',
       nested: nested,
-      fallback: false,
+      fallback: true,
     );
     await setSpeed(nextSpeed);
     await setIgnoreAudioFocus(next);
