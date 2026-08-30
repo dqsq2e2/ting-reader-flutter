@@ -1208,8 +1208,8 @@ class _TopBookCard extends StatelessWidget {
               Expanded(
                 child: _CompactStat(
                   label: context.localeText(
-                    '近90天活跃记录',
-                    'Activity records (90d)',
+                    '活跃记录',
+                    'Activity records',
                   ),
                   value: _statText(item, 'progress_updates'),
                 ),
