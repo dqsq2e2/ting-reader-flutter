@@ -106,54 +106,126 @@ class _PluginsPageState extends State<PluginsPage> {
     if (!await _ensureFlutterVersionSupported(item)) return;
     if (!mounted) return;
 
-    final api = AppScope.appOf(context).api;
-    final installedMessage = context.l10n.pluginsInstalled;
-    final installFailedMessage = context.l10n.pluginsInstallFailed;
+    final missingDependencies = item.dependencies
+        .where((dependencyId) => _installedVersion(dependencyId) == null)
+        .toList();
 
-    Future<void> install({required bool acceptUnverified}) async {
-      await api.post(
+    try {
+      if (missingDependencies.isNotEmpty) {
+        final dependencyNames = missingDependencies
+            .map((dependencyId) =>
+                _storePlugin(dependencyId)?.name ?? dependencyId)
+            .toList();
+        final agreed = await _confirmDependencyInstall(item, dependencyNames);
+        if (agreed != true || !mounted) return;
+
+        for (final dependencyId in missingDependencies) {
+          final dependency = _storePlugin(dependencyId);
+          if (dependency != null &&
+              !await _ensureFlutterVersionSupported(dependency)) {
+            return;
+          }
+          if (!mounted) return;
+
+          setState(() => _installingId = dependencyId);
+          try {
+            final installed = await _installStorePlugin(
+              pluginId: dependencyId,
+              fallbackName: dependency?.name ?? dependencyId,
+            );
+            if (!installed || !mounted) return;
+          } catch (_) {
+            if (mounted) {
+              _showSnack(context.l10n.pluginsDependencyInstallFailed(
+                dependency?.name ?? dependencyId,
+              ));
+            }
+            return;
+          }
+        }
+
+        await _reloadPluginLists();
+        if (!mounted) return;
+      }
+
+      setState(() => _installingId = item.id);
+      final installed = await _installStorePlugin(
+        pluginId: item.id,
+        fallbackName: item.name,
+      );
+      if (!installed || !mounted) return;
+      _showSnack(context.l10n.pluginsInstalled);
+      await _reloadPluginLists();
+    } catch (_) {
+      if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
+    } finally {
+      if (mounted) setState(() => _installingId = null);
+    }
+  }
+
+  Future<bool> _installStorePlugin({
+    required String pluginId,
+    required String fallbackName,
+  }) async {
+    final api = AppScope.appOf(context).api;
+
+    Future<void> install({required bool acceptUnverified}) {
+      return api.post(
         '/api/v1/store/install',
         data: {
-          'plugin_id': item.id,
+          'plugin_id': pluginId,
           if (acceptUnverified) 'accept_unverified': true,
         },
       );
     }
 
-    setState(() => _installingId = item.id);
     try {
       await install(acceptUnverified: false);
-      if (!mounted) return;
-      _showSnack(installedMessage);
-      await _reloadPluginLists();
+      return true;
     } on DioException catch (error) {
       final response = error.response;
       final data = response?.data;
-      if (response?.statusCode == 428 &&
-          data is Map &&
-          data['requires_confirmation'] == true) {
-        final warning = data['warning']?.toString() ??
-            '${item.name}由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
-        if (!mounted) return;
-        final agreed = await _confirmUnverifiedPlugin(warning);
-        if (agreed == true && mounted) {
-          try {
-            await install(acceptUnverified: true);
-            if (!mounted) return;
-            _showSnack(installedMessage);
-            await _reloadPluginLists();
-          } catch (_) {
-            if (mounted) _showSnack(installFailedMessage);
-          }
-        }
-      } else if (mounted) {
-        _showSnack(installFailedMessage);
+      if (response?.statusCode != 428 ||
+          data is! Map ||
+          data['requires_confirmation'] != true) {
+        rethrow;
       }
-    } catch (_) {
-      if (mounted) _showSnack(installFailedMessage);
-    } finally {
-      if (mounted) setState(() => _installingId = null);
+
+      final warning = data['warning']?.toString() ??
+          '$fallbackName由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
+      if (!mounted) return false;
+      final agreed = await _confirmUnverifiedPlugin(warning);
+      if (agreed != true || !mounted) return false;
+
+      await install(acceptUnverified: true);
+      return true;
     }
+  }
+
+  Future<bool?> _confirmDependencyInstall(
+    PluginItem item,
+    List<String> dependencyNames,
+  ) {
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.l10n.pluginsDependencyInstallTitle),
+        content: Text(context.l10n.pluginsDependencyInstallMessage(
+          item.name,
+          dependencyNames,
+        )),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(context.l10n.commonCancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(context.l10n.pluginsDependencyInstallAction),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _ensureFlutterVersionSupported(PluginItem item) async {
@@ -317,6 +389,17 @@ class _PluginsPageState extends State<PluginsPage> {
     final baseMatch =
         _installed.where((item) => _basePluginId(item.id) == base);
     if (baseMatch.isNotEmpty) return baseMatch.first.version;
+    return null;
+  }
+
+  PluginItem? _storePlugin(String pluginId) {
+    for (final item in _store) {
+      if (item.id == pluginId) return item;
+    }
+    final base = _basePluginId(pluginId);
+    for (final item in _store) {
+      if (_basePluginId(item.id) == base) return item;
+    }
     return null;
   }
 

@@ -50,6 +50,22 @@ extension PluginLocalizationCompat on AppLocalizations {
   String get pluginsNoDescription => _text('暂无插件简介', 'No description');
   String pluginsDependencyCount(int count) =>
       _text('$count 个依赖', '$count deps');
+  String get pluginsDependencyInstallTitle =>
+      _text('安装依赖插件？', 'Install dependencies?');
+  String pluginsDependencyInstallMessage(
+          String pluginName, List<String> dependencies) =>
+      _text(
+        '安装 $pluginName 需要以下依赖插件：\n\n'
+            '${dependencies.join('\n')}\n\n是否立即安装这些依赖？',
+        'Installing $pluginName requires these dependency plugins:\n\n'
+            '${dependencies.join('\n')}\n\nInstall them now?',
+      );
+  String get pluginsDependencyInstallAction =>
+      _text('安装依赖', 'Install dependencies');
+  String pluginsDependencyInstallFailed(String pluginName) => _text(
+        '依赖插件 $pluginName 安装失败',
+        'Failed to install dependency $pluginName',
+      );
   String pluginsPermissionCount(int count) =>
       _text('$count 个权限', '$count permissions');
   String get pluginsConfigurable => _text('可配置', 'Configurable');
