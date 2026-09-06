@@ -367,17 +367,27 @@ class AppState extends ChangeNotifier {
       final storedServerUrl = _prefs!.getString('server_url');
       final storedLocalServerUrl = _prefs!.getString('local_server_url');
       final storedActiveUrl = _prefs!.getString('active_url');
-      _startupConnectionTarget = _firstNonEmptyUrl([
-        storedActiveUrl,
-        storedLocalServerUrl,
-        storedServerUrl,
-      ]);
       serverUrl = storedServerUrl ?? serverUrl;
       localServerUrl = storedLocalServerUrl ?? localServerUrl;
       activeUrl = storedActiveUrl ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
       serverMode = _serverProfileModeFromPrefs();
       fnId = _prefs!.getString(_fnIdPrefsKey) ?? fnId;
+      final persistedGatewayHost = _gatewayHostForProfile(
+        server: serverUrl,
+        fnId: fnId,
+        mode: serverMode,
+      );
+      // For an FNID profile, activeUrl is only the last known route. Do not
+      // expose it on the startup page until the current network probe has
+      // selected a reachable route.
+      _startupConnectionTarget = persistedGatewayHost == null
+          ? _firstNonEmptyUrl([
+              storedActiveUrl,
+              storedLocalServerUrl,
+              storedServerUrl,
+            ])
+          : null;
       gatewayCookie = _prefs!.getString(_gatewayCookiePrefsKey);
       needsGatewayLogin =
           _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
@@ -402,11 +412,6 @@ class AppState extends ChangeNotifier {
         }
       }
 
-      final persistedGatewayHost = _gatewayHostForProfile(
-        server: serverUrl,
-        fnId: fnId,
-        mode: serverMode,
-      );
       if (persistedGatewayHost != null) {
         fnId = persistedGatewayHost;
       }
@@ -428,7 +433,24 @@ class AppState extends ChangeNotifier {
           isCancelled: isStartupCancelled,
           cancelToken: cancelToken,
         );
-        _startupConnectionTarget = _firstNonEmptyUrl([activeUrl]);
+        // The persisted active URL is only the last successful route. It may
+        // be unreachable after the app restarts (for example, when the LAN
+        // address or NAT mapping changed), so always refresh FN Connect
+        // candidates before restoring the authenticated session.
+        var routeDetected = serverMode != ServerProfileMode.fnosGateway;
+        if (serverMode == ServerProfileMode.fnosGateway &&
+            savedGatewayProfile != null &&
+            FnConnectClient.tokenFromCookie(gatewayCookie) != null) {
+          try {
+            routeDetected = await reprobeFnConnect();
+          } catch (_) {
+            // Keep the persisted route as a fallback. The normal connection
+            // validation below will still handle an expired gateway session.
+          }
+        }
+        if (routeDetected) {
+          _startupConnectionTarget = _firstNonEmptyUrl([activeUrl]);
+        }
         notifyListeners();
         checkCancelled();
       } else if (token != null && user != null && hasPersistedServerConfig) {
@@ -837,9 +859,12 @@ class AppState extends ChangeNotifier {
     Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
     Map<String, dynamic> loginSettingsPatch = const {},
+    CancelToken? cancelToken,
   }) async {
+    _throwIfLoginCancelled(cancelToken);
     connectionError = null;
     api.setClientHeaders(await buildClientDeviceHeaders());
+    _throwIfLoginCancelled(cancelToken);
 
     final detectedGatewayHost = _gatewayHostForProfile(
       server: server,
@@ -858,12 +883,21 @@ class AppState extends ChangeNotifier {
     ) async {
       final localResolution = localServerUrl.isEmpty
           ? null
-          : await _tryResolveLocalServer(localServerUrl, quick: true);
+          : await _tryResolveLocalServer(
+              localServerUrl,
+              quick: true,
+              cancelToken: cancelToken,
+            );
+      _throwIfLoginCancelled(cancelToken);
       if (localResolution != null) {
         serverMode = ServerProfileMode.direct;
         activeUrl = localResolution.resolvedUrl;
         api.configure(baseUrl: activeUrl, token: null, cookie: null);
-        return _loginToTingReader(username, password);
+        return _loginToTingReader(
+          username,
+          password,
+          cancelToken: cancelToken,
+        );
       }
 
       serverMode = ServerProfileMode.fnosGateway;
@@ -874,8 +908,13 @@ class AppState extends ChangeNotifier {
         cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
       );
       try {
-        return await _loginToTingReader(username, password);
+        return await _loginToTingReader(
+          username,
+          password,
+          cancelToken: cancelToken,
+        );
       } catch (error) {
+        _throwIfLoginCancelled(cancelToken);
         if (resolvedGatewayCookie.isNotEmpty &&
             !_shouldRefreshGatewayCookie(error)) {
           rethrow;
@@ -883,6 +922,7 @@ class AppState extends ChangeNotifier {
 
         onFnConnectStage?.call(FnConnectStage.webFallback);
         final refreshedLogin = await acquireGatewayLogin?.call();
+        _throwIfLoginCancelled(cancelToken);
         if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
           throw StateError(textForLocale(
             '飞牛登录已取消或未完成',
@@ -904,7 +944,11 @@ class AppState extends ChangeNotifier {
           token: null,
           cookie: resolvedGatewayCookie,
         );
-        final result = await _loginToTingReader(username, password);
+        final result = await _loginToTingReader(
+          username,
+          password,
+          cancelToken: cancelToken,
+        );
         usedWebGatewayLogin = true;
         return result;
       }
@@ -926,6 +970,7 @@ class AppState extends ChangeNotifier {
             disabledGroups: fnConnectDisabledGroups,
             ignoreSsl: fnConnectIgnoreSsl,
             onStage: onFnConnectStage,
+            cancelToken: cancelToken,
           );
           fnConnectCandidates = result.candidates;
           this.fnId = result.session.relayHost;
@@ -939,7 +984,11 @@ class AppState extends ChangeNotifier {
             cookie: resolvedGatewayCookie,
           );
           onFnConnectStage?.call(FnConnectStage.tingReaderLogin);
-          map = await _loginToTingReader(username, password);
+          map = await _loginToTingReader(
+            username,
+            password,
+            cancelToken: cancelToken,
+          );
         } on FnConnectAuthenticationException {
           throw StateError(textForLocale(
             '飞牛账号或密码错误',
@@ -949,6 +998,7 @@ class AppState extends ChangeNotifier {
           map = await loginWithGatewaySession(gatewayHost);
         }
       } else {
+        _throwIfLoginCancelled(cancelToken);
         map = await loginWithGatewaySession(gatewayHost);
       }
     } else {
@@ -958,15 +1008,21 @@ class AppState extends ChangeNotifier {
         server: serverUrl,
         localServer: localServerUrl,
         force: true,
+        cancelToken: cancelToken,
       );
       activeUrl = resolution.resolvedUrl;
       serverMode = ServerProfileMode.direct;
       this.fnId = '';
       resolvedGatewayCookie = '';
       api.configure(baseUrl: activeUrl, token: null, cookie: null);
-      map = await _loginToTingReader(username, password);
+      map = await _loginToTingReader(
+        username,
+        password,
+        cancelToken: cancelToken,
+      );
     }
 
+    _throwIfLoginCancelled(cancelToken);
     token = map['token']?.toString();
     user = _requireAuthenticatedUser(map['user']);
     this.gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
@@ -982,10 +1038,14 @@ class AppState extends ChangeNotifier {
     needsGatewayLogin = false;
 
     if (usedWebGatewayLogin) {
-      final verifiedUser = await api.get('/api/me');
+      final verifiedUser = await api.get(
+        '/api/me',
+        cancelToken: cancelToken,
+      );
       user = _requireAuthenticatedUser(verifiedUser.data);
     }
 
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString('server_url', serverUrl);
     await _prefs?.setString('local_server_url', localServerUrl);
     await _prefs?.setString('active_url', activeUrl);
@@ -1024,19 +1084,34 @@ class AppState extends ChangeNotifier {
       ),
       replaceProfile: replaceProfile,
     );
+    _throwIfLoginCancelled(cancelToken);
     if (loginSettingsPatch.isEmpty) {
-      await loadSettings(silent: true);
+      await loadSettings(
+        silent: true,
+        cancelToken: cancelToken,
+      );
     } else {
       try {
-        await updateSettings(loginSettingsPatch);
+        await updateSettings(
+          loginSettingsPatch,
+          cancelToken: cancelToken,
+        );
       } catch (_) {
-        await loadSettings(silent: true);
+        _throwIfLoginCancelled(cancelToken);
+        await loadSettings(
+          silent: true,
+          cancelToken: cancelToken,
+        );
         _applySettingsPatch(loginSettingsPatch);
         await _applyLanguageFromSettings();
         await _cacheSettings(settings);
       }
     }
-    await loadApplicationTimeZone(silent: true);
+    await loadApplicationTimeZone(
+      silent: true,
+      cancelToken: cancelToken,
+    );
+    _throwIfLoginCancelled(cancelToken);
     notifyListeners();
     if (resumePlaybackAfterGatewayLogin) {
       await _notifyGatewayLoginRestored();
@@ -1045,12 +1120,16 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, dynamic>> _loginToTingReader(
     String username,
-    String password,
-  ) async {
+    String password, {
+    CancelToken? cancelToken,
+  }) async {
+    _throwIfLoginCancelled(cancelToken);
     final response = await api.post(
       '/api/auth/login',
       data: {'username': username, 'password': password},
+      cancelToken: cancelToken,
     );
+    _throwIfLoginCancelled(cancelToken);
     final map = asMap(response.data);
     final loginToken = map['token']?.toString().trim() ?? '';
     if (loginToken.isEmpty) {
@@ -1058,6 +1137,16 @@ class AppState extends ChangeNotifier {
     }
     _requireAuthenticatedUser(map['user']);
     return map;
+  }
+
+  void _throwIfLoginCancelled(CancelToken? cancelToken) {
+    if (cancelToken?.isCancelled ?? false) {
+      throw cancelToken!.cancelError ??
+          DioException.requestCancelled(
+            requestOptions: RequestOptions(),
+            reason: 'Login cancelled',
+          );
+    }
   }
 
   User _requireAuthenticatedUser(Object? value) {
@@ -1132,8 +1221,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reprobeFnConnect() async {
-    if (fnConnectProbing) return;
+  Future<bool> reprobeFnConnect() async {
+    if (fnConnectProbing) return false;
     final profile = savedGatewayProfile;
     final sessionToken = FnConnectClient.tokenFromCookie(gatewayCookie);
     if (profile == null || sessionToken == null) {
@@ -1164,11 +1253,12 @@ class AppState extends ChangeNotifier {
       );
       final best =
           fnConnectCandidates.where((result) => result.reachable).firstOrNull;
-      if (best != null &&
-          ApiClient.normalizeServerUrl(best.candidate.appBaseUrl) !=
-              ApiClient.normalizeServerUrl(activeUrl)) {
+      if (best == null) return false;
+      if (ApiClient.normalizeServerUrl(best.candidate.appBaseUrl) !=
+          ApiClient.normalizeServerUrl(activeUrl)) {
         await switchFnConnectCandidate(best.candidate);
       }
+      return true;
     } finally {
       fnConnectProbing = false;
       notifyListeners();
@@ -1552,8 +1642,15 @@ class AppState extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  Future<void> updateSettings(Map<String, dynamic> patch) async {
-    final res = await api.post('/api/settings', data: patch);
+  Future<void> updateSettings(
+    Map<String, dynamic> patch, {
+    CancelToken? cancelToken,
+  }) async {
+    final res = await api.post(
+      '/api/settings',
+      data: patch,
+      cancelToken: cancelToken,
+    );
     settings = asMap(res.data);
     _applyLocalSettings();
     await _applyLanguageFromSettings();

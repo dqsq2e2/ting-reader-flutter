@@ -22,6 +22,8 @@ class _LoginPageState extends State<LoginPage> {
   String? _error;
   String? _loginStage;
   String? _activeProfileKey;
+  CancelToken? _loginCancelToken;
+  int _loginAttempt = 0;
   bool _automaticGatewayLoginStarted = false;
   bool _languageChanged = false;
   bool _themeChanged = false;
@@ -90,6 +92,9 @@ class _LoginPageState extends State<LoginPage> {
     SavedServerProfile? activeProfile,
     SavedServerProfile? replaceProfile,
   }) async {
+    final attempt = ++_loginAttempt;
+    final cancelToken = CancelToken();
+    _loginCancelToken = cancelToken;
     final detectedGatewayHost = FnosGateway.tryGatewayHostFromInput(server);
     final effectiveFnId = detectedGatewayHost ??
         (mode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty
@@ -123,7 +128,9 @@ class _LoginPageState extends State<LoginPage> {
         fnosPassword: fnosPassword,
         gatewayCookie: gatewayCookie,
         onFnConnectStage: (stage) {
-          if (!mounted) return;
+          if (!mounted || cancelToken.isCancelled || attempt != _loginAttempt) {
+            return;
+          }
           setState(() {
             _loginStage = switch (stage) {
               FnConnectStage.resolving => context.localeText(
@@ -151,7 +158,9 @@ class _LoginPageState extends State<LoginPage> {
         },
         acquireGatewayLogin: effectiveMode == ServerProfileMode.fnosGateway
             ? () async {
-                if (mounted) {
+                if (mounted &&
+                    !cancelToken.isCancelled &&
+                    attempt == _loginAttempt) {
                   setState(() {
                     _loginStage = context.localeText(
                       '正在等待飞牛登录完成',
@@ -165,7 +174,9 @@ class _LoginPageState extends State<LoginPage> {
                       ? rejectedGatewayCookie
                       : gatewayCookie,
                 );
-                if (mounted) {
+                if (mounted &&
+                    !cancelToken.isCancelled &&
+                    attempt == _loginAttempt) {
                   setState(() {
                     _loginStage = context.l10n.startupConnecting;
                   });
@@ -175,15 +186,21 @@ class _LoginPageState extends State<LoginPage> {
             : null,
         replaceProfile: replaceProfile,
         loginSettingsPatch: loginSettingsPatch,
+        cancelToken: cancelToken,
       );
     } on DioException catch (error) {
+      if (cancelToken.isCancelled || CancelToken.isCancel(error)) return;
       if (!mounted) return;
       setState(() => _error = _loginErrorMessage(error));
     } catch (error) {
+      if (cancelToken.isCancelled) return;
       if (!mounted) return;
       setState(() => _error = _loginErrorMessage(error));
     } finally {
-      if (mounted) {
+      if (identical(_loginCancelToken, cancelToken)) {
+        _loginCancelToken = null;
+      }
+      if (mounted && attempt == _loginAttempt) {
         setState(() {
           _loading = false;
           _loginStage = null;
@@ -191,6 +208,20 @@ class _LoginPageState extends State<LoginPage> {
         });
       }
     }
+  }
+
+  void _cancelLogin() {
+    final cancelToken = _loginCancelToken;
+    if (cancelToken == null || cancelToken.isCancelled) return;
+    ++_loginAttempt;
+    cancelToken.cancel(context.l10n.commonCancel);
+    _loginCancelToken = null;
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _loginStage = null;
+      _activeProfileKey = null;
+    });
   }
 
   Future<FnosGatewayLoginResult?> _openFnidLogin(
@@ -383,6 +414,7 @@ class _LoginPageState extends State<LoginPage> {
                         icon: Icons.sync_rounded,
                         text: _loginStage!,
                         spinning: true,
+                        onCancel: _loading ? _cancelLogin : null,
                       ),
                     ],
                     const SizedBox(height: 12),
@@ -1373,11 +1405,13 @@ class _InfoBox extends StatelessWidget {
     required this.icon,
     required this.text,
     this.spinning = false,
+    this.onCancel,
   });
 
   final IconData icon;
   final String text;
   final bool spinning;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -1420,6 +1454,22 @@ class _InfoBox extends StatelessWidget {
               ),
             ),
           ),
+          if (onCancel != null) ...[
+            const SizedBox(width: 4),
+            TextButton(
+              onPressed: onCancel,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(context.l10n.commonCancel),
+            ),
+          ],
         ],
       ),
     );

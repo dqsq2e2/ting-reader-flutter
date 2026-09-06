@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
@@ -256,12 +257,14 @@ class FnConnectClient {
     Set<FnConnectCandidateGroup> disabledGroups = const {},
     bool ignoreSsl = true,
     ValueChanged<FnConnectStage>? onStage,
+    CancelToken? cancelToken,
   }) async {
+    _throwIfCancelled(cancelToken);
     onStage?.call(FnConnectStage.resolving);
     final fallback = FnConnectDiscovery.fallback(fnId);
     FnConnectDiscovery discovery;
     try {
-      discovery = await discover(fnId);
+      discovery = await discover(fnId, cancelToken: cancelToken);
       if (discovery.relayHosts.isEmpty) {
         discovery = FnConnectDiscovery(
           fnId: discovery.fnId,
@@ -274,6 +277,7 @@ class FnConnectClient {
         );
       }
     } catch (_) {
+      _throwIfCancelled(cancelToken);
       discovery = fallback;
     }
 
@@ -282,6 +286,7 @@ class FnConnectClient {
       relayHost: discovery.relayHosts.first,
       username: username,
       password: password,
+      cancelToken: cancelToken,
     );
 
     onStage?.call(FnConnectStage.probing);
@@ -294,6 +299,7 @@ class FnConnectClient {
       candidates: candidates,
       token: session.token,
       ignoreSsl: ignoreSsl,
+      cancelToken: cancelToken,
     );
     final selectedResult = results.where((item) => item.reachable).firstOrNull;
     final relayFallback = candidates.where((item) => item.isRelay).firstOrNull;
@@ -313,7 +319,10 @@ class FnConnectClient {
     );
   }
 
-  Future<FnConnectDiscovery> discover(String rawFnId) async {
+  Future<FnConnectDiscovery> discover(
+    String rawFnId, {
+    CancelToken? cancelToken,
+  }) async {
     final fnId = FnosGateway.fnIdLabel(rawFnId);
     final body = jsonEncode({'fnId': fnId});
     final response = await _discoveryDio.post<dynamic>(
@@ -327,6 +336,7 @@ class FnConnectClient {
         connectTimeout: const Duration(seconds: 10),
         receiveTimeout: const Duration(seconds: 10),
       ),
+      cancelToken: cancelToken,
     );
     final root = _stringMap(response.data);
     if (_intValue(root['code'], -1) != 0) {
@@ -369,7 +379,9 @@ class FnConnectClient {
     required String relayHost,
     required String username,
     required String password,
+    CancelToken? cancelToken,
   }) async {
+    _throwIfCancelled(cancelToken);
     final host = normalizeRelayHost(relayHost);
     if (host.isEmpty) {
       throw const FnConnectProtocolException('Invalid fnOS relay host');
@@ -377,17 +389,34 @@ class FnConnectClient {
 
     FnosWebSocketSession? socket;
     try {
-      socket = await connectFnosWebSocket(
+      final socketFuture = connectFnosWebSocket(
         Uri.parse('wss://$host/websocket?type=main'),
         headers: {
           'Cookie': 'mode=relay',
           'Origin': 'https://$host',
         },
       );
+      if (cancelToken != null) {
+        unawaited(
+          socketFuture.then<void>(
+            (session) {
+              if (cancelToken.isCancelled) unawaited(session.close());
+            },
+            onError: (Object _) {},
+          ),
+        );
+      }
+      final connectedSocket =
+          await _awaitCancellable(socketFuture, cancelToken);
+      socket = connectedSocket;
       final reqId = DateTime.now().microsecondsSinceEpoch.toString();
-      final cryptoResponse = await socket.request(
-        {'reqid': reqId, 'req': 'util.crypto.getRSAPub'},
-        matches: (response) => response['reqid']?.toString() == reqId,
+      final cryptoResponse = await _awaitCancellable(
+        connectedSocket.request(
+          {'reqid': reqId, 'req': 'util.crypto.getRSAPub'},
+          matches: (response) => response['reqid']?.toString() == reqId,
+        ),
+        cancelToken,
+        onCancel: connectedSocket.close,
       );
       final publicKeyPem = cryptoResponse['pub']?.toString() ?? '';
       final serverSalt = cryptoResponse['si']?.toString() ?? '';
@@ -406,9 +435,13 @@ class FnConnectClient {
         username: username,
         password: password,
       );
-      final loginResponse = await socket.request(
-        envelope,
-        matches: (response) => response['reqid']?.toString() == reqId,
+      final loginResponse = await _awaitCancellable(
+        connectedSocket.request(
+          envelope,
+          matches: (response) => response['reqid']?.toString() == reqId,
+        ),
+        cancelToken,
+        onCancel: connectedSocket.close,
       );
       if (loginResponse['result']?.toString() != 'succ') {
         throw const FnConnectAuthenticationException(
@@ -430,6 +463,7 @@ class FnConnectClient {
     } on FnConnectException {
       rethrow;
     } catch (error) {
+      if (error is DioException && CancelToken.isCancel(error)) rethrow;
       throw FnConnectProtocolException('fnOS account login failed: $error');
     } finally {
       await socket?.close();
@@ -524,7 +558,9 @@ class FnConnectClient {
     required List<FnConnectCandidate> candidates,
     required String token,
     bool ignoreSsl = true,
+    CancelToken? cancelToken,
   }) async {
+    _throwIfCancelled(cancelToken);
     final dio = Dio(
       BaseOptions(
         followRedirects: false,
@@ -532,7 +568,7 @@ class FnConnectClient {
       ),
     );
     configureFnConnectHttpAdapter(dio, ignoreSsl: ignoreSsl);
-    return Future.wait(
+    final results = await Future.wait(
       candidates.map((candidate) async {
         final started = DateTime.now();
         final timeout = candidate.isRelay
@@ -541,6 +577,7 @@ class FnConnectClient {
         try {
           final response = await dio.get<dynamic>(
             '${candidate.appBaseUrl}/api/health',
+            cancelToken: cancelToken,
             options: Options(
               connectTimeout: timeout,
               receiveTimeout: timeout,
@@ -569,6 +606,11 @@ class FnConnectClient {
                     : FnConnectProbeErrorKind.httpStatus,
           );
         } catch (error) {
+          if (error is DioException &&
+              CancelToken.isCancel(error) &&
+              (cancelToken?.isCancelled ?? false)) {
+            rethrow;
+          }
           return FnConnectCandidateResult(
             candidate: candidate,
             reachable: false,
@@ -581,6 +623,8 @@ class FnConnectClient {
         }
       }),
     );
+    _throwIfCancelled(cancelToken);
+    return results;
   }
 
   static String cookieHeader(String token, {required bool relay}) {
@@ -649,6 +693,42 @@ class FnConnectClient {
       _ => data?.toString() ?? '',
     };
     return text.trim().toLowerCase() == 'invalid token';
+  }
+
+  Future<T> _awaitCancellable<T>(
+    Future<T> future,
+    CancelToken? cancelToken, {
+    Future<void> Function()? onCancel,
+  }) async {
+    if (cancelToken == null) return future;
+    if (cancelToken.isCancelled) {
+      try {
+        await onCancel?.call();
+      } catch (_) {}
+      throw cancelToken.cancelError ??
+          DioException.requestCancelled(
+            requestOptions: RequestOptions(),
+            reason: 'Login cancelled',
+          );
+    }
+
+    final cancellation = cancelToken.whenCancel.then<T>((error) async {
+      try {
+        await onCancel?.call();
+      } catch (_) {}
+      throw error;
+    });
+    return Future.any<T>([future, cancellation]);
+  }
+
+  void _throwIfCancelled(CancelToken? cancelToken) {
+    if (cancelToken?.isCancelled ?? false) {
+      throw cancelToken!.cancelError ??
+          DioException.requestCancelled(
+            requestOptions: RequestOptions(),
+            reason: 'Login cancelled',
+          );
+    }
   }
 }
 

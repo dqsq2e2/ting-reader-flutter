@@ -184,13 +184,16 @@ class _StartupGateState extends State<StartupGate> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = AppScope.appOf(context);
     if (_booting) {
-      return StartupConnectionPage(onCancel: () {
-        _cancelStartup();
-      });
+      return AnimatedBuilder(
+        animation: appState,
+        builder: (context, _) => StartupConnectionPage(
+          onCancel: _cancelStartup,
+        ),
+      );
     }
 
-    final appState = AppScope.appOf(context);
     return AnimatedBuilder(
       animation: appState,
       builder: (context, _) {
@@ -237,7 +240,11 @@ class StartupConnectionPage extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      appState.resolvingRedirect
+                      appState.resolvingRedirect ||
+                              appState.fnConnectProbing ||
+                              (appState.serverMode ==
+                                      ServerProfileMode.fnosGateway &&
+                                  appState.startupConnectionTarget == null)
                           ? l10n.startupResolving
                           : l10n.startupRestoring,
                       textAlign: TextAlign.center,
