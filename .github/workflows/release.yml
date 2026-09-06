@@ -40,7 +40,11 @@ jobs:
           fi
           cp pubspec.lock /tmp/pubspec.lock
           git fetch origin main
-          git checkout main
+          # flutter pub upgrade changes pubspec.lock in the detached tag
+          # checkout. Restore that file before switching branches, otherwise
+          # Git refuses to checkout main because the lockfile is dirty.
+          git restore --source=HEAD -- pubspec.lock
+          git checkout -B main origin/main
           cp /tmp/pubspec.lock pubspec.lock
           if git diff --quiet -- pubspec.lock; then
             echo "main already has the refreshed lockfile."
