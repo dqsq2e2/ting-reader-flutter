@@ -14,13 +14,7 @@ import 'fn_connect_http_adapter.dart';
 import 'fnos_gateway_auth.dart';
 import 'fnos_ws_transport.dart';
 
-enum FnConnectStage {
-  resolving,
-  signingIn,
-  probing,
-  tingReaderLogin,
-  webFallback
-}
+enum FnConnectStage { resolving, signingIn, probing, tingReaderLogin }
 
 enum FnConnectCandidateGroup { lan, publicIpv6, publicIpv4, relay }
 

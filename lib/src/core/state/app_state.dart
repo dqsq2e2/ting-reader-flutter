@@ -879,7 +879,6 @@ class AppState extends ChangeNotifier {
     String? fnAccessCode,
     Future<FnTwofaAnswer?> Function()? onTwofaRequired,
     ValueChanged<FnConnectStage>? onFnConnectStage,
-    Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
     Map<String, dynamic> loginSettingsPatch = const {},
     CancelToken? cancelToken,
@@ -903,7 +902,6 @@ class AppState extends ChangeNotifier {
     var resolvedAccessCode = (fnAccessCode?.trim().isNotEmpty == true)
         ? fnAccessCode!.trim()
         : (replaceProfile?.fnAccessCode.trim() ?? '');
-    var usedWebGatewayLogin = false;
 
     Future<Map<String, dynamic>> loginWithGatewaySession(
       String gatewayHost,
@@ -934,51 +932,13 @@ class AppState extends ChangeNotifier {
         token: null,
         cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
       );
-      try {
-        return await _loginToTingReader(
-          username,
-          password,
-          cancelToken: cancelToken,
-        );
-      } catch (error) {
-        _throwIfLoginCancelled(cancelToken);
-        if (resolvedGatewayCookie.isNotEmpty &&
-            !_shouldRefreshGatewayCookie(error)) {
-          rethrow;
-        }
-
-        onFnConnectStage?.call(FnConnectStage.webFallback);
-        final refreshedLogin = await acquireGatewayLogin?.call();
-        _throwIfLoginCancelled(cancelToken);
-        if (refreshedLogin == null || refreshedLogin.cookie.trim().isEmpty) {
-          throw StateError(textForLocale(
-            '飞牛登录已取消或未完成',
-            'fnOS login was cancelled or not completed',
-          ));
-        }
-        resolvedGatewayCookie = refreshedLogin.cookie.trim();
-        if (FnosGateway.isGatewayHostForFnId(
-          this.fnId,
-          refreshedLogin.gatewayHost,
-        )) {
-          final refreshedHost = refreshedLogin.gatewayHost;
-          activeUrl = FnosGateway.appUriForHost(refreshedHost).toString();
-          serverUrl = FnosGateway.originUriForHost(refreshedHost).toString();
-          this.fnId = refreshedHost;
-        }
-        api.configure(
-          baseUrl: activeUrl,
-          token: null,
-          cookie: resolvedGatewayCookie,
-        );
-        final result = await _loginToTingReader(
-          username,
-          password,
-          cancelToken: cancelToken,
-        );
-        usedWebGatewayLogin = true;
-        return result;
-      }
+      // 不再提供 WebView 登录回退：网关会话失效时直接把原始错误抛给调用方，
+      // 让登录问题暴露出来，而不是被内嵌登录页掩盖。
+      return _loginToTingReader(
+        username,
+        password,
+        cancelToken: cancelToken,
+      );
     }
 
     if (hasGatewayProfile) {
@@ -1097,14 +1057,6 @@ class AppState extends ChangeNotifier {
     );
     needsGatewayLogin = false;
 
-    if (usedWebGatewayLogin) {
-      final verifiedUser = await api.get(
-        '/api/me',
-        cancelToken: cancelToken,
-      );
-      user = _requireAuthenticatedUser(verifiedUser.data);
-    }
-
     _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString('server_url', serverUrl);
     await _prefs?.setString('local_server_url', localServerUrl);
@@ -1222,23 +1174,6 @@ class AppState extends ChangeNotifier {
       throw const _GatewaySessionExpired();
     }
     return User.fromJson(map);
-  }
-
-  bool _shouldRefreshGatewayCookie(Object error) {
-    if (error is! DioException) return true;
-    final status = error.response?.statusCode;
-    if (status == 301 ||
-        status == 302 ||
-        status == 303 ||
-        status == 307 ||
-        status == 308 ||
-        status == 401 ||
-        status == 403) {
-      return true;
-    }
-    final data = error.response?.data;
-    if (data is Map && data['error'] != null) return false;
-    return true;
   }
 
   Future<void> setFnConnectOrder(List<FnConnectCandidateGroup> order) async {

@@ -43,10 +43,6 @@ class _LoginPageState extends State<LoginPage> {
     final profile = appState.savedGatewayProfile;
     if (profile == null) return;
     _automaticGatewayLoginStarted = true;
-    final rejectedGatewayCookie =
-        appState.gatewayCookie?.trim().isNotEmpty == true
-            ? appState.gatewayCookie!.trim()
-            : profile.gatewayCookie.trim();
     // The marker is set only after the cached gateway session has failed
     // validation. Do not send that same stale cookie once more; go straight
     // into the fnOS login flow and obtain a fresh session.
@@ -54,13 +50,11 @@ class _LoginPageState extends State<LoginPage> {
       appState.needsGatewayLogin
           ? profile.copyWith(gatewayCookie: '')
           : profile,
-      rejectedGatewayCookie: rejectedGatewayCookie,
     );
   }
 
   Future<void> _loginWithProfile(
     SavedServerProfile profile, {
-    String rejectedGatewayCookie = '',
     String? fnAccessCode,
   }) async {
     await _login(
@@ -75,7 +69,6 @@ class _LoginPageState extends State<LoginPage> {
       gatewayCookie: profile.gatewayCookie,
       fnAccessCode: fnAccessCode ??
           (profile.fnAccessCode.isNotEmpty ? profile.fnAccessCode : null),
-      rejectedGatewayCookie: rejectedGatewayCookie,
       activeProfile: profile,
       replaceProfile: profile,
     );
@@ -92,7 +85,6 @@ class _LoginPageState extends State<LoginPage> {
     String fnosPassword = '',
     String gatewayCookie = '',
     String? fnAccessCode,
-    String rejectedGatewayCookie = '',
     SavedServerProfile? activeProfile,
     SavedServerProfile? replaceProfile,
   }) async {
@@ -182,41 +174,9 @@ class _LoginPageState extends State<LoginPage> {
                   '正在登录 Ting Reader…',
                   'Signing in to Ting Reader…',
                 ),
-              FnConnectStage.webFallback => context.localeText(
-                  '正在打开飞牛登录页…',
-                  'Opening fnOS login…',
-                ),
             };
           });
         },
-        acquireGatewayLogin: effectiveMode == ServerProfileMode.fnosGateway
-            ? () async {
-                if (mounted &&
-                    !cancelToken.isCancelled &&
-                    attempt == _loginAttempt) {
-                  setState(() {
-                    _loginStage = context.localeText(
-                      '正在等待飞牛登录完成',
-                      'Waiting for fnOS login to complete',
-                    );
-                  });
-                }
-                final result = await _openFnidLogin(
-                  effectiveFnId,
-                  rejectedCookie: rejectedGatewayCookie.isNotEmpty
-                      ? rejectedGatewayCookie
-                      : gatewayCookie,
-                );
-                if (mounted &&
-                    !cancelToken.isCancelled &&
-                    attempt == _loginAttempt) {
-                  setState(() {
-                    _loginStage = context.l10n.startupConnecting;
-                  });
-                }
-                return result;
-              }
-            : null,
         replaceProfile: replaceProfile,
         loginSettingsPatch: loginSettingsPatch,
         cancelToken: cancelToken,
@@ -248,7 +208,6 @@ class _LoginPageState extends State<LoginPage> {
         fnosPassword: fnosPassword,
         gatewayCookie: gatewayCookie,
         fnAccessCode: code,
-        rejectedGatewayCookie: rejectedGatewayCookie,
         activeProfile: activeProfile,
         replaceProfile: replaceProfile,
       );
@@ -280,7 +239,6 @@ class _LoginPageState extends State<LoginPage> {
         fnosPassword: fnosPassword,
         gatewayCookie: gatewayCookie,
         fnAccessCode: code,
-        rejectedGatewayCookie: rejectedGatewayCookie,
         activeProfile: activeProfile,
         replaceProfile: replaceProfile,
       );
@@ -340,21 +298,6 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
-  Future<FnosGatewayLoginResult?> _openFnidLogin(
-    String fnId, {
-    String rejectedCookie = '',
-  }) {
-    return Navigator.of(context).push<FnosGatewayLoginResult>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => FnidLoginPage(
-          fnId: fnId,
-          rejectedCookie: rejectedCookie,
-        ),
-      ),
-    );
-  }
-
   /// 二步验证（OTP）输入弹窗：飞牛账号开启双重验证后，
   /// `user.login` 只返回挑战，需要用户补一次 6 位动态验证码。
   Future<FnTwofaAnswer?> _promptTwofaAnswer() {
@@ -364,77 +307,51 @@ class _LoginPageState extends State<LoginPage> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
+        void confirm() {
+          final code = codeController.text.trim();
+          if (code.isEmpty) return;
+          Navigator.of(dialogContext).pop(
+            FnTwofaAnswer(code: code, trustDevice: trustDevice),
+          );
+        }
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(
-                context.localeText('二步验证', 'Two-step verification'),
+            return _GatewayAuthPromptDialog(
+              icon: Icons.phonelink_lock_rounded,
+              title: context.localeText('二步验证', 'Two-step verification'),
+              description: context.localeText(
+                '该飞牛账号已开启双重验证，请输入身份验证器上的 6 位动态验证码。',
+                'This fnOS account has two-factor authentication enabled. Enter the 6-digit code from your authenticator.',
               ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    context.localeText(
-                      '该飞牛账号已开启双重验证，请输入身份验证器上的 6 位动态验证码。',
-                      'This fnOS account has two-factor authentication enabled. Enter the 6-digit code from your authenticator.',
-                    ),
-                    style: TextStyle(color: context.mutedText, fontSize: 13),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: codeController,
-                    autofocus: true,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    decoration: InputDecoration(
-                      labelText: context.localeText('动态验证码', 'One-time code'),
-                      counterText: '',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onSubmitted: (_) {
-                      final code = codeController.text.trim();
-                      if (code.isNotEmpty) {
-                        Navigator.of(dialogContext).pop(
-                          FnTwofaAnswer(code: code, trustDevice: trustDevice),
-                        );
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 4),
-                  CheckboxListTile(
-                    value: trustDevice,
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(
-                      context.localeText('信任本设备', 'Trust this device'),
-                      style: const TextStyle(fontSize: 14),
-                    ),
-                    onChanged: (value) {
-                      setDialogState(() => trustDevice = value ?? false);
-                    },
-                  ),
-                ],
+              fieldLabel: context.localeText('动态验证码', 'One-time code'),
+              fieldHint: context.localeText(
+                '请输入 6 位动态验证码',
+                'Enter the 6-digit code',
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(context.l10n.commonCancel),
+              fieldIcon: Icons.pin_outlined,
+              controller: codeController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              confirmLabel: context.localeText('验证', 'Verify'),
+              onConfirm: confirm,
+              belowField: CheckboxListTile(
+                value: trustDevice,
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                activeColor: AppColors.primary600,
+                checkboxShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
                 ),
-                FilledButton(
-                  onPressed: () {
-                    final code = codeController.text.trim();
-                    if (code.isEmpty) return;
-                    Navigator.of(dialogContext).pop(
-                      FnTwofaAnswer(code: code, trustDevice: trustDevice),
-                    );
-                  },
-                  child: Text(context.localeText('验证', 'Verify')),
+                title: Text(
+                  context.localeText('信任本设备', 'Trust this device'),
+                  style: const TextStyle(fontSize: 14),
                 ),
-              ],
+                onChanged: (value) {
+                  setDialogState(() => trustDevice = value ?? false);
+                },
+              ),
             );
           },
         );
@@ -445,62 +362,55 @@ class _LoginPageState extends State<LoginPage> {
   /// 访问码输入弹窗（服务器开启访问码但本地未保存/保存错误时弹出）。
   Future<String?> _promptAccessCode({bool errorHint = false}) {
     final codeController = TextEditingController();
+    var obscure = true;
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(context.localeText('输入访问码', 'Enter access code')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                errorHint
-                    ? context.localeText(
-                        '访问码错误，请重新输入服务器访问码。',
-                        'Incorrect access code. Enter the server access code again.',
-                      )
-                    : context.localeText(
-                        '该服务器已开启访问码保护，请输入访问码后继续登录。',
-                        'This server is protected by an access code. Enter it to continue signing in.',
-                      ),
-                style: TextStyle(color: context.mutedText, fontSize: 13),
+        void confirm() {
+          final code = codeController.text.trim();
+          if (code.isEmpty) return;
+          Navigator.of(dialogContext).pop(code);
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return _GatewayAuthPromptDialog(
+              icon: Icons.verified_user_outlined,
+              title: context.localeText('输入访问码', 'Enter access code'),
+              description: errorHint
+                  ? context.localeText(
+                      '访问码错误，请重新输入服务器访问码。',
+                      'Incorrect access code. Enter the server access code again.',
+                    )
+                  : context.localeText(
+                      '该服务器已开启访问码保护，请输入访问码后继续登录。',
+                      'This server is protected by an access code. Enter it to continue signing in.',
+                    ),
+              descriptionIsError: errorHint,
+              fieldLabel: context.localeText('访问码', 'Access code'),
+              fieldHint: context.localeText(
+                '请输入服务器访问码',
+                'Enter the server access code',
               ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: codeController,
-                autofocus: true,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: context.localeText('访问码', 'Access code'),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              fieldIcon: Icons.key_rounded,
+              controller: codeController,
+              obscureText: obscure,
+              fieldSuffix: IconButton(
+                onPressed: () => setDialogState(() => obscure = !obscure),
+                icon: Icon(
+                  obscure
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  size: 18,
+                  color: AppColors.slate400,
                 ),
-                onSubmitted: (_) {
-                  final code = codeController.text.trim();
-                  if (code.isNotEmpty) {
-                    Navigator.of(dialogContext).pop(code);
-                  }
-                },
+                splashRadius: 18,
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(context.l10n.commonCancel),
-            ),
-            FilledButton(
-              onPressed: () {
-                final code = codeController.text.trim();
-                if (code.isEmpty) return;
-                Navigator.of(dialogContext).pop(code);
-              },
-              child: Text(context.localeText('继续', 'Continue')),
-            ),
-          ],
+              confirmLabel: context.localeText('继续', 'Continue'),
+              onConfirm: confirm,
+            );
+          },
         );
       },
     );
@@ -1174,7 +1084,6 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
   late final TextEditingController _localServerController;
   late final TextEditingController _fnosUsernameController;
   late final TextEditingController _fnosPasswordController;
-  late final TextEditingController _fnosAccessCodeController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
 
@@ -1205,8 +1114,6 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
         TextEditingController(text: profile?.fnosUsername ?? '');
     _fnosPasswordController =
         TextEditingController(text: profile?.fnosPassword ?? '');
-    _fnosAccessCodeController =
-        TextEditingController(text: profile?.fnAccessCode ?? '');
     _usernameController = TextEditingController(text: profile?.username ?? '');
     _passwordController = TextEditingController(text: profile?.password ?? '');
     _serverController.addListener(_handleWanAddressChanged);
@@ -1224,7 +1131,6 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
       ..dispose();
     _fnosUsernameController.dispose();
     _fnosPasswordController.dispose();
-    _fnosAccessCodeController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -1267,7 +1173,9 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
         fnId: gatewayHost ?? '',
         fnosUsername: isFnid ? _fnosUsernameController.text.trim() : '',
         fnosPassword: isFnid ? _fnosPasswordController.text : '',
-        fnAccessCode: isFnid ? _fnosAccessCodeController.text.trim() : '',
+        // 访问码不在编辑页展示：保留资料中已保存的值，
+        // 缺失或失效时登录流程会弹出访问码输入框单独询问。
+        fnAccessCode: isFnid ? (widget.profile?.fnAccessCode ?? '') : '',
       ),
     );
   }
@@ -1402,17 +1310,6 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                   validator: (value) => value == null || value.isEmpty
                       ? context.localeText('请输入飞牛密码', 'Enter fnOS password')
                       : null,
-                ),
-                const SizedBox(height: 14),
-                _Field(
-                  controller: _fnosAccessCodeController,
-                  label: context.localeText('访问码（可选）', 'Access code (optional)'),
-                  hint: context.localeText(
-                    '服务器开启访问码时必填',
-                    'Required when the server enables access code',
-                  ),
-                  icon: Icons.password_rounded,
-                  obscureText: true,
                 ),
               ] else ...[
                 _Field(
@@ -1683,6 +1580,217 @@ class _ErrorBox extends StatelessWidget {
       child: Text(
         message,
         style: const TextStyle(color: Colors.red, height: 1.35),
+      ),
+    );
+  }
+}
+
+/// 网关登录过程中的询问弹窗（二步验证 / 访问码）。
+/// 视觉语言与服务器登录卡片保持一致：卡片底色、18px 圆角、
+/// 主色图标徽章、InfoBox 风格说明条、主题输入框与主色按钮。
+class _GatewayAuthPromptDialog extends StatelessWidget {
+  const _GatewayAuthPromptDialog({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.fieldLabel,
+    required this.fieldHint,
+    required this.fieldIcon,
+    required this.controller,
+    required this.confirmLabel,
+    required this.onConfirm,
+    this.descriptionIsError = false,
+    this.keyboardType,
+    this.maxLength,
+    this.obscureText = false,
+    this.fieldSuffix,
+    this.belowField,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final bool descriptionIsError;
+  final String fieldLabel;
+  final String fieldHint;
+  final IconData fieldIcon;
+  final TextEditingController controller;
+  final TextInputType? keyboardType;
+  final int? maxLength;
+  final bool obscureText;
+  final Widget? fieldSuffix;
+  final Widget? belowField;
+  final String confirmLabel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    return Dialog(
+      backgroundColor: context.cardColor,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? AppColors.primary600.withValues(alpha: 0.16)
+                          : AppColors.primary50,
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: isDark
+                            ? AppColors.primary600.withValues(alpha: 0.3)
+                            : AppColors.primary100,
+                      ),
+                    ),
+                    child: Icon(icon, size: 20, color: AppColors.primary600),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _PromptMessageBox(
+                text: description,
+                isError: descriptionIsError,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                fieldLabel,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isDark ? AppColors.slate300 : AppColors.slate700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                obscureText: obscureText,
+                keyboardType: keyboardType,
+                maxLength: maxLength,
+                onSubmitted: (_) => onConfirm(),
+                decoration: InputDecoration(
+                  hintText: fieldHint,
+                  counterText: '',
+                  prefixIcon: Icon(
+                    fieldIcon,
+                    color: AppColors.slate400,
+                    size: 20,
+                  ),
+                  suffixIcon: fieldSuffix,
+                ),
+              ),
+              if (belowField != null) ...[
+                const SizedBox(height: 4),
+                belowField!,
+              ],
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.l10n.commonCancel),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: onConfirm,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary600,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(confirmLabel),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 弹窗内的说明条：普通提示用主色浅底，错误提示用红色浅底。
+class _PromptMessageBox extends StatelessWidget {
+  const _PromptMessageBox({required this.text, this.isError = false});
+
+  final String text;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.isDark;
+    final background = isError
+        ? Colors.red.withValues(alpha: 0.08)
+        : (isDark
+            ? AppColors.primary600.withValues(alpha: 0.12)
+            : AppColors.primary50);
+    final border = isError
+        ? Colors.red.withValues(alpha: 0.16)
+        : (isDark
+            ? AppColors.primary600.withValues(alpha: 0.24)
+            : AppColors.primary100);
+    final textColor = isError
+        ? Colors.red
+        : (isDark ? AppColors.slate300 : AppColors.slate600);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.info_outline_rounded,
+              size: 16,
+              color: isError ? Colors.red : AppColors.primary600,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: textColor, fontSize: 12, height: 1.35),
+            ),
+          ),
+        ],
       ),
     );
   }

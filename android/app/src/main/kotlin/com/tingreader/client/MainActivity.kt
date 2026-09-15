@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.webkit.CookieManager
 import androidx.core.view.WindowCompat
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -26,33 +25,6 @@ class MainActivity : AudioServiceActivity() {
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "requestNotificationPermission" -> requestNotificationPermission(result)
-                else -> result.notImplemented()
-            }
-        }
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "ting_reader/webview_cookies"
-        ).setMethodCallHandler { call, result ->
-            when (call.method) {
-                "getCookie" -> {
-                    val url = call.argument<String>("url")
-                    if (url.isNullOrBlank()) {
-                        result.error("invalid_url", "Cookie URL is required", null)
-                    } else {
-                        result.success(CookieManager.getInstance().getCookie(url) ?: "")
-                    }
-                }
-                "setCookie" -> {
-                    val url = call.argument<String>("url")
-                    val cookie = call.argument<String>("cookie")
-                    if (url.isNullOrBlank() || cookie.isNullOrBlank()) {
-                        result.error("invalid_cookie", "Cookie URL and value are required", null)
-                    } else {
-                        CookieManager.getInstance().setCookie(url, cookie) { success ->
-                            result.success(success)
-                        }
-                    }
-                }
                 else -> result.notImplemented()
             }
         }
