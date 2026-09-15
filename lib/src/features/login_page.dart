@@ -61,6 +61,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _loginWithProfile(
     SavedServerProfile profile, {
     String rejectedGatewayCookie = '',
+    String? fnAccessCode,
   }) async {
     await _login(
       server: profile.serverUrl,
@@ -72,6 +73,8 @@ class _LoginPageState extends State<LoginPage> {
       fnosUsername: profile.fnosUsername,
       fnosPassword: profile.fnosPassword,
       gatewayCookie: profile.gatewayCookie,
+      fnAccessCode: fnAccessCode ??
+          (profile.fnAccessCode.isNotEmpty ? profile.fnAccessCode : null),
       rejectedGatewayCookie: rejectedGatewayCookie,
       activeProfile: profile,
       replaceProfile: profile,
@@ -88,6 +91,7 @@ class _LoginPageState extends State<LoginPage> {
     String fnosUsername = '',
     String fnosPassword = '',
     String gatewayCookie = '',
+    String? fnAccessCode,
     String rejectedGatewayCookie = '',
     SavedServerProfile? activeProfile,
     SavedServerProfile? replaceProfile,
@@ -127,6 +131,35 @@ class _LoginPageState extends State<LoginPage> {
         fnosUsername: fnosUsername,
         fnosPassword: fnosPassword,
         gatewayCookie: gatewayCookie,
+        fnAccessCode: fnAccessCode,
+        onTwofaRequired: effectiveMode == ServerProfileMode.fnosGateway
+            ? () async {
+                if (!mounted ||
+                    cancelToken.isCancelled ||
+                    attempt != _loginAttempt) {
+                  return null;
+                }
+                if (mounted &&
+                    !cancelToken.isCancelled &&
+                    attempt == _loginAttempt) {
+                  setState(() {
+                    _loginStage = context.localeText(
+                      '需要二步验证',
+                      'Two-step verification required',
+                    );
+                  });
+                }
+                final answer = await _promptTwofaAnswer();
+                if (mounted &&
+                    !cancelToken.isCancelled &&
+                    attempt == _loginAttempt) {
+                  setState(() {
+                    _loginStage = context.l10n.startupConnecting;
+                  });
+                }
+                return answer;
+              }
+            : null,
         onFnConnectStage: (stage) {
           if (!mounted || cancelToken.isCancelled || attempt != _loginAttempt) {
             return;
@@ -188,6 +221,89 @@ class _LoginPageState extends State<LoginPage> {
         loginSettingsPatch: loginSettingsPatch,
         cancelToken: cancelToken,
       );
+    } on FnConnectAccessCodeRequiredException {
+      if (cancelToken.isCancelled || !mounted) return;
+      // 服务器已开启访问码但本地没有：弹窗询问后携带访问码重试。
+      final code = await _promptAccessCode();
+      if (cancelToken.isCancelled || !mounted) return;
+      if (code == null || code.isEmpty) {
+        setState(() {
+          _loading = false;
+          _loginStage = null;
+          _error = context.localeText(
+            '服务器已开启访问码，请输入访问码后重试',
+            'The server requires an access code. Enter it and try again',
+          );
+        });
+        return;
+      }
+      await _login(
+        server: server,
+        localServer: localServer,
+        username: username,
+        password: password,
+        mode: mode,
+        fnId: fnId,
+        fnosUsername: fnosUsername,
+        fnosPassword: fnosPassword,
+        gatewayCookie: gatewayCookie,
+        fnAccessCode: code,
+        rejectedGatewayCookie: rejectedGatewayCookie,
+        activeProfile: activeProfile,
+        replaceProfile: replaceProfile,
+      );
+      return;
+    } on FnConnectAccessCodeException {
+      if (cancelToken.isCancelled || !mounted) return;
+      // 访问码错误：清空旧值并弹窗重新询问。
+      final code = await _promptAccessCode(errorHint: true);
+      if (cancelToken.isCancelled || !mounted) return;
+      if (code == null || code.isEmpty) {
+        setState(() {
+          _loading = false;
+          _loginStage = null;
+          _error = context.localeText(
+            '访问码错误，请检查后重试',
+            'Incorrect access code. Check it and try again',
+          );
+        });
+        return;
+      }
+      await _login(
+        server: server,
+        localServer: localServer,
+        username: username,
+        password: password,
+        mode: mode,
+        fnId: fnId,
+        fnosUsername: fnosUsername,
+        fnosPassword: fnosPassword,
+        gatewayCookie: gatewayCookie,
+        fnAccessCode: code,
+        rejectedGatewayCookie: rejectedGatewayCookie,
+        activeProfile: activeProfile,
+        replaceProfile: replaceProfile,
+      );
+      return;
+    } on FnConnectTwofaSetupRequiredException {
+      if (cancelToken.isCancelled || !mounted) return;
+      setState(() {
+        _error = context.localeText(
+          '该飞牛账号被管理员要求启用双重验证，请先在飞牛网页端「个人设置 → 双重验证」完成绑定后再登录',
+          'This fnOS account must set up two-factor authentication first. Complete it in the fnOS web settings, then sign in',
+        );
+      });
+    } on FnConnectTwofaCancelledException {
+      if (cancelToken.isCancelled || !mounted) return;
+      // 用户主动取消二步验证：不显示错误，回到可重试状态。
+    } on FnConnectTwofaRequiredException {
+      if (cancelToken.isCancelled || !mounted) return;
+      setState(() {
+        _error = context.localeText(
+          '飞牛账号已开启二步验证，请重新登录并输入动态验证码',
+          'Two-step verification is enabled. Sign in again and enter the one-time code',
+        );
+      });
     } on DioException catch (error) {
       if (cancelToken.isCancelled || CancelToken.isCancel(error)) return;
       if (!mounted) return;
@@ -239,6 +355,157 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  /// 二步验证（OTP）输入弹窗：飞牛账号开启双重验证后，
+  /// `user.login` 只返回挑战，需要用户补一次 6 位动态验证码。
+  Future<FnTwofaAnswer?> _promptTwofaAnswer() {
+    final codeController = TextEditingController();
+    var trustDevice = false;
+    return showDialog<FnTwofaAnswer>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                context.localeText('二步验证', 'Two-step verification'),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    context.localeText(
+                      '该飞牛账号已开启双重验证，请输入身份验证器上的 6 位动态验证码。',
+                      'This fnOS account has two-factor authentication enabled. Enter the 6-digit code from your authenticator.',
+                    ),
+                    style: TextStyle(color: context.mutedText, fontSize: 13),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: codeController,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: InputDecoration(
+                      labelText: context.localeText('动态验证码', 'One-time code'),
+                      counterText: '',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onSubmitted: (_) {
+                      final code = codeController.text.trim();
+                      if (code.isNotEmpty) {
+                        Navigator.of(dialogContext).pop(
+                          FnTwofaAnswer(code: code, trustDevice: trustDevice),
+                        );
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  CheckboxListTile(
+                    value: trustDevice,
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(
+                      context.localeText('信任本设备', 'Trust this device'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    onChanged: (value) {
+                      setDialogState(() => trustDevice = value ?? false);
+                    },
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(context.l10n.commonCancel),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final code = codeController.text.trim();
+                    if (code.isEmpty) return;
+                    Navigator.of(dialogContext).pop(
+                      FnTwofaAnswer(code: code, trustDevice: trustDevice),
+                    );
+                  },
+                  child: Text(context.localeText('验证', 'Verify')),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// 访问码输入弹窗（服务器开启访问码但本地未保存/保存错误时弹出）。
+  Future<String?> _promptAccessCode({bool errorHint = false}) {
+    final codeController = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(context.localeText('输入访问码', 'Enter access code')),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                errorHint
+                    ? context.localeText(
+                        '访问码错误，请重新输入服务器访问码。',
+                        'Incorrect access code. Enter the server access code again.',
+                      )
+                    : context.localeText(
+                        '该服务器已开启访问码保护，请输入访问码后继续登录。',
+                        'This server is protected by an access code. Enter it to continue signing in.',
+                      ),
+                style: TextStyle(color: context.mutedText, fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: codeController,
+                autofocus: true,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: context.localeText('访问码', 'Access code'),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onSubmitted: (_) {
+                  final code = codeController.text.trim();
+                  if (code.isNotEmpty) {
+                    Navigator.of(dialogContext).pop(code);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(context.l10n.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () {
+                final code = codeController.text.trim();
+                if (code.isEmpty) return;
+                Navigator.of(dialogContext).pop(code);
+              },
+              child: Text(context.localeText('继续', 'Continue')),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _openServerDialog([SavedServerProfile? profile]) async {
     final result = await Navigator.of(context).push<_ServerLoginDraft>(
       MaterialPageRoute(
@@ -267,6 +534,7 @@ class _LoginPageState extends State<LoginPage> {
       fnId: result.fnId,
       fnosUsername: result.fnosUsername,
       fnosPassword: result.fnosPassword,
+      fnAccessCode: result.fnAccessCode,
       replaceProfile: profile,
     );
     if (!mounted) return;
@@ -279,6 +547,7 @@ class _LoginPageState extends State<LoginPage> {
       fnId: rememberedProfile.fnId,
       fnosUsername: rememberedProfile.fnosUsername,
       fnosPassword: rememberedProfile.fnosPassword,
+      fnAccessCode: rememberedProfile.fnAccessCode,
       activeProfile: rememberedProfile,
       replaceProfile: profile,
     );
@@ -905,6 +1174,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
   late final TextEditingController _localServerController;
   late final TextEditingController _fnosUsernameController;
   late final TextEditingController _fnosPasswordController;
+  late final TextEditingController _fnosAccessCodeController;
   late final TextEditingController _usernameController;
   late final TextEditingController _passwordController;
 
@@ -935,6 +1205,8 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
         TextEditingController(text: profile?.fnosUsername ?? '');
     _fnosPasswordController =
         TextEditingController(text: profile?.fnosPassword ?? '');
+    _fnosAccessCodeController =
+        TextEditingController(text: profile?.fnAccessCode ?? '');
     _usernameController = TextEditingController(text: profile?.username ?? '');
     _passwordController = TextEditingController(text: profile?.password ?? '');
     _serverController.addListener(_handleWanAddressChanged);
@@ -952,6 +1224,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
       ..dispose();
     _fnosUsernameController.dispose();
     _fnosPasswordController.dispose();
+    _fnosAccessCodeController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -994,6 +1267,7 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
         fnId: gatewayHost ?? '',
         fnosUsername: isFnid ? _fnosUsernameController.text.trim() : '',
         fnosPassword: isFnid ? _fnosPasswordController.text : '',
+        fnAccessCode: isFnid ? _fnosAccessCodeController.text.trim() : '',
       ),
     );
   }
@@ -1129,6 +1403,17 @@ class _ServerLoginDialogState extends State<_ServerLoginDialog> {
                       ? context.localeText('请输入飞牛密码', 'Enter fnOS password')
                       : null,
                 ),
+                const SizedBox(height: 14),
+                _Field(
+                  controller: _fnosAccessCodeController,
+                  label: context.localeText('访问码（可选）', 'Access code (optional)'),
+                  hint: context.localeText(
+                    '服务器开启访问码时必填',
+                    'Required when the server enables access code',
+                  ),
+                  icon: Icons.password_rounded,
+                  obscureText: true,
+                ),
               ] else ...[
                 _Field(
                   controller: _serverController,
@@ -1262,6 +1547,7 @@ class _ServerLoginDraft {
     required this.fnId,
     required this.fnosUsername,
     required this.fnosPassword,
+    this.fnAccessCode = '',
   }) : deleted = false;
 
   const _ServerLoginDraft.deleted()
@@ -1273,6 +1559,7 @@ class _ServerLoginDraft {
         fnId = '',
         fnosUsername = '',
         fnosPassword = '',
+        fnAccessCode = '',
         deleted = true;
 
   final String serverUrl;
@@ -1283,6 +1570,7 @@ class _ServerLoginDraft {
   final String fnId;
   final String fnosUsername;
   final String fnosPassword;
+  final String fnAccessCode;
   final bool deleted;
 }
 

@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../auth/fn_access_code.dart';
 import '../auth/fn_connect_client.dart';
 import '../auth/fnos_gateway_auth.dart';
 import '../api/plugin_capabilities_api.dart';
@@ -73,6 +74,13 @@ class AppState extends ChangeNotifier {
   Future<bool>? _gatewaySessionRecovery;
   Future<void> Function()? onGatewayLoginRequired;
   Future<void> Function()? onGatewayLoginRestored;
+
+  /// 正在进行中的网关静默重登（无重登时为 null）。
+  ///
+  /// 播放器在音频流异常结束（completed）时必须先等重登尘埃落定，
+  /// 再判断会话状态与重建音源——否则会把「重登踢掉旧会话导致的流截断」
+  /// 误判为音频流异常。
+  Future<void>? get gatewaySessionRecoveryInFlight => _gatewaySessionRecovery;
   CancelToken? _startupCancelToken;
   int _startupGeneration = 0;
   User? user;
@@ -243,6 +251,8 @@ class AppState extends ChangeNotifier {
         order: fnConnectOrder,
         disabledGroups: fnConnectDisabledGroups,
         ignoreSsl: fnConnectIgnoreSsl,
+        accessCode: profile.fnAccessCode,
+        deviceId: await _fnDeviceDid(),
       );
       fnConnectCandidates = result.candidates;
       serverMode = ServerProfileMode.fnosGateway;
@@ -253,6 +263,8 @@ class AppState extends ChangeNotifier {
       token = null;
       user = null;
       api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
+      // 访问码头先于 TR 登录请求生效（穿过网关的 /api/auth/login 同样需要）。
+      api.setGatewayExtraHeaders(FnAccessCode.headers(profile.fnAccessCode));
 
       final map = await _loginToTingReader(profile.username, profile.password);
       token = map['token']?.toString();
@@ -467,6 +479,12 @@ class AppState extends ChangeNotifier {
         token: token,
         cookie:
             serverMode == ServerProfileMode.fnosGateway ? gatewayCookie : null,
+      );
+      // 恢复上次的访问码头（若有）：路由切换与静默重登都不会重置它。
+      api.setGatewayExtraHeaders(
+        serverMode == ServerProfileMode.fnosGateway
+            ? FnAccessCode.headers(savedGatewayProfile?.fnAccessCode)
+            : const {},
       );
 
       if (token != null && user != null) {
@@ -745,6 +763,7 @@ class AppState extends ChangeNotifier {
     String fnosUsername = '',
     String fnosPassword = '',
     String gatewayCookie = '',
+    String fnAccessCode = '',
     SavedServerProfile? replaceProfile,
   }) async {
     final gatewayHost = _gatewayHostForProfile(
@@ -776,6 +795,8 @@ class AppState extends ChangeNotifier {
       fnosPassword:
           resolvedMode == ServerProfileMode.fnosGateway ? fnosPassword : '',
       gatewayCookie: gatewayCookie,
+      fnAccessCode:
+          resolvedMode == ServerProfileMode.fnosGateway ? fnAccessCode : '',
     );
     await _saveServerProfile(profile, replaceProfile: replaceProfile);
     notifyListeners();
@@ -855,6 +876,8 @@ class AppState extends ChangeNotifier {
     String fnosUsername = '',
     String fnosPassword = '',
     String? gatewayCookie,
+    String? fnAccessCode,
+    Future<FnTwofaAnswer?> Function()? onTwofaRequired,
     ValueChanged<FnConnectStage>? onFnConnectStage,
     Future<FnosGatewayLoginResult?> Function()? acquireGatewayLogin,
     SavedServerProfile? replaceProfile,
@@ -876,6 +899,10 @@ class AppState extends ChangeNotifier {
         hasGatewayProfile && needsGatewayLogin;
     Map<String, dynamic> map;
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
+    // 访问码来源优先级：本次登录输入 > 被替换/编辑的配置中已保存的值。
+    var resolvedAccessCode = (fnAccessCode?.trim().isNotEmpty == true)
+        ? fnAccessCode!.trim()
+        : (replaceProfile?.fnAccessCode.trim() ?? '');
     var usedWebGatewayLogin = false;
 
     Future<Map<String, dynamic>> loginWithGatewaySession(
@@ -959,6 +986,13 @@ class AppState extends ChangeNotifier {
       this.fnId = gatewayHost;
       serverUrl = FnosGateway.originUriForHost(gatewayHost).toString();
       localServerUrl = _normalizeOptionalServerUrl(localServer);
+      // 访问码头要赶在 TR 应用层登录（/api/auth/login）之前生效：
+      // 该请求同样穿过统一网关，缺少 x-access-code 会被网关 401 拦下。
+      api.setGatewayExtraHeaders(
+        resolvedAccessCode.isNotEmpty
+            ? FnAccessCode.headers(resolvedAccessCode)
+            : const {},
+      );
 
       if (fnosUsername.trim().isNotEmpty && fnosPassword.isNotEmpty) {
         try {
@@ -969,6 +1003,9 @@ class AppState extends ChangeNotifier {
             order: fnConnectOrder,
             disabledGroups: fnConnectDisabledGroups,
             ignoreSsl: fnConnectIgnoreSsl,
+            accessCode: resolvedAccessCode.isEmpty ? null : resolvedAccessCode,
+            deviceId: await _fnDeviceDid(),
+            onTwofaRequired: onTwofaRequired,
             onStage: onFnConnectStage,
             cancelToken: cancelToken,
           );
@@ -989,6 +1026,22 @@ class AppState extends ChangeNotifier {
             password,
             cancelToken: cancelToken,
           );
+        } on FnConnectAccessCodeRequiredException {
+          // 访问码相关错误必须原样上抛：登录页凭类型弹出访问码输入框。
+          rethrow;
+        } on FnConnectAccessCodeException {
+          rethrow;
+        } on FnConnectTwofaInvalidException {
+          throw StateError(textForLocale(
+            '二步验证码错误或已过期，请重新登录并输入新的动态验证码',
+            'The two-step code is wrong or expired. Sign in again with a fresh code',
+          ));
+        } on FnConnectTwofaRequiredException {
+          rethrow;
+        } on FnConnectTwofaSetupRequiredException {
+          rethrow;
+        } on FnConnectTwofaCancelledException {
+          rethrow;
         } on FnConnectAuthenticationException {
           throw StateError(textForLocale(
             '飞牛账号或密码错误',
@@ -1035,6 +1088,13 @@ class AppState extends ChangeNotifier {
           ? this.gatewayCookie
           : null,
     );
+    // 访问码头与 token/cookie 解耦：整个网关会话期间所有请求
+    // （含原生音频流）都要携带；直连模式清空。
+    api.setGatewayExtraHeaders(
+      hasGatewayProfile && resolvedAccessCode.isNotEmpty
+          ? FnAccessCode.headers(resolvedAccessCode)
+          : const {},
+    );
     needsGatewayLogin = false;
 
     if (usedWebGatewayLogin) {
@@ -1077,6 +1137,7 @@ class AppState extends ChangeNotifier {
         fnosUsername: hasGatewayProfile ? fnosUsername.trim() : '',
         fnosPassword: hasGatewayProfile ? fnosPassword : '',
         gatewayCookie: hasGatewayProfile ? (this.gatewayCookie ?? '') : '',
+        fnAccessCode: hasGatewayProfile ? resolvedAccessCode : '',
         gatewayCookieAt: hasGatewayProfile && this.gatewayCookie != null
             ? DateTime.now()
             : null,
@@ -1250,6 +1311,7 @@ class AppState extends ChangeNotifier {
         candidates: candidates,
         token: sessionToken,
         ignoreSsl: fnConnectIgnoreSsl,
+        accessCode: profile.fnAccessCode,
       );
       final best =
           fnConnectCandidates.where((result) => result.reachable).firstOrNull;
@@ -1279,6 +1341,7 @@ class AppState extends ChangeNotifier {
       candidates: [candidate],
       token: sessionToken,
       ignoreSsl: fnConnectIgnoreSsl,
+      accessCode: profile.fnAccessCode,
     ))
         .single;
     if (!verification.reachable) {
@@ -1559,6 +1622,7 @@ class AppState extends ChangeNotifier {
     _applySettingsPatch(loginPreferences);
     needsGatewayLogin = false;
     api.configure(baseUrl: activeUrl, token: null, cookie: null);
+    api.setGatewayExtraHeaders(const {});
     await _prefs?.remove('auth_token');
     await _prefs?.remove('user');
     await _prefs?.remove(_gatewayCookiePrefsKey);
@@ -2004,6 +2068,33 @@ class AppState extends ChangeNotifier {
         : 'direct|${_normalizeOptionalServerUrl(profile.serverUrl)}|${_normalizeOptionalServerUrl(profile.localServerUrl)}|${profile.username}';
     final encoded = base64UrlEncode(utf8.encode(identity)).replaceAll('=', '');
     return 'server_profile.$encoded';
+  }
+
+  String? _fnDeviceDidCache;
+
+  /// 飞牛设备 ID（`did`）：首次生成后持久化到安全存储。
+  ///
+  /// 二步验证勾选「信任本设备」时服务器按 did 记住受信设备，
+  /// 因此必须稳定复用同一个 did，不能每次登录重新生成。
+  Future<String> _fnDeviceDid() async {
+    final cached = _fnDeviceDidCache;
+    if (cached != null && cached.isNotEmpty) return cached;
+    const key = 'fn_device_did';
+    try {
+      final stored = await _secureStorage.read(key: key);
+      if (stored != null && stored.isNotEmpty) {
+        _fnDeviceDidCache = stored;
+        return stored;
+      }
+      final generated = fnConnect.generateDeviceId();
+      await _secureStorage.write(key: key, value: generated);
+      _fnDeviceDidCache = generated;
+      return generated;
+    } catch (_) {
+      // 安全存储不可用时退化为会话级随机 did（信任设备语义会失效，
+      // 但不影响每次登录时手动输入 OTP）。
+      return fnConnect.generateDeviceId();
+    }
   }
 
   Future<void> _persistSavedServers(List<SavedServerProfile> profiles) async {

@@ -9,6 +9,7 @@ import 'package:encrypt/encrypt.dart';
 import 'package:flutter/foundation.dart' show ValueChanged, visibleForTesting;
 import 'package:pointycastle/export.dart' show RSAPublicKey;
 
+import 'fn_access_code.dart';
 import 'fn_connect_http_adapter.dart';
 import 'fnos_gateway_auth.dart';
 import 'fnos_ws_transport.dart';
@@ -45,6 +46,51 @@ class FnConnectAuthenticationException extends FnConnectException {
 
 class FnConnectProtocolException extends FnConnectException {
   const FnConnectProtocolException(super.message);
+}
+
+/// 飞牛账号已开启访问码保护，但调用方未提供访问码。
+class FnConnectAccessCodeRequiredException extends FnConnectException {
+  const FnConnectAccessCodeRequiredException()
+      : super('服务器已开启访问码，请输入访问码');
+}
+
+/// 访问码校验失败（访问码错误）。
+class FnConnectAccessCodeException extends FnConnectAuthenticationException {
+  const FnConnectAccessCodeException() : super('访问码错误，请检查后重试');
+}
+
+/// 飞牛账号已开启二步验证，需要输入动态验证码（OTP）才能继续登录。
+///
+/// 仅在未提供 [FnConnectClient.login] 的 `onTwofaRequired` 回调时抛出；
+/// 提供回调后 SDK 会自动完成 `user.2fa.loginVerify` 流程。
+class FnConnectTwofaRequiredException extends FnConnectException {
+  const FnConnectTwofaRequiredException()
+      : super('飞牛账号已开启二步验证，请输入动态验证码');
+}
+
+/// 飞牛账号被管理员强制要求二步验证，但尚未绑定 TOTP 密钥，
+/// 必须先在飞牛网页端「个人设置 → 双重验证」完成绑定后才能登录。
+class FnConnectTwofaSetupRequiredException extends FnConnectException {
+  const FnConnectTwofaSetupRequiredException()
+      : super('飞牛账号被要求启用二步验证，请先在飞牛网页端完成双重验证绑定');
+}
+
+/// 二步验证码（OTP）校验失败。
+class FnConnectTwofaInvalidException extends FnConnectAuthenticationException {
+  const FnConnectTwofaInvalidException() : super('二步验证码错误或已过期');
+}
+
+/// 用户在二步验证输入环节取消。
+class FnConnectTwofaCancelledException extends FnConnectException {
+  const FnConnectTwofaCancelledException() : super('已取消二步验证');
+}
+
+/// 二步验证（OTP）应答：6 位动态验证码 + 是否信任本设备。
+class FnTwofaAnswer {
+  const FnTwofaAnswer({required this.code, this.trustDevice = false});
+
+  final String code;
+  final bool trustDevice;
 }
 
 class FnConnectDiscovery {
@@ -256,6 +302,9 @@ class FnConnectClient {
     List<FnConnectCandidateGroup> order = defaultFnConnectOrder,
     Set<FnConnectCandidateGroup> disabledGroups = const {},
     bool ignoreSsl = true,
+    String? accessCode,
+    String? deviceId,
+    Future<FnTwofaAnswer?> Function()? onTwofaRequired,
     ValueChanged<FnConnectStage>? onStage,
     CancelToken? cancelToken,
   }) async {
@@ -286,6 +335,10 @@ class FnConnectClient {
       relayHost: discovery.relayHosts.first,
       username: username,
       password: password,
+      accessCode: accessCode,
+      deviceId: deviceId,
+      onTwofaRequired: onTwofaRequired,
+      ignoreSsl: ignoreSsl,
       cancelToken: cancelToken,
     );
 
@@ -299,6 +352,7 @@ class FnConnectClient {
       candidates: candidates,
       token: session.token,
       ignoreSsl: ignoreSsl,
+      accessCode: accessCode,
       cancelToken: cancelToken,
     );
     final selectedResult = results.where((item) => item.reachable).firstOrNull;
@@ -379,6 +433,10 @@ class FnConnectClient {
     required String relayHost,
     required String username,
     required String password,
+    String? accessCode,
+    String? deviceId,
+    Future<FnTwofaAnswer?> Function()? onTwofaRequired,
+    bool ignoreSsl = true,
     CancelToken? cancelToken,
   }) async {
     _throwIfCancelled(cancelToken);
@@ -387,6 +445,26 @@ class FnConnectClient {
       throw const FnConnectProtocolException('Invalid fnOS relay host');
     }
 
+    // 访问码预检（飞牛「访问码」是 FN Connect 远程入口的中间件统一校验）。
+    // 未开启时直接放行；开启但未提供/提供错误访问码时给出明确错误，
+    // 而不是让 WebSocket 握手被网关拦下后报一个看不懂的连接错误。
+    final trimmedAccessCode = accessCode?.trim() ?? '';
+    final accessCodeStatus = await FnAccessCode.probe(
+      'https://$host',
+      accessCode: trimmedAccessCode.isEmpty ? null : trimmedAccessCode,
+      ignoreSsl: ignoreSsl,
+      cancelToken: cancelToken,
+    );
+    _throwIfCancelled(cancelToken);
+    final accessCodeHeaders = switch (accessCodeStatus) {
+      FnAccessCodeStatus.required =>
+        throw const FnConnectAccessCodeRequiredException(),
+      FnAccessCodeStatus.rejected =>
+        throw const FnConnectAccessCodeException(),
+      FnAccessCodeStatus.accepted => FnAccessCode.headers(trimmedAccessCode),
+      _ => const <String, String>{},
+    };
+
     FnosWebSocketSession? socket;
     try {
       final socketFuture = connectFnosWebSocket(
@@ -394,6 +472,7 @@ class FnConnectClient {
         headers: {
           'Cookie': 'mode=relay',
           'Origin': 'https://$host',
+          ...accessCodeHeaders,
         },
       );
       if (cancelToken != null) {
@@ -428,12 +507,16 @@ class FnConnectClient {
         );
       }
 
+      final did = (deviceId != null && deviceId.trim().isNotEmpty)
+          ? deviceId.trim()
+          : generateDeviceId();
       final envelope = buildLoginEnvelope(
         publicKeyPem: publicKeyPem,
         serverSalt: serverSalt,
         reqId: reqId,
         username: username,
         password: password,
+        deviceId: did,
       );
       final loginResponse = await _awaitCancellable(
         connectedSocket.request(
@@ -449,16 +532,37 @@ class FnConnectClient {
         );
       }
       final token = loginResponse['token']?.toString().trim() ?? '';
-      if (token.isEmpty) {
-        throw const FnConnectProtocolException(
-          'fnOS login response did not include a session token',
+      if (token.isNotEmpty) {
+        return FnConnectSession(
+          token: token,
+          relayHost: host,
+          secret: loginResponse['secret']?.toString() ?? '',
+          longToken: loginResponse['longToken']?.toString() ?? '',
         );
       }
-      return FnConnectSession(
-        token: token,
-        relayHost: host,
-        secret: loginResponse['secret']?.toString() ?? '',
-        longToken: loginResponse['longToken']?.toString() ?? '',
+
+      // 账号密码正确但未直接下发会话：二步验证分支。
+      // - isTwofaEnforced && !isBindTwofaSecret → 被强制要求 2FA 但未绑定，
+      //   只能先去飞牛网页端完成绑定（无法通过 API 完成绑定流程）。
+      // - isBindTwofaSecret && !isTrustedDevice && accessToken → OTP 挑战，
+      //   通过 user.2fa.loginVerify 提交动态验证码完成登录。
+      if (_isTwofaSetupChallenge(loginResponse)) {
+        throw const FnConnectTwofaSetupRequiredException();
+      }
+      if (_isTwofaChallenge(loginResponse)) {
+        return await _completeTwofaLogin(
+          connectedSocket,
+          relayHost: host,
+          publicKeyPem: publicKeyPem,
+          serverSalt: serverSalt,
+          challenge: loginResponse,
+          deviceId: did,
+          onTwofaRequired: onTwofaRequired,
+          cancelToken: cancelToken,
+        );
+      }
+      throw const FnConnectProtocolException(
+        'fnOS login response did not include a session token',
       );
     } on FnConnectException {
       rethrow;
@@ -470,6 +574,87 @@ class FnConnectClient {
     }
   }
 
+  /// 响应是否为「已绑定二步验证、当前设备未信任」的 OTP 挑战。
+  static bool _isTwofaChallenge(Map<String, dynamic> response) {
+    final token = response['token']?.toString().trim() ?? '';
+    final secret = response['secret']?.toString().trim() ?? '';
+    return response['result']?.toString() == 'succ' &&
+        response['isBindTwofaSecret'] == true &&
+        response['isTrustedDevice'] == false &&
+        (response['accessToken']?.toString().isNotEmpty ?? false) &&
+        token.isEmpty &&
+        secret.isEmpty;
+  }
+
+  /// 响应是否为「被强制要求二步验证但尚未绑定 TOTP」。
+  static bool _isTwofaSetupChallenge(Map<String, dynamic> response) {
+    final token = response['token']?.toString().trim() ?? '';
+    final secret = response['secret']?.toString().trim() ?? '';
+    return response['result']?.toString() == 'succ' &&
+        response['isTwofaEnforced'] == true &&
+        response['isBindTwofaSecret'] == false &&
+        (response['accessToken']?.toString().isNotEmpty ?? false) &&
+        token.isEmpty &&
+        secret.isEmpty;
+  }
+
+  /// 完成二步验证：向用户索取 OTP 后发送 `user.2fa.loginVerify`。
+  Future<FnConnectSession> _completeTwofaLogin(
+    FnosWebSocketSession socket, {
+    required String relayHost,
+    required String publicKeyPem,
+    required String serverSalt,
+    required Map<String, dynamic> challenge,
+    required String deviceId,
+    Future<FnTwofaAnswer?> Function()? onTwofaRequired,
+    CancelToken? cancelToken,
+  }) async {
+    final provider = onTwofaRequired;
+    if (provider == null) {
+      throw const FnConnectTwofaRequiredException();
+    }
+    final answer = await provider();
+    _throwIfCancelled(cancelToken);
+    final code = answer?.code.trim() ?? '';
+    if (answer == null || code.isEmpty) {
+      throw const FnConnectTwofaCancelledException();
+    }
+
+    final reqId = DateTime.now().microsecondsSinceEpoch.toString();
+    final envelope = buildTwofaLoginEnvelope(
+      publicKeyPem: publicKeyPem,
+      serverSalt: serverSalt,
+      reqId: reqId,
+      accessToken: challenge['accessToken']?.toString() ?? '',
+      code: code,
+      trustDevice: answer.trustDevice,
+      deviceId: deviceId,
+    );
+    final response = await _awaitCancellable(
+      socket.request(
+        envelope,
+        matches: (item) => item['reqid']?.toString() == reqId,
+      ),
+      cancelToken,
+      onCancel: socket.close,
+    );
+    if (response['result']?.toString() != 'succ') {
+      throw const FnConnectTwofaInvalidException();
+    }
+    final token = response['token']?.toString().trim() ?? '';
+    if (token.isEmpty) {
+      throw const FnConnectProtocolException(
+        'fnOS two-step verification did not return a session token',
+      );
+    }
+    return FnConnectSession(
+      token: token,
+      relayHost: relayHost,
+      secret: response['secret']?.toString() ?? '',
+      longToken: response['longToken']?.toString() ?? '',
+    );
+  }
+
   @visibleForTesting
   Map<String, dynamic> buildLoginEnvelope({
     required String publicKeyPem,
@@ -477,6 +662,7 @@ class FnConnectClient {
     required String reqId,
     required String username,
     required String password,
+    String deviceId = '',
     Uint8List? keySeed,
     Uint8List? ivBytes,
   }) {
@@ -491,6 +677,7 @@ class FnConnectClient {
       'password': password,
       'deviceType': 'Browser',
       'deviceName': 'Ting Reader Flutter',
+      if (deviceId.isNotEmpty) 'did': deviceId,
       'stay': true,
       'req': 'user.login',
       'si': serverSalt,
@@ -515,6 +702,106 @@ class FnConnectClient {
       'rsa': encryptedKey.base64,
       'aes': encryptedPayload.base64,
     };
+  }
+
+  /// 构造 `user.2fa.loginVerify` 加密信封（字段与飞牛网页版一致）。
+  ///
+  /// 与 [buildLoginEnvelope] 一样使用全新 AES 密钥/IV 的信封加密；
+  /// `stay` 在该请求中为 int（0/1），[accessToken] 来自 `user.login`
+  /// 返回的二步验证挑战。
+  @visibleForTesting
+  Map<String, dynamic> buildTwofaLoginEnvelope({
+    required String publicKeyPem,
+    required String serverSalt,
+    required String reqId,
+    required String accessToken,
+    required String code,
+    bool trustDevice = false,
+    String deviceId = '',
+    Uint8List? keySeed,
+    Uint8List? ivBytes,
+  }) {
+    final seed = keySeed ?? _randomBytes(16);
+    final keyHex =
+        seed.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+    final keyBytes = Uint8List.fromList(utf8.encode(keyHex));
+    final iv = ivBytes ?? _randomBytes(16);
+    final payload = jsonEncode({
+      'reqid': reqId,
+      'code': code,
+      'isTrustedDevice': trustDevice,
+      'accessToken': accessToken,
+      'stay': 1,
+      'deviceType': 'Browser',
+      'deviceName': 'Ting Reader Flutter',
+      if (deviceId.isNotEmpty) 'did': deviceId,
+      'req': 'user.2fa.loginVerify',
+      'si': serverSalt,
+    });
+
+    final aes = Encrypter(AES(Key(keyBytes), mode: AESMode.cbc));
+    final encryptedPayload = aes.encryptBytes(
+      utf8.encode(payload),
+      iv: IV(iv),
+    );
+    final parsedKey = RSAKeyParser().parse(publicKeyPem);
+    if (parsedKey is! RSAPublicKey) {
+      throw const FormatException('fnOS returned a non-public RSA key');
+    }
+    final rsa = Encrypter(
+      RSA(publicKey: parsedKey, encoding: RSAEncoding.PKCS1),
+    );
+    final encryptedKey = rsa.encryptBytes(keyBytes);
+    return {
+      'req': 'encrypted',
+      'iv': base64Encode(iv),
+      'rsa': encryptedKey.base64,
+      'aes': encryptedPayload.base64,
+    };
+  }
+
+  /// 生成飞牛设备 ID（`did`），格式与官方前端一致：
+  /// `base32(毫秒时间戳)-base32(随机)[:15]-base32(随机)[:15]`，小写且无填充。
+  ///
+  /// 二步验证勾选「信任本设备」后，服务器按 did 记住受信设备，
+  /// 因此客户端应持久化该值并在后续登录复用（见 AppState 的安全存储）。
+  String generateDeviceId() {
+    String encodePart(String value, [int? maxLength]) {
+      final encoded = _base32Encode(utf8.encode(value))
+          .toLowerCase()
+          .replaceAll('=', '');
+      if (maxLength != null && encoded.length > maxLength) {
+        return encoded.substring(0, maxLength);
+      }
+      return encoded;
+    }
+
+    final time = encodePart('${DateTime.now().millisecondsSinceEpoch}');
+    final randA = encodePart('${_random.nextDouble()}', 15);
+    final randB = encodePart('${_random.nextDouble()}', 15);
+    return '$time-$randA-$randB';
+  }
+
+  /// RFC 4648 base32（无填充），仅用于 [generateDeviceId]。
+  static String _base32Encode(List<int> bytes) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    final buffer = StringBuffer();
+    var bitBuffer = 0;
+    var bitCount = 0;
+    for (final byte in bytes) {
+      bitBuffer = (bitBuffer << 8) | byte;
+      bitCount += 8;
+      while (bitCount >= 5) {
+        final index = (bitBuffer >> (bitCount - 5)) & 0x1f;
+        buffer.write(alphabet[index]);
+        bitCount -= 5;
+      }
+    }
+    if (bitCount > 0) {
+      final index = (bitBuffer << (5 - bitCount)) & 0x1f;
+      buffer.write(alphabet[index]);
+    }
+    return buffer.toString();
   }
 
   List<FnConnectCandidate> buildCandidates({
@@ -558,6 +845,7 @@ class FnConnectClient {
     required List<FnConnectCandidate> candidates,
     required String token,
     bool ignoreSsl = true,
+    String? accessCode,
     CancelToken? cancelToken,
   }) async {
     _throwIfCancelled(cancelToken);
@@ -568,6 +856,7 @@ class FnConnectClient {
       ),
     );
     configureFnConnectHttpAdapter(dio, ignoreSsl: ignoreSsl);
+    final accessCodeHeaders = FnAccessCode.headers(accessCode);
     final results = await Future.wait(
       candidates.map((candidate) async {
         final started = DateTime.now();
@@ -583,7 +872,8 @@ class FnConnectClient {
               receiveTimeout: timeout,
               sendTimeout: timeout,
               headers: {
-                'Cookie': cookieHeader(token, relay: candidate.isRelay)
+                'Cookie': cookieHeader(token, relay: candidate.isRelay),
+                ...accessCodeHeaders,
               },
             ),
           );

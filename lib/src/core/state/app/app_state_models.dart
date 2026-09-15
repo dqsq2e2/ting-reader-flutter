@@ -20,6 +20,7 @@ class SavedServerProfile {
     this.fnosUsername = '',
     this.fnosPassword = '',
     this.gatewayCookie = '',
+    this.fnAccessCode = '',
     this.gatewayCookieAt,
     this.lastLoginAt,
   });
@@ -35,6 +36,10 @@ class SavedServerProfile {
   final String fnosUsername;
   final String fnosPassword;
   final String gatewayCookie;
+
+  /// 飞牛「访问码」（服务器未开启时为空）。随配置文件保存，
+  /// 供静默重登与后续所有网关请求注入 `x-access-code` 头。
+  final String fnAccessCode;
   final DateTime? gatewayCookieAt;
   final DateTime? lastLoginAt;
 
@@ -59,6 +64,7 @@ class SavedServerProfile {
       fnosUsername: json['fnos_username']?.toString() ?? '',
       fnosPassword: json['fnos_password']?.toString() ?? '',
       gatewayCookie: json['gateway_cookie']?.toString() ?? '',
+      fnAccessCode: json['fn_access_code']?.toString() ?? '',
       gatewayCookieAt:
           DateTime.tryParse(json['gateway_cookie_at']?.toString() ?? ''),
       lastLoginAt: DateTime.tryParse(json['last_login_at']?.toString() ?? ''),
@@ -77,6 +83,7 @@ class SavedServerProfile {
     String? fnosUsername,
     String? fnosPassword,
     String? gatewayCookie,
+    String? fnAccessCode,
     DateTime? gatewayCookieAt,
     DateTime? lastLoginAt,
   }) {
@@ -92,6 +99,7 @@ class SavedServerProfile {
       fnosUsername: fnosUsername ?? this.fnosUsername,
       fnosPassword: fnosPassword ?? this.fnosPassword,
       gatewayCookie: gatewayCookie ?? this.gatewayCookie,
+      fnAccessCode: fnAccessCode ?? this.fnAccessCode,
       gatewayCookieAt: gatewayCookieAt ?? this.gatewayCookieAt,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
     );
@@ -110,6 +118,7 @@ class SavedServerProfile {
         if (includeSecrets && fnosPassword.isNotEmpty)
           'fnos_password': fnosPassword,
         if (gatewayCookie.isNotEmpty) 'gateway_cookie': gatewayCookie,
+        if (fnAccessCode.isNotEmpty) 'fn_access_code': fnAccessCode,
         if (gatewayCookieAt != null)
           'gateway_cookie_at': gatewayCookieAt!.toIso8601String(),
         if (lastLoginAt != null)

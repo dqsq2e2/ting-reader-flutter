@@ -833,6 +833,14 @@ class _CoverImageState extends State<CoverImage> {
   Widget build(BuildContext context) {
     final url = _recoveredUrl ?? widget.url;
     final localFile = _localImageFile(url);
+    // 指向当前服务器的封面需要携带完整认证头（fnos-token cookie /
+    // 访问码 x-access-code）；第三方图床 URL 绝不附带，避免凭据外泄。
+    final appState = AppScope.appOf(context);
+    final imageHeaders = localFile == null &&
+            url.isNotEmpty &&
+            appState.usesActiveOrigin(url)
+        ? appState.api.authHeaders
+        : const <String, String>{};
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
       child: url.isEmpty
@@ -849,6 +857,7 @@ class _CoverImageState extends State<CoverImage> {
               : Image.network(
                   url,
                   key: ValueKey('$url:$_retryEpoch'),
+                  headers: imageHeaders.isEmpty ? null : imageHeaders,
                   fit: widget.fit,
                   width: double.infinity,
                   height: double.infinity,

@@ -1217,13 +1217,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       await sendProgress();
       return;
     }
-    if (!_usesGatewaySingleChapterPlayback) {
-      await sendProgress();
-      if (!_gatewayReauthenticationPending && !appState.needsGatewayLogin) {
-        unawaited(nextChapter());
-      }
-      return;
-    }
     final playGeneration = _playGeneration;
     if (_handlingGatewayMediaCompletionGeneration == playGeneration ||
         _suppressPositionUpdates ||
@@ -1242,6 +1235,26 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     var shouldAdvance = false;
 
     try {
+      // fnid 静默重登会签发新 fnos-token 并短暂清空 TR token（token=null→新
+      // JWT），旧网关会话被踢导致正在播放的流被截断——这正是本次 completed
+      // 的最常见来源。此时 appState.token / authRevision / cookie 都处于
+      // 中间态，必须等重登尘埃落定再判断，否则会把「重登踢流」误判为
+      // 「非网关播放」而错误跳章，或带着无鉴权的 URL 重建音源失败。
+      await _waitForGatewayAuthToSettle();
+      if (!_isActivePlay(playGeneration, chapter.id) ||
+          _gatewayReauthenticationPending ||
+          appState.needsGatewayLogin) {
+        return;
+      }
+
+      if (!_usesGatewaySingleChapterPlayback) {
+        await sendProgress();
+        if (!_gatewayReauthenticationPending && !appState.needsGatewayLogin) {
+          unawaited(nextChapter());
+        }
+        return;
+      }
+
       final observedPosition = gatewayMediaResumePosition(
         positionSeconds: currentTime,
         furthestPositionSeconds: _furthestChapterPosition,
@@ -1281,7 +1294,17 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
+      // 落在「跳片尾」区间内的流结束：跳过片尾本来就会在此时切下一章，
+      // 按正常章末处理（自动跳转），而不是当作「音频流异常结束」。
+      final book = currentBook;
+      final skipOutro = book?.skipOutro ?? 0;
+      final endedInSkipOutroZone = book != null &&
+          skipOutro > 0 &&
+          chapter.duration > 0 &&
+          chapter.duration.toDouble() - observedPosition <=
+              skipOutro + _skipOutroZoneToleranceSeconds;
       final prematureCompletion = !usingLocalFile &&
+          !endedInSkipOutroZone &&
           isPrematureGatewayMediaCompletion(
             positionSeconds: observedPosition,
             expectedDurationSeconds: chapter.duration.toDouble(),
@@ -1309,7 +1332,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
           appState.needsGatewayLogin) {
         return;
       }
-      shouldAdvance = shouldResume;
+      // 跳片尾流程（_handleSkipOutro）已接管切章时，这里不再重复跳转，
+      // 避免「completed 跳一次 + skipOutro 再跳一次」的双跳。
+      shouldAdvance = shouldResume && !_advancingFromOutro;
     } finally {
       if (_handlingGatewayMediaCompletionGeneration == playGeneration) {
         _handlingGatewayMediaCompletionGeneration = null;
@@ -1320,8 +1345,27 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// 等待进行中的 fnid 静默重登完成（无重登时立即返回）。
+  ///
+  /// 只等不重试：重登失败会走既有的「网关会话失效」通道
+  /// （_markGatewayLoginRequired → needsGatewayLogin），由调用方随后判断。
+  Future<void> _waitForGatewayAuthToSettle() async {
+    if (!(appState.api.isGatewaySession?.call() ?? false)) return;
+    final recovery = appState.gatewaySessionRecoveryInFlight;
+    if (recovery == null) return;
+    try {
+      await recovery.timeout(const Duration(seconds: 45));
+    } catch (_) {
+      // 重登超时/失败：继续往下走，由会话探测（_probeGatewaySession）
+      // 与 needsGatewayLogin 检查给出最终结论。
+    }
+  }
+
   Future<bool> _resumeAfterSilentGatewayRenewal(bool shouldResume) async {
     try {
+      // 重建音源前必须等静默重登完成：token 置空窗口内构造的 streamUrl
+      // 不带鉴权参数，setAudioSource 必然 401，进而误报「音频流异常结束」。
+      await _waitForGatewayAuthToSettle();
       await _refreshPlaybackSourceAfterGatewayLogin();
       _resumeAfterGatewayReauthentication = false;
       error = null;
@@ -1761,6 +1805,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 }
 
 enum _GatewaySessionProbeResult { valid, expired, unavailable }
+
+/// 「跳片尾区间」判定的冗余秒数：音频流在 skipOutro 区间内被截断时，
+/// 视为跳片尾语义下的正常章末（自动切下一章），而非「音频流异常结束」。
+const double _skipOutroZoneToleranceSeconds = 2.0;
 
 const _personalAudioDeviceTypeNames = <String>{
   'wiredHeadset',

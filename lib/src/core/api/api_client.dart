@@ -27,6 +27,7 @@ class ApiClient {
   String? _cookie;
   int _authRevision = 0;
   Map<String, String> _clientHeaders = const {};
+  Map<String, String> _gatewayExtraHeaders = const {};
   String _languageCode = 'zh';
   final Map<String, Future<Response<dynamic>>> _inFlightMutations = {};
   int _mutationSequence = 0;
@@ -49,6 +50,7 @@ class ApiClient {
   Map<String, String> get authHeaders {
     final headers = <String, String>{
       'Accept-Language': _languageCode,
+      ..._gatewayExtraHeaders,
       ..._clientHeaders,
     };
     if (_token != null && _token!.isNotEmpty) {
@@ -73,6 +75,14 @@ class ApiClient {
 
   void setClientHeaders(Map<String, String> headers) {
     _clientHeaders = Map.unmodifiable(headers);
+  }
+
+  /// 网关层的附加请求头（如飞牛「访问码」的 `x-access-code` /
+  /// `x-access-source`）。与 token/cookie 解耦：路由切换、静默重登只换
+  /// token/cookie，访问码头在整个网关会话期间保持不变。
+  /// 同时作用于 Dio 请求与原生媒体请求（[authHeaders]）。
+  void setGatewayExtraHeaders(Map<String, String> headers) {
+    _gatewayExtraHeaders = Map.unmodifiable(headers);
   }
 
   void setLanguage(String languageCode) {
@@ -462,6 +472,7 @@ class ApiClient {
     final headers = <String, dynamic>{
       'Content-Type': 'application/json',
       'Accept-Language': _languageCode,
+      ..._gatewayExtraHeaders,
       ..._clientHeaders,
     };
     if (_token != null && _token!.isNotEmpty) {
