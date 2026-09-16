@@ -624,10 +624,19 @@ class FnConnectClient {
       trustDevice: answer.trustDevice,
       deviceId: deviceId,
     );
+    // 服务器对 loginVerify 的应答可能是两条消息，且顺序不定：
+    // 1. reqid 匹配的直接响应（首次勾选「信任本设备」注册新设备时，
+    //    这条可能是不带凭据的确认）；
+    // 2. 「最终登录成功」推送（result=succ 且携带 token/secret，
+    //    reqid 不一定匹配本请求）。
+    // 只认 reqid 会把携带凭据的推送丢弃，拿到无效/缺失的 token，
+    // 之后经统一网关的请求会被 302 打回——这正是首次勾选信任设备
+    // 登录失败、不勾选或第二次勾选却正常的原因（pyfnos 同样按
+    // 「任何带 token+secret 的 succ 消息」判定最终成功）。
     final response = await _awaitCancellable(
       socket.request(
         envelope,
-        matches: (item) => item['reqid']?.toString() == reqId,
+        matches: (item) => isTwofaLoginOutcome(item, reqId),
       ),
       cancelToken,
       onCancel: socket.close,
@@ -647,6 +656,19 @@ class FnConnectClient {
       secret: response['secret']?.toString() ?? '',
       longToken: response['longToken']?.toString() ?? '',
     );
+  }
+
+  /// `user.2fa.loginVerify` 的终局消息判定：失败以 reqid 匹配为准，
+  /// 成功以「任何携带 token 的 succ 消息」为准（最终凭据可能是独立推送，
+  /// reqid 与本请求不同，见 [_completeTwofaLogin] 注释）。
+  @visibleForTesting
+  static bool isTwofaLoginOutcome(Map<String, dynamic> item, String reqId) {
+    final result = item['result']?.toString();
+    if (item['reqid']?.toString() == reqId && result == 'fail') {
+      return true;
+    }
+    final token = item['token']?.toString().trim() ?? '';
+    return result == 'succ' && token.isNotEmpty;
   }
 
   @visibleForTesting
