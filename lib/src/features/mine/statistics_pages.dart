@@ -463,7 +463,7 @@ class _TrendChart extends StatelessWidget {
                 _TrendStat(
                     width: width,
                     label: context.localeText(
-                      '近14天活跃记录',
+                      '最近活跃记录',
                       'Activity records (14d)',
                     ),
                     value:
