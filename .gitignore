@@ -52,6 +52,7 @@ tool/
 test/
 !test/
 test/*
+!test/app_state_gateway_recovery_test.dart
 !test/external_links_test.dart
 !test/plugin_extension_registry_test.dart
 preview_screenshots/

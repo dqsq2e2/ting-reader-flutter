@@ -472,6 +472,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final initialIndex = chapterIndex >= 0 ? chapterIndex : 0;
     final targetChapter = chapters[initialIndex];
     currentChapter = targetChapter;
+    _advancingFromOutro = false;
     currentTime = resumePosition;
     _furthestChapterPosition = resumePosition;
     duration = targetChapter.duration.toDouble();
@@ -904,8 +905,10 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  Future<void> nextChapter() async {
-    _advancingFromOutro = false;
+  Future<void> nextChapter({bool fromOutro = false}) async {
+    if (!fromOutro) {
+      _advancingFromOutro = false;
+    }
     final chapter = currentChapter;
     final book = currentBook;
     if (chapter == null || book == null || chapters.isEmpty) return;
@@ -916,6 +919,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         index >= 0 &&
         index < chapters.length - 1) {
       await _seekAudioQueueToChapter(index + 1, book, chapters[index + 1]);
+      _advancingFromOutro = false;
       return;
     }
     if (index >= 0 && index < chapters.length - 1) {
@@ -1221,7 +1225,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     if (_handlingGatewayMediaCompletionGeneration == playGeneration ||
         _suppressPositionUpdates ||
         _gatewayReauthenticationPending ||
-        appState.needsGatewayLogin) {
+        appState.needsGatewayLogin ||
+        _advancingFromOutro) {
       return;
     }
 
@@ -1698,7 +1703,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _advancingFromOutro = true;
       Future<void>(() async {
         await sendProgress();
-        await nextChapter();
+        await nextChapter(fromOutro: true);
       });
     }
   }

@@ -39,6 +39,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _tryAutomaticGatewayLogin() async {
     if (!mounted || _automaticGatewayLoginStarted) return;
     final appState = AppScope.appOf(context);
+    if (appState.gatewayStartupLoginAttempted) return;
     if (!appState.needsGatewayLogin) return;
     final profile = appState.savedGatewayProfile;
     if (profile == null) return;

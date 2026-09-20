@@ -31,7 +31,8 @@ bool _isFnosGatewayModeValue(Object? value) {
 }
 
 class AppState extends ChangeNotifier {
-  AppState() {
+  AppState({FnConnectClient? fnConnect})
+      : fnConnect = fnConnect ?? FnConnectClient() {
     app_time_zone.initializeApplicationTimeZones();
     api.isGatewaySession = () =>
         serverMode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty;
@@ -92,6 +93,7 @@ class AppState extends ChangeNotifier {
   String fnId = '';
   String? gatewayCookie;
   bool needsGatewayLogin = false;
+  bool gatewayStartupLoginAttempted = false;
   Map<String, dynamic> settings = {};
   Locale? locale;
   String? connectionError;
@@ -107,7 +109,7 @@ class AppState extends ChangeNotifier {
   bool resolvingRedirect = false;
   int _pluginExtensionRevision = 0;
 
-  final FnConnectClient fnConnect = FnConnectClient();
+  final FnConnectClient fnConnect;
 
   bool get isAuthenticated {
     final currentToken = token?.trim() ?? '';
@@ -260,15 +262,16 @@ class AppState extends ChangeNotifier {
       serverUrl = 'https://${result.session.relayHost}';
       activeUrl = result.appBaseUrl;
       gatewayCookie = result.cookie;
-      token = null;
-      user = null;
+      // Keep the UI session alive until renewal succeeds or requires login.
+      // The login request itself must not carry the previous API token.
       api.configure(baseUrl: activeUrl, token: null, cookie: gatewayCookie);
       // 访问码头先于 TR 登录请求生效（穿过网关的 /api/auth/login 同样需要）。
       api.setGatewayExtraHeaders(FnAccessCode.headers(profile.fnAccessCode));
 
       final map = await _loginToTingReader(profile.username, profile.password);
+      final renewedUser = _requireAuthenticatedUser(map['user']);
       token = map['token']?.toString();
-      user = _requireAuthenticatedUser(map['user']);
+      user = renewedUser;
       api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
       needsGatewayLogin = false;
       connectionError = null;
@@ -289,10 +292,38 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       await _notifyGatewayLoginRestored();
       return true;
+    } on FnConnectProtocolException {
+      // fnOS also wraps WebSocket connection failures as protocol errors.
+      _keepGatewaySessionAfterConnectionFailure();
+      return false;
+    } on DioException catch (error) {
+      final status = error.response?.statusCode;
+      if (error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          error.type == DioExceptionType.connectionError ||
+          status == 502 ||
+          status == 503 ||
+          status == 504) {
+        // Transport failure does not invalidate the user's application session.
+        _keepGatewaySessionAfterConnectionFailure();
+        return false;
+      }
+      await _markGatewayLoginRequired();
+      return false;
     } catch (_) {
       await _markGatewayLoginRequired();
       return false;
     }
+  }
+
+  void _keepGatewaySessionAfterConnectionFailure() {
+    api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
+    connectionError = textForLocale(
+      '无法连接服务器',
+      'Unable to connect to server',
+    );
+    notifyListeners();
   }
 
   Future<void> _persistAuthenticatedGatewayState() async {
@@ -356,6 +387,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> initialize({bool Function()? isCancelled}) async {
+    gatewayStartupLoginAttempted = false;
     final startupGeneration = ++_startupGeneration;
     final cancelToken = CancelToken();
     _startupCancelToken = cancelToken;
@@ -404,6 +436,10 @@ class AppState extends ChangeNotifier {
       needsGatewayLogin =
           _prefs!.getBool(_gatewayReloginRequiredPrefsKey) ?? false;
       token = _prefs!.getString('auth_token');
+      final shouldRestoreGatewaySession = persistedGatewayHost != null &&
+          (needsGatewayLogin ||
+              (token?.trim().isNotEmpty ?? false) ||
+              (gatewayCookie?.trim().isNotEmpty ?? false));
       savedServers = await _loadSavedServers();
       _loadFnConnectSettings();
       _loadLocalLanguage();
@@ -494,19 +530,56 @@ class AppState extends ChangeNotifier {
           cancelToken: cancelToken,
         );
         checkCancelled();
-        if (connectionError == null && user != null) {
-          await loadSettings(
-            silent: true,
-            isCancelled: isStartupCancelled,
-            cancelToken: cancelToken,
-          );
-          checkCancelled();
-          await loadApplicationTimeZone(
-            silent: true,
-            cancelToken: cancelToken,
-          );
-          checkCancelled();
+      }
+
+      // Token-login cannot renew an expired fnOS cookie. Finish credential
+      // recovery inside the startup gate instead of handing it to LoginPage.
+      if (shouldRestoreGatewaySession && !isAuthenticated) {
+        final profile = savedGatewayProfile;
+        if (profile != null &&
+            profile.username.trim().isNotEmpty &&
+            profile.password.isNotEmpty &&
+            profile.fnosUsername.trim().isNotEmpty &&
+            profile.fnosPassword.isNotEmpty) {
+          gatewayStartupLoginAttempted = true;
+          try {
+            await login(
+              server: profile.serverUrl,
+              localServer: profile.localServerUrl,
+              username: profile.username,
+              password: profile.password,
+              mode: profile.mode,
+              fnId: profile.fnId,
+              fnosUsername: profile.fnosUsername,
+              fnosPassword: profile.fnosPassword,
+              fnAccessCode: profile.fnAccessCode,
+              replaceProfile: profile,
+              cancelToken: cancelToken,
+            );
+            checkCancelled();
+            _startupConnectionTarget = _firstNonEmptyUrl([activeUrl]);
+          } catch (error) {
+            checkCancelled();
+            await _markGatewayLoginRequired();
+            connectionError = error.toString();
+            notifyListeners();
+          }
+          return;
         }
+      }
+
+      if (token != null && connectionError == null && user != null) {
+        await loadSettings(
+          silent: true,
+          isCancelled: isStartupCancelled,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
+        await loadApplicationTimeZone(
+          silent: true,
+          cancelToken: cancelToken,
+        );
+        checkCancelled();
       }
     } on DioException catch (error) {
       if (CancelToken.isCancel(error) && isStartupCancelled()) {
