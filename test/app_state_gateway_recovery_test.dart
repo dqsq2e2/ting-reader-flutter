@@ -328,4 +328,25 @@ void main() {
     expect(client.attempts, 0);
     expect(state.isAuthenticated, isFalse);
   });
+
+  test('fnOS protocol failure is not replaced by an unauthenticated fallback',
+      () async {
+    const failure = FnConnectProtocolException('WebSocket handshake failed');
+    final client = _FnConnectClient('http://127.0.0.1')..failure = failure;
+    final state = _StartupAppState(client);
+    addTearDown(state.dispose);
+    await expectLater(
+      state.login(
+        server: 'https://example.fnos.net',
+        username: 'reader',
+        password: 'password',
+        mode: ServerProfileMode.fnosGateway,
+        fnId: 'example',
+        fnosUsername: 'fn-user',
+        fnosPassword: 'fn-password',
+      ),
+      throwsA(same(failure)),
+    );
+    expect(client.attempts, 1);
+  });
 }

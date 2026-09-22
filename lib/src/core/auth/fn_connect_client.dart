@@ -342,27 +342,37 @@ class FnConnectClient {
       order: order,
       disabledGroups: disabledGroups,
     );
-    final results = await probeCandidates(
-      candidates: candidates,
-      token: session.token,
-      ignoreSsl: ignoreSsl,
-      accessCode: accessCode,
-      cancelToken: cancelToken,
-    );
-    final selectedResult = results.where((item) => item.reachable).firstOrNull;
-    final relayFallback = candidates.where((item) => item.isRelay).firstOrNull;
-    final selected = selectedResult?.candidate ??
-        relayFallback ??
-        FnConnectCandidate(
-          rootUrl: 'https://${session.relayHost}',
-          description: 'HTTPS (${session.relayHost})',
-          group: FnConnectCandidateGroup.relay,
-          isRelay: true,
+    var results = <FnConnectCandidateResult>[];
+    FnConnectCandidateResult? selectedResult;
+    // A freshly issued session may not be accepted by the HTTP gateway yet.
+    // Retry readiness, not credentials, and never use an unverified route.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await _awaitCancellable(
+          Future<void>.delayed(Duration(milliseconds: 500 * attempt)),
+          cancelToken,
         );
+      }
+      results = await probeCandidates(
+        candidates: candidates,
+        token: session.token,
+        ignoreSsl: ignoreSsl,
+        accessCode: accessCode,
+        cancelToken: cancelToken,
+      );
+      _throwIfCancelled(cancelToken);
+      selectedResult = results.where((item) => item.reachable).firstOrNull;
+      if (selectedResult != null) break;
+    }
+    if (selectedResult == null) {
+      throw const FnConnectProtocolException(
+        '飞牛会话已建立，但没有可用的应用链路。请检查远程访问、访问码和听书服务后重试',
+      );
+    }
     return FnConnectLoginResult(
       discovery: discovery,
       session: session,
-      selected: selected,
+      selected: selectedResult.candidate,
       candidates: results,
     );
   }
@@ -895,7 +905,11 @@ class FnConnectClient {
           );
           final status = response.statusCode ?? 0;
           final invalidToken = _isInvalidToken(response.data);
-          final reachable = status >= 200 && status < 300 && !invalidToken;
+          final reachable = status >= 200 &&
+              status < 300 &&
+              !invalidToken &&
+              response.data is Map &&
+              response.data['status'] == 'ok';
           return FnConnectCandidateResult(
             candidate: candidate,
             reachable: reachable,

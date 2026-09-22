@@ -1081,7 +1081,9 @@ class AppState extends ChangeNotifier {
             'Incorrect fnOS username or password',
           ));
         } on FnConnectProtocolException {
-          map = await loginWithGatewaySession(gatewayHost);
+          // A failed fnOS handshake/probe did not establish a usable session.
+          // Falling back with an empty or stale cookie hides it behind HTTP 302.
+          rethrow;
         }
       } else {
         _throwIfLoginCancelled(cancelToken);
