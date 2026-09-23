@@ -44,7 +44,7 @@ class _IoFnosWebSocketSession implements FnosWebSocketSession {
       );
       if (matches(response)) return response;
     }
-    throw StateError('fnOS WebSocket closed before a response arrived');
+    throw const FnosWebSocketClosedException();
   }
 
   @override

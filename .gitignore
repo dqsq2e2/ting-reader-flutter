@@ -54,6 +54,7 @@ test/
 test/*
 !test/app_state_gateway_recovery_test.dart
 !test/fn_connect_route_readiness_test.dart
+!test/fn_connect_switch_test.dart
 !test/external_links_test.dart
 !test/plugin_extension_registry_test.dart
 preview_screenshots/

@@ -4,12 +4,16 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/src/core/auth/fn_connect_client.dart';
+import 'package:ting_reader_flutter/src/core/auth/fnos_ws_transport.dart';
 
 class _Client extends FnConnectClient {
   int loginCount = 0;
   int probeCount = 0;
   int readyOnAttempt = 2;
   void Function()? afterProbe;
+  int pendingTrustAttempts = 0;
+  FnConnectException? loginFailure;
+  final deviceIds = <String?>[];
 
   @override
   Future<FnConnectDiscovery> discover(String rawFnId,
@@ -28,6 +32,11 @@ class _Client extends FnConnectClient {
     CancelToken? cancelToken,
   }) async {
     loginCount++;
+    deviceIds.add(deviceId);
+    if (loginFailure != null) throw loginFailure!;
+    if (loginCount <= pendingTrustAttempts) {
+      throw const FnConnectTwofaTrustPendingException();
+    }
     return FnConnectSession(token: 'fresh', relayHost: relayHost);
   }
 
@@ -172,6 +181,127 @@ void main() {
         reqId,
       ),
       isTrue,
+    );
+  });
+
+  test('a subsequent login also waits for complete credentials', () {
+    const reqId = '42';
+    const messages = [
+      {'result': 'succ', 'reqid': reqId, 'token': 'pending'},
+      {'result': 'succ', 'reqid': 'other', 'token': 'fresh', 'secret': 'key'},
+    ];
+    expect(
+      messages.where(
+        (message) => FnConnectClient.isLoginOutcome(message, reqId),
+      ),
+      [messages.last],
+    );
+    expect(
+      FnConnectClient.isLoginOutcome(
+        {
+          'result': 'succ',
+          'reqid': reqId,
+          'isBindTwofaSecret': true,
+          'isTrustedDevice': false,
+          'accessToken': 'challenge',
+        },
+        reqId,
+      ),
+      isTrue,
+    );
+  });
+
+  test('retries once after trusted-device registration closes the socket',
+      () async {
+    final client = _Client()
+      ..pendingTrustAttempts = 1
+      ..readyOnAttempt = 1;
+    final result = await client.loginAndConnect(
+      fnId: 'example',
+      username: 'user',
+      password: 'password',
+      deviceId: 'stable-did',
+    );
+    expect(client.loginCount, 2);
+    expect(client.deviceIds, ['stable-did', 'stable-did']);
+    expect(result.session.token, 'fresh');
+  });
+
+  test('does not retry trust registration indefinitely', () async {
+    final client = _Client()..pendingTrustAttempts = 3;
+    await expectLater(
+      client.loginAndConnect(
+        fnId: 'example',
+        username: 'user',
+        password: 'password',
+        deviceId: 'stable-did',
+      ),
+      throwsA(isA<FnConnectTwofaTrustPendingException>()),
+    );
+    expect(client.loginCount, 2);
+    expect(client.deviceIds, ['stable-did', 'stable-did']);
+    expect(client.probeCount, 0);
+  });
+
+  test('cancelling between trust attempts prevents another login', () async {
+    final token = CancelToken();
+    final client = _Client()
+      ..pendingTrustAttempts = 1
+      ..afterProbe = null;
+    final login = client.loginAndConnect(
+      fnId: 'example',
+      username: 'user',
+      password: 'password',
+      cancelToken: token,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    token.cancel();
+    await expectLater(login, throwsA(isA<DioException>()));
+    expect(client.loginCount, 1);
+  });
+
+  test('ordinary fnOS protocol failures do not retry authentication', () async {
+    final client = _Client()
+      ..loginFailure = const FnConnectProtocolException('not trusted');
+    await expectLater(
+      client.loginAndConnect(
+        fnId: 'example',
+        username: 'user',
+        password: 'password',
+      ),
+      throwsA(isA<FnConnectProtocolException>()),
+    );
+    expect(client.loginCount, 1);
+  });
+
+  test('WebSocket reports a premature close after a partial 2FA response',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      final socket = await WebSocketTransformer.upgrade(request);
+      socket.listen((message) async {
+        final reqId = jsonDecode(message as String)['reqid'];
+        socket.add(jsonEncode({
+          'result': 'succ',
+          'reqid': reqId,
+          'token': 'pending',
+        }));
+        await socket.close();
+      });
+    });
+    final socket = await connectFnosWebSocket(
+      Uri.parse('ws://127.0.0.1:${server.port}/websocket'),
+      headers: const {},
+    );
+    addTearDown(socket.close);
+    await expectLater(
+      socket.request(
+        {'reqid': '42'},
+        matches: (message) =>
+            FnConnectClient.isTwofaLoginOutcome(message, '42'),
+      ),
+      throwsA(isA<FnosWebSocketClosedException>()),
     );
   });
 }

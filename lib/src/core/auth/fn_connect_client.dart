@@ -42,6 +42,11 @@ class FnConnectProtocolException extends FnConnectException {
   const FnConnectProtocolException(super.message);
 }
 
+class FnConnectTwofaTrustPendingException extends FnConnectProtocolException {
+  const FnConnectTwofaTrustPendingException()
+      : super('飞牛正在登记受信设备，登录连接已关闭；请稍后重试');
+}
+
 /// 飞牛账号已开启访问码保护，但调用方未提供访问码。
 class FnConnectAccessCodeRequiredException extends FnConnectException {
   const FnConnectAccessCodeRequiredException()
@@ -325,16 +330,38 @@ class FnConnectClient {
     }
 
     onStage?.call(FnConnectStage.signingIn);
-    final session = await login(
-      relayHost: discovery.relayHosts.first,
-      username: username,
-      password: password,
-      accessCode: accessCode,
-      deviceId: deviceId,
-      onTwofaRequired: onTwofaRequired,
-      ignoreSsl: ignoreSsl,
-      cancelToken: cancelToken,
-    );
+    final stableDeviceId = deviceId ?? generateDeviceId();
+    FnConnectSession session;
+    try {
+      session = await login(
+        relayHost: discovery.relayHosts.first,
+        username: username,
+        password: password,
+        accessCode: accessCode,
+        deviceId: stableDeviceId,
+        onTwofaRequired: onTwofaRequired,
+        ignoreSsl: ignoreSsl,
+        cancelToken: cancelToken,
+      );
+    } on FnConnectTwofaTrustPendingException {
+      // Registering a trusted device can close the first WebSocket before
+      // delivering final credentials. Log in once more with the SAME did.
+      await _awaitCancellable(
+        Future<void>.delayed(const Duration(seconds: 1)),
+        cancelToken,
+      );
+      _throwIfCancelled(cancelToken);
+      session = await login(
+        relayHost: discovery.relayHosts.first,
+        username: username,
+        password: password,
+        accessCode: accessCode,
+        deviceId: stableDeviceId,
+        onTwofaRequired: onTwofaRequired,
+        ignoreSsl: ignoreSsl,
+        cancelToken: cancelToken,
+      );
+    }
 
     onStage?.call(FnConnectStage.probing);
     final candidates = buildCandidates(
@@ -525,7 +552,7 @@ class FnConnectClient {
       final loginResponse = await _awaitCancellable(
         connectedSocket.request(
           envelope,
-          matches: (response) => response['reqid']?.toString() == reqId,
+          matches: (response) => isLoginOutcome(response, reqId),
         ),
         cancelToken,
         onCancel: connectedSocket.close,
@@ -536,11 +563,12 @@ class FnConnectClient {
         );
       }
       final token = loginResponse['token']?.toString().trim() ?? '';
-      if (token.isNotEmpty) {
+      final secret = loginResponse['secret']?.toString().trim() ?? '';
+      if (token.isNotEmpty && secret.isNotEmpty) {
         return FnConnectSession(
           token: token,
           relayHost: host,
-          secret: loginResponse['secret']?.toString() ?? '',
+          secret: secret,
           longToken: loginResponse['longToken']?.toString() ?? '',
         );
       }
@@ -602,6 +630,19 @@ class FnConnectClient {
         secret.isEmpty;
   }
 
+  @visibleForTesting
+  static bool isLoginOutcome(Map<String, dynamic> item, String reqId) {
+    if (item['result'] == 'succ' &&
+        (item['token']?.toString().trim().isNotEmpty ?? false) &&
+        (item['secret']?.toString().trim().isNotEmpty ?? false)) {
+      return true;
+    }
+    if (item['reqid']?.toString() != reqId) return false;
+    return item['result'] == 'fail' ||
+        _isTwofaChallenge(item) ||
+        _isTwofaSetupChallenge(item);
+  }
+
   /// 完成二步验证：向用户索取 OTP 后发送 `user.2fa.loginVerify`。
   Future<FnConnectSession> _completeTwofaLogin(
     FnosWebSocketSession socket, {
@@ -643,14 +684,23 @@ class FnConnectClient {
     // 之后经统一网关的请求会被 302 打回——这正是首次勾选信任设备
     // 登录失败、不勾选或第二次勾选却正常的原因（pyfnos 同样按
     // 「任何带 token+secret 的 succ 消息」判定最终成功）。
-    final response = await _awaitCancellable(
-      socket.request(
-        envelope,
-        matches: (item) => isTwofaLoginOutcome(item, reqId),
-      ),
-      cancelToken,
-      onCancel: socket.close,
-    );
+    Map<String, dynamic> response;
+    try {
+      response = await _awaitCancellable(
+        socket.request(
+          envelope,
+          matches: (item) => isTwofaLoginOutcome(item, reqId),
+        ),
+        cancelToken,
+        onCancel: socket.close,
+      );
+    } on FnosWebSocketClosedException {
+      if (!answer.trustDevice) rethrow;
+      throw const FnConnectTwofaTrustPendingException();
+    } on TimeoutException {
+      if (!answer.trustDevice) rethrow;
+      throw const FnConnectTwofaTrustPendingException();
+    }
     if (response['result']?.toString() != 'succ') {
       throw const FnConnectTwofaInvalidException();
     }
