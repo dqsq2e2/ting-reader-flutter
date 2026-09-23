@@ -331,6 +331,10 @@ class FnConnectClient {
 
     onStage?.call(FnConnectStage.signingIn);
     final stableDeviceId = deviceId ?? generateDeviceId();
+    Future<FnTwofaAnswer?>? twofaAnswer;
+    final askTwofaOnce = onTwofaRequired == null
+        ? null
+        : () => twofaAnswer ??= onTwofaRequired();
     FnConnectSession session;
     try {
       session = await login(
@@ -339,7 +343,7 @@ class FnConnectClient {
         password: password,
         accessCode: accessCode,
         deviceId: stableDeviceId,
-        onTwofaRequired: onTwofaRequired,
+        onTwofaRequired: askTwofaOnce,
         ignoreSsl: ignoreSsl,
         cancelToken: cancelToken,
       );
@@ -357,7 +361,7 @@ class FnConnectClient {
         password: password,
         accessCode: accessCode,
         deviceId: stableDeviceId,
-        onTwofaRequired: onTwofaRequired,
+        onTwofaRequired: askTwofaOnce,
         ignoreSsl: ignoreSsl,
         cancelToken: cancelToken,
       );

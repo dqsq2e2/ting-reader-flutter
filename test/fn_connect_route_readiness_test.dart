@@ -14,6 +14,8 @@ class _Client extends FnConnectClient {
   int pendingTrustAttempts = 0;
   FnConnectException? loginFailure;
   final deviceIds = <String?>[];
+  final twofaAnswers = <FnTwofaAnswer?>[];
+  bool requireTwofa = false;
 
   @override
   Future<FnConnectDiscovery> discover(String rawFnId,
@@ -33,6 +35,9 @@ class _Client extends FnConnectClient {
   }) async {
     loginCount++;
     deviceIds.add(deviceId);
+    if (requireTwofa) {
+      twofaAnswers.add(await onTwofaRequired?.call());
+    }
     if (loginFailure != null) throw loginFailure!;
     if (loginCount <= pendingTrustAttempts) {
       throw const FnConnectTwofaTrustPendingException();
@@ -215,16 +220,53 @@ void main() {
       () async {
     final client = _Client()
       ..pendingTrustAttempts = 1
+      ..requireTwofa = true
       ..readyOnAttempt = 1;
+    var prompts = 0;
     final result = await client.loginAndConnect(
       fnId: 'example',
       username: 'user',
       password: 'password',
       deviceId: 'stable-did',
+      onTwofaRequired: () async {
+        prompts++;
+        return const FnTwofaAnswer(code: '123456', trustDevice: true);
+      },
     );
     expect(client.loginCount, 2);
+    expect(prompts, 1);
+    expect(client.twofaAnswers, hasLength(2));
+    expect(identical(client.twofaAnswers[0], client.twofaAnswers[1]), isTrue);
     expect(client.deviceIds, ['stable-did', 'stable-did']);
     expect(result.session.token, 'fresh');
+  });
+
+  test('a separate login requests a fresh two-step code', () async {
+    final client = _Client()
+      ..pendingTrustAttempts = 1
+      ..requireTwofa = true
+      ..readyOnAttempt = 1;
+    var prompts = 0;
+    Future<FnTwofaAnswer?> askCode() async {
+      prompts++;
+      return FnTwofaAnswer(code: '$prompts', trustDevice: true);
+    }
+
+    await client.loginAndConnect(
+      fnId: 'example',
+      username: 'user',
+      password: 'password',
+      onTwofaRequired: askCode,
+    );
+    await client.loginAndConnect(
+      fnId: 'example',
+      username: 'user',
+      password: 'password',
+      onTwofaRequired: askCode,
+    );
+    expect(prompts, 2);
+    expect(client.twofaAnswers.map((answer) => answer?.code),
+        ['1', '1', '2']);
   });
 
   test('does not retry trust registration indefinitely', () async {
