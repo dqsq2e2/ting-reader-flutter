@@ -639,7 +639,7 @@ class FnConnectClient {
     //    这条可能是不带凭据的确认）；
     // 2. 「最终登录成功」推送（result=succ 且携带 token/secret，
     //    reqid 不一定匹配本请求）。
-    // 只认 reqid 会把携带凭据的推送丢弃，拿到无效/缺失的 token，
+    // 只认 reqid 或只检查 token 都可能错过最终凭据，
     // 之后经统一网关的请求会被 302 打回——这正是首次勾选信任设备
     // 登录失败、不勾选或第二次勾选却正常的原因（pyfnos 同样按
     // 「任何带 token+secret 的 succ 消息」判定最终成功）。
@@ -655,21 +655,22 @@ class FnConnectClient {
       throw const FnConnectTwofaInvalidException();
     }
     final token = response['token']?.toString().trim() ?? '';
-    if (token.isEmpty) {
+    final secret = response['secret']?.toString().trim() ?? '';
+    if (token.isEmpty || secret.isEmpty) {
       throw const FnConnectProtocolException(
-        'fnOS two-step verification did not return a session token',
+        'fnOS two-step verification did not return complete credentials',
       );
     }
     return FnConnectSession(
       token: token,
       relayHost: relayHost,
-      secret: response['secret']?.toString() ?? '',
+      secret: secret,
       longToken: response['longToken']?.toString() ?? '',
     );
   }
 
   /// `user.2fa.loginVerify` 的终局消息判定：失败以 reqid 匹配为准，
-  /// 成功以「任何携带 token 的 succ 消息」为准（最终凭据可能是独立推送，
+  /// 成功以「携带 token 和 secret 的 succ 消息」为准（最终凭据可能是独立推送，
   /// reqid 与本请求不同，见 [_completeTwofaLogin] 注释）。
   @visibleForTesting
   static bool isTwofaLoginOutcome(Map<String, dynamic> item, String reqId) {
@@ -678,7 +679,8 @@ class FnConnectClient {
       return true;
     }
     final token = item['token']?.toString().trim() ?? '';
-    return result == 'succ' && token.isNotEmpty;
+    final secret = item['secret']?.toString().trim() ?? '';
+    return result == 'succ' && token.isNotEmpty && secret.isNotEmpty;
   }
 
   @visibleForTesting
@@ -909,7 +911,8 @@ class FnConnectClient {
               status < 300 &&
               !invalidToken &&
               response.data is Map &&
-              response.data['status'] == 'ok';
+              const {'healthy', 'unhealthy'}
+                  .contains(response.data['status']);
           return FnConnectCandidateResult(
             candidate: candidate,
             reachable: reachable,

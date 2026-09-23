@@ -90,7 +90,7 @@ void main() {
       request.response.headers.contentType =
           healthy ? ContentType.json : ContentType.html;
       request.response.write(
-          healthy ? jsonEncode({'status': 'ok'}) : '<html>Login</html>');
+          healthy ? jsonEncode({'status': 'healthy'}) : '<html>Login</html>');
       await request.response.close();
     });
     final client = FnConnectClient();
@@ -107,5 +107,71 @@ void main() {
     expect((await client.probeCandidates(
       candidates: candidates, token: 'fresh',
     )).single.reachable, isTrue);
+  });
+
+  test('does not accept a 200 response from a different service', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({'status': 'ok'}));
+      await request.response.close();
+    });
+    final result = await FnConnectClient().probeCandidates(
+      candidates: [
+        FnConnectCandidate(
+          rootUrl: 'http://127.0.0.1:${server.port}',
+          description: 'test',
+          group: FnConnectCandidateGroup.lan,
+          isRelay: false,
+        ),
+      ],
+      token: 'fresh',
+    );
+    expect(result.single.reachable, isFalse);
+  });
+
+  test('a degraded backend is still a reachable application route', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode({'status': 'unhealthy'}));
+      await request.response.close();
+    });
+    final result = await FnConnectClient().probeCandidates(
+      candidates: [
+        FnConnectCandidate(
+          rootUrl: 'http://127.0.0.1:${server.port}',
+          description: 'test',
+          group: FnConnectCandidateGroup.lan,
+          isRelay: false,
+        ),
+      ],
+      token: 'fresh',
+    );
+    expect(result.single.reachable, isTrue);
+  });
+
+  test('waits for complete credentials when trusting a new device', () {
+    const reqId = '42';
+    const messages = [
+      {'result': 'succ', 'reqid': reqId, 'token': 'pending'},
+      {'result': 'succ', 'reqid': reqId},
+      {'result': 'succ', 'reqid': 'other', 'token': 'final', 'secret': 'key'},
+    ];
+    expect(
+      messages.where(
+        (message) => FnConnectClient.isTwofaLoginOutcome(message, reqId),
+      ),
+      [messages.last],
+    );
+    expect(
+      FnConnectClient.isTwofaLoginOutcome(
+        {'result': 'fail', 'reqid': reqId},
+        reqId,
+      ),
+      isTrue,
+    );
   });
 }
