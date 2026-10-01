@@ -9,13 +9,17 @@ class AdminLibrariesPage extends StatefulWidget {
 
 class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
   bool _loading = true;
+  bool _loaded = false;
   List<Library> _items = [];
   String? _scanningId;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_loaded) {
+      _loaded = true;
+      _load();
+    }
   }
 
   Future<void> _load() async {
@@ -729,6 +733,7 @@ const Map<String, dynamic> _defaultLibraryScraperConfig = {
   'use_filename_as_title': true,
   'nfo_writing_enabled': false,
   'metadata_writing_enabled': false,
+  'webdav_metadata_writing_enabled': false,
   'disable_watcher': false,
   'cloud_mode': false,
   'scheduled_sync_enabled': false,

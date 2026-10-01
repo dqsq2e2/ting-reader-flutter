@@ -10,8 +10,6 @@ class _ExpandedPlayer extends StatefulWidget {
 }
 
 class _ExpandedPlayerState extends State<_ExpandedPlayer> {
-  static const _speedSteps = [0.75, 1.0, 1.25, 1.5, 2.0];
-
   Timer? _sleepTimer;
   int? _sleepRemainingSeconds;
   // 按集数睡眠的状态由 PlayerState 管理（避免 widget 销毁丢失）。
@@ -30,12 +28,72 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     super.dispose();
   }
 
-  Future<void> _toggleSpeed(PlayerState player) async {
-    final current = player.playbackSpeed;
-    final index =
-        _speedSteps.indexWhere((value) => (value - current).abs() < 0.001);
-    final next = _speedSteps[(index + 1) % _speedSteps.length];
-    await player.setSpeed(next);
+  Future<void> _openSpeedSheet(
+    PlayerState player,
+    BuildContext anchorContext,
+  ) async {
+    var speed = player.playbackSpeed.clamp(0.5, 3.0).toDouble();
+    await _showAnchoredPopover(
+      anchorContext: anchorContext,
+      width: 252,
+      estimatedHeight: 96,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          padding: const EdgeInsets.fromLTRB(14, 11, 14, 8),
+          decoration: BoxDecoration(
+            color: context.cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: context.faintBorder),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black
+                    .withValues(alpha: context.isDark ? 0.48 : 0.18),
+                blurRadius: 26,
+                offset: const Offset(0, 12),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Text('0.5x',
+                      style: TextStyle(color: context.mutedText, fontSize: 12)),
+                  const Spacer(),
+                  Text('${speed.toStringAsFixed(1)}x',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  Text('3.0x',
+                      style: TextStyle(color: context.mutedText, fontSize: 12)),
+                ],
+              ),
+              Slider(
+                min: 0.5,
+                max: 3,
+                divisions: 25,
+                value: speed,
+                activeColor: AppColors.primary600,
+                onChanged: (value) {
+                  final normalized = (value * 10).round() / 10;
+                  setSheetState(() => speed = normalized);
+                  player.setSpeed(normalized);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openBookmarks(PlayerState player) async {
+    final book = player.currentBook;
+    if (book == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => const BookBookmarkDialog(),
+    );
   }
 
   Future<void> _downloadCurrentChapter(PlayerState player) async {
@@ -181,115 +239,6 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
             alignment: Alignment.bottomCenter,
             child: child,
           ),
-        );
-      },
-    );
-  }
-
-  Future<void> _openVolumeSheet(
-    PlayerState player,
-    BuildContext anchorContext,
-  ) async {
-    final current = player.volume;
-    var nextVolume = current;
-    await _showAnchoredPopover(
-      anchorContext: anchorContext,
-      width: 50,
-      estimatedHeight: 206,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              width: 50,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              decoration: BoxDecoration(
-                color: context.cardColor,
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: context.faintBorder),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: context.isDark ? 0.48 : 0.18),
-                    blurRadius: 30,
-                    offset: const Offset(0, 16),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '${(nextVolume * 100).round()}',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: context.secondaryText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  SizedBox(
-                    height: 100,
-                    width: 48,
-                    child: RotatedBox(
-                      quarterTurns: -1,
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 5,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 7,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 13,
-                          ),
-                        ),
-                        child: Slider(
-                          min: 0,
-                          max: 1,
-                          value: nextVolume.clamp(0, 1).toDouble(),
-                          activeColor: AppColors.primary600,
-                          inactiveColor: context.isDark
-                              ? AppColors.slate700
-                              : AppColors.slate200,
-                          onChanged: (value) {
-                            setSheetState(() => nextVolume = value);
-                            player.setVolume(value);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  IconButton(
-                    tooltip: nextVolume <= 0
-                        ? context.localeText('取消静音', 'Unmute')
-                        : context.localeText('静音', 'Mute'),
-                    onPressed: () {
-                      final value = nextVolume <= 0 ? 1.0 : 0.0;
-                      setSheetState(() => nextVolume = value);
-                      player.setVolume(value);
-                    },
-                    style: IconButton.styleFrom(
-                      backgroundColor: nextVolume <= 0
-                          ? AppColors.primary100
-                          : Colors.transparent,
-                      foregroundColor: nextVolume <= 0
-                          ? AppColors.primary600
-                          : AppColors.slate400,
-                      minimumSize: const Size(34, 34),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    icon: Icon(
-                      nextVolume <= 0
-                          ? Icons.volume_off_rounded
-                          : Icons.volume_up_rounded,
-                      size: 17,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
         );
       },
     );
@@ -792,6 +741,34 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                       label: context.localeText('跳过片尾 (秒)', 'Skip Outro (sec)'),
                       hint: context.localeText('例如: 15', 'For example: 15'),
                     ),
+                    const SizedBox(height: 18),
+                    StatefulBuilder(
+                      builder: (context, setVolumeState) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                  child:
+                                      Text(context.localeText('音量', 'Volume'))),
+                              Text('${(player.volume * 100).round()}%',
+                                  style: TextStyle(
+                                      color: context.mutedText, fontSize: 12)),
+                            ],
+                          ),
+                          Slider(
+                            min: 0,
+                            max: 1,
+                            value: player.volume.clamp(0, 1).toDouble(),
+                            activeColor: AppColors.primary600,
+                            onChanged: (value) {
+                              setVolumeState(() {});
+                              player.setVolume(value);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
                     const SizedBox(height: 28),
                     Row(
                       children: [
@@ -1234,20 +1211,15 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   label: _formatPlaybackSpeed(
                                       player.playbackSpeed),
                                   active: player.playbackSpeed != 1,
-                                  onTap: () => _toggleSpeed(player),
+                                  onTapWithContext: (buttonContext) =>
+                                      _openSpeedSheet(player, buttonContext),
                                 ),
                               ),
                               Expanded(
                                 child: _QuickActionButton(
-                                  icon: player.volume <= 0
-                                      ? Icons.volume_off_rounded
-                                      : Icons.volume_up_rounded,
-                                  label: player.volume <= 0
-                                      ? context.localeText('静音', 'Muted')
-                                      : '${(player.volume * 100).round()}%',
-                                  active: player.volume != 1,
-                                  onTapWithContext: (buttonContext) =>
-                                      _openVolumeSheet(player, buttonContext),
+                                  icon: Icons.bookmark_add_outlined,
+                                  label: context.localeText('书签', 'Bookmarks'),
+                                  onTap: () => _openBookmarks(player),
                                 ),
                               ),
                               Expanded(

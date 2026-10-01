@@ -22,6 +22,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
   bool _testingConnection = false;
   bool _scraperSourcesLoading = true;
   List<_ScraperSource> _scraperSources = [];
+  bool _sourcesLoaded = false;
 
   bool get _editing => widget.library != null;
   bool get _isLocal => _type == 'local';
@@ -47,7 +48,15 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
           ? _prettyRssSyncJson(library?.scraperConfig)
           : _prettyLibraryJson(library?.scraperConfig),
     );
-    _loadScraperSources();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_sourcesLoaded) {
+      _sourcesLoaded = true;
+      _loadScraperSources();
+    }
   }
 
   @override
@@ -149,11 +158,6 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
         return;
       }
     }
-    if (_type == 'webdav' && scraperConfig is Map) {
-      scraperConfig['nfo_writing_enabled'] = false;
-      scraperConfig['metadata_writing_enabled'] = false;
-    }
-
     final payload = <String, dynamic>{
       'name': _nameController.text.trim(),
       'library_type': _type,

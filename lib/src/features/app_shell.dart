@@ -15,6 +15,8 @@ import 'mine/downloads_page.dart';
 import 'mine/favorites_page.dart';
 import 'mine/fn_connect_page.dart';
 import 'mine/mine_page.dart';
+import 'mine/history_page.dart';
+import 'mine/bookmarks_page.dart';
 import 'mine/personalization/personalization_page.dart';
 import 'playlists/playlists_page.dart';
 import '../core/models/models.dart';
@@ -34,6 +36,7 @@ enum AppDestination {
   favorites,
   mine,
   history,
+  bookmarks,
   playlists,
   personalization,
   fnConnect,
@@ -57,6 +60,7 @@ bool _isMineDestination(AppDestination destination) {
   return switch (destination) {
     AppDestination.mine ||
     AppDestination.history ||
+    AppDestination.bookmarks ||
     AppDestination.favorites ||
     AppDestination.personalization ||
     AppDestination.fnConnect ||
@@ -166,6 +170,8 @@ class _AppShellState extends State<AppShell> {
         return AppDestination.mine;
       case 'history':
         return AppDestination.history;
+      case 'bookmarks':
+        return AppDestination.bookmarks;
       case 'playlists':
         return AppDestination.playlists;
       case 'personalization':
@@ -422,6 +428,7 @@ class _AppShellState extends State<AppShell> {
       AppDestination.search => _searchOrigin,
       AppDestination.favorites ||
       AppDestination.history ||
+      AppDestination.bookmarks ||
       AppDestination.personalization ||
       AppDestination.fnConnect ||
       AppDestination.notifications ||
@@ -627,6 +634,7 @@ class _AppShellState extends State<AppShell> {
       case AppDestination.mine:
         return MyPage(
           openHistory: () => _go(AppDestination.history),
+          openBookmarks: () => _go(AppDestination.bookmarks),
           openFavorites: () => _go(AppDestination.favorites),
           openDownloads: () => _go(AppDestination.downloads),
           openPersonalization: () => _go(AppDestination.personalization),
@@ -642,6 +650,8 @@ class _AppShellState extends State<AppShell> {
           onBack: () => _go(AppDestination.mine),
           openBookshelf: () => _go(AppDestination.bookshelf),
         );
+      case AppDestination.bookmarks:
+        return BookmarksPage(onBack: () => _go(AppDestination.mine));
       case AppDestination.playlists:
         return PlaylistsPage(
           openPlaylist: _openPlaylist,

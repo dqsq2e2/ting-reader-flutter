@@ -45,6 +45,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
   bool _autoCache = false;
   bool _ignoreAudioFocus = true;
   bool _pluginToolMenuEnabled = true;
+  bool _bookshelfProgressEnabled = true;
   String _widgetEmbedType = 'private';
   String _applicationTimeZone = defaultApplicationTimeZone;
   bool _timeZoneSaving = false;
@@ -105,6 +106,12 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
     _pluginToolMenuEnabled = _boolValue(
       data,
       'plugin_tool_menu_enabled',
+      nested: nested,
+      fallback: true,
+    );
+    _bookshelfProgressEnabled = _boolValue(
+      data,
+      'bookshelf_progress_enabled',
       nested: nested,
       fallback: true,
     );
@@ -366,13 +373,21 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
             const SizedBox(height: 24),
             _PlaybackSection(
               playbackSpeed: _playbackSpeed,
+              bookshelfProgressEnabled: _bookshelfProgressEnabled,
               autoPreload: _autoPreload,
               autoCache: _autoCache,
               ignoreAudioFocus: _ignoreAudioFocus,
               showAudioFocusSetting: isMobilePlatform,
               onSpeed: (value) {
                 setState(() => _playbackSpeed = value);
+                AppScope.playerOf(context).setSpeed(value);
+              },
+              onSpeedEnd: (value) {
                 _saveSettings({'playback_speed': value});
+              },
+              onBookshelfProgress: (value) {
+                setState(() => _bookshelfProgressEnabled = value);
+                _saveSettings({'bookshelf_progress_enabled': value});
               },
               onAutoPreload: (value) {
                 setState(() => _autoPreload = value);

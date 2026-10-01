@@ -161,7 +161,7 @@ class ApiClient {
       return _send(
         () => _dio.post<dynamic>(
           path,
-          data: data,
+          data: data is FormData ? data.clone() : data,
           queryParameters: params,
           options: _authOptions(
             idempotencyKey: idempotencyKey,
@@ -179,7 +179,7 @@ class ApiClient {
       params: params,
       () => _dio.post<dynamic>(
         path,
-        data: data,
+        data: data is FormData ? data.clone() : data,
         queryParameters: params,
         options: _authOptions(
           idempotencyKey: idempotencyKey,

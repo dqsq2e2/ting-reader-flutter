@@ -9,6 +9,7 @@ import '../../../shared/app_scope.dart';
 import '../../../shared/cards/book_card.dart';
 import '../../../shared/common/common_widgets.dart';
 import '../../../shared/filter/display_filter_menu.dart';
+import '../book_delete_dialog.dart';
 
 part 'series_detail_widgets.dart';
 part 'series_settings_dialog.dart';
@@ -39,27 +40,52 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   CoverShape _coverShape = CoverShape.square;
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
+  bool _selectionMode = false;
+  bool _batchBusy = false;
+  final Set<String> _selectedBookIds = {};
+  int _loadVersion = 0;
+  int _pageVersion = 0;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant SeriesDetailPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.seriesId != widget.seriesId) {
+      _pageVersion++;
+      _closeFilterMenu();
+      _series = null;
+      _selectionMode = false;
+      _batchBusy = false;
+      _selectedBookIds.clear();
+      _load();
+    }
   }
 
   @override
   void dispose() {
+    _loadVersion++;
+    _pageVersion++;
     _filterOverlay?.remove();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  Future<void> _load({bool showLoading = true}) async {
+    final version = ++_loadVersion;
+    if (showLoading) setState(() => _loading = true);
     try {
       final appState = AppScope.appOf(context);
       final results = await Future.wait([
         appState.api.get('/api/v1/series/${widget.seriesId}'),
         appState.api.get('/api/settings'),
       ]);
+      if (!mounted || version != _loadVersion) return;
       final settingsPayload = asMap(results[1].data);
       final settingsJson = asMap(settingsPayload['settings_json']);
       dynamic settingValue(String key) {
@@ -77,9 +103,125 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         _coverShape = coverShapeFromString(
           settingValue('bookshelf_cover_shape')?.toString(),
         );
+        _selectedBookIds.retainAll(_series!.books.map((book) => book.id));
       });
+    } catch (error) {
+      if (mounted && version == _loadVersion) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(context.localeText(
+                '加载系列失败：$error', 'Failed to load series: $error')),
+          ),
+        );
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && version == _loadVersion) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  void _enterSelectionMode() {
+    _closeFilterMenu();
+    setState(() => _selectionMode = true);
+  }
+
+  void _exitSelectionMode() {
+    if (_batchBusy) return;
+    setState(() {
+      _selectionMode = false;
+      _selectedBookIds.clear();
+    });
+  }
+
+  void _selectAll() {
+    if (_batchBusy) return;
+    final ids = _series?.books.map((book) => book.id).toSet() ?? <String>{};
+    setState(() {
+      if (ids.every(_selectedBookIds.contains)) {
+        _selectedBookIds.clear();
+      } else {
+        _selectedBookIds.addAll(ids);
+      }
+    });
+  }
+
+  Future<void> _runBatchAction(_SeriesBatchOperation operation) async {
+    final series = _series;
+    final app = AppScope.appOf(context);
+    if (_batchBusy || series == null || _selectedBookIds.isEmpty) return;
+    if (operation == _SeriesBatchOperation.delete && !app.isAdmin) return;
+    final version = _pageVersion;
+    final ids = _selectedBookIds.toList(growable: false);
+    setState(() => _batchBusy = true);
+    try {
+      var deleteSourceFiles = false;
+      if (operation == _SeriesBatchOperation.delete) {
+        final confirmation = await showDeleteBookConfirmationDialog(
+          context,
+          books: series.books.where((book) => ids.contains(book.id)).toList(),
+        );
+        if (!mounted || version != _pageVersion || confirmation == null) return;
+        deleteSourceFiles = confirmation.deleteSourceFiles;
+      } else if (operation == _SeriesBatchOperation.markUnread) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            title: Text(context.localeText('确认标记未读', 'Mark as unread?')),
+            content: Text(context.localeText(
+                '将所选 ${ids.length} 本书标记为未读，同时清除这些书籍的全部播放进度。确定继续吗？',
+                'Mark the ${ids.length} selected books as unread and clear all their playback progress. Continue?')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(context.l10n.commonCancel),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(context.localeText('标记未读', 'Mark as unread')),
+              ),
+            ],
+          ),
+        );
+        if (!mounted || version != _pageVersion || confirmed != true) return;
+      }
+      if (operation == _SeriesBatchOperation.delete) {
+        await Future.wait(ids.map((bookId) => app.api.delete(
+              '/api/books/$bookId',
+              params: {'delete_files': deleteSourceFiles},
+            )));
+      } else {
+        for (var offset = 0; offset < ids.length; offset += 200) {
+          await app.api.post('/api/books/read-status', data: {
+            'book_ids': ids.skip(offset).take(200).toList(),
+            'read': operation == _SeriesBatchOperation.markRead,
+          });
+        }
+      }
+      if (!mounted || version != _pageVersion) return;
+      setState(() {
+        _selectedBookIds.clear();
+        if (operation == _SeriesBatchOperation.delete) _selectionMode = false;
+      });
+      await _load(showLoading: false);
+    } catch (error) {
+      if (!mounted || version != _pageVersion) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(operation == _SeriesBatchOperation.delete
+              ? context.localeText(
+                  '删除书籍失败：$error', 'Failed to delete books: $error')
+              : context.localeText('更新所选书籍失败：$error',
+                  'Failed to update selected books: $error')),
+        ),
+      );
+      await _load(showLoading: false);
+    } finally {
+      if (mounted && version == _pageVersion) {
+        setState(() => _batchBusy = false);
+      }
     }
   }
 
@@ -239,7 +381,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     final books = _sortedBooks(series);
 
     return PageListView(
-      onRefresh: _load,
+      onRefresh: _batchBusy ? null : _load,
       children: [
         _SeriesHeader(
           title: localizedSeriesTitle(context, series),
@@ -247,7 +389,20 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           showFilterMenu: _showFilterMenu,
           onBack: widget.onBack,
           onToggleFilter: _toggleFilterMenu,
-          onSettings: _showSeriesSettingsDialog,
+          onSettings: AppScope.appOf(context).isAdmin
+              ? _showSeriesSettingsDialog
+              : null,
+          onSelect: _enterSelectionMode,
+          selectionToolbar: _selectionMode
+              ? _SeriesSelectionToolbar(
+                  selectedCount: _selectedBookIds.length,
+                  busy: _batchBusy,
+                  canManage: AppScope.appOf(context).isAdmin,
+                  onSelectAll: _selectAll,
+                  onExit: _exitSelectionMode,
+                  onAction: _runBatchAction,
+                )
+              : null,
         ),
         const SizedBox(height: 28),
         Row(
@@ -278,7 +433,13 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                 _iconSize,
               );
               final spacing = gridSpacing(_iconSize);
-              final ratio = _coverShape == CoverShape.square ? 0.78 : 0.62;
+              final cellWidth =
+                  (constraints.maxWidth - spacing * (columns - 1)) / columns;
+              final textScaler = MediaQuery.textScalerOf(context);
+              final cardHeight = cellWidth / coverAspectRatio(_coverShape) +
+                  textScaler.scale(14) * 1.5 +
+                  textScaler.scale(12) * 1.5 +
+                  16;
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -287,14 +448,27 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   crossAxisCount: columns,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing + 14,
-                  childAspectRatio: ratio,
+                  mainAxisExtent: cardHeight,
                 ),
                 itemBuilder: (context, index) {
                   final book = books[index];
                   return BookCard(
                     book: book,
                     coverShape: _coverShape,
-                    onTap: () => widget.openBook(book.id),
+                    selectionMode: _selectionMode,
+                    selected: _selectedBookIds.contains(book.id),
+                    onTap: () {
+                      if (_batchBusy) return;
+                      if (_selectionMode) {
+                        setState(() {
+                          if (!_selectedBookIds.remove(book.id)) {
+                            _selectedBookIds.add(book.id);
+                          }
+                        });
+                      } else {
+                        widget.openBook(book.id);
+                      }
+                    },
                   );
                 },
               );

@@ -1,6 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
@@ -124,6 +128,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   static const _chaptersPerGroup = 100;
 
   bool _loading = true;
+  bool _initialLoadStarted = false;
   bool _chapterPageLoading = false;
   Book? _book;
   List<Chapter> _chapters = [];
@@ -144,9 +149,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
   final Map<String, GlobalKey> _chapterRowKeys = {};
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialLoadStarted) {
+      _initialLoadStarted = true;
+      _load();
+    }
   }
 
   @override
@@ -489,13 +497,24 @@ class _BookDetailPageState extends State<BookDetailPage> {
   Future<void> _writeMetadata() async {
     final book = _book;
     if (book == null) return;
-    await AppScope.appOf(context)
-        .api
-        .post('/api/books/${book.id}/write-metadata');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.bookDetailWriteMetadataStarted)),
-    );
+    try {
+      await AppScope.appOf(context)
+          .api
+          .post('/api/books/${book.id}/write-metadata');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.bookDetailWriteMetadataStarted)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.l10n.bookDetailWriteMetadataFailed(error.toString()),
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _showScrapeDialog() async {
@@ -790,21 +809,23 @@ class _BookDetailPageState extends State<BookDetailPage> {
     var selectedGroupOrder = _chapterGroupsDescending ? 'desc' : 'asc';
     var metadataLocked = book.manualCorrected;
     var metadataLockTouched = false;
+    PlatformFile? selectedCover;
 
-    final result = await showDialog<_EditBookDialogResult>(
+    final editorRoute = DialogRoute<_EditBookDialogResult>(
       context: context,
       builder: (context) {
         var saving = false;
         var deleting = false;
         var generating = false;
         var showRegexGenerator = false;
+        var pickingCover = false;
         Map<String, dynamic>? regexResult;
         String? dialogError;
 
         return StatefulBuilder(
           builder: (dialogContext, setDialogState) {
             Future<void> save() async {
-              if (saving) return;
+              if (saving || pickingCover) return;
               setDialogState(() {
                 saving = true;
                 dialogError = null;
@@ -826,10 +847,26 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   'manual_corrected':
                       metadataLockTouched ? metadataLocked : true,
                 };
-                final res = await appState.api.patch(
-                  '/api/books/${book.id}',
-                  data: payload,
-                );
+                final Response<dynamic> res;
+                if (selectedCover != null) {
+                  final file = selectedCover!;
+                  res = await appState.api.post(
+                    '/api/books/${book.id}/cover',
+                    data: FormData.fromMap({
+                      'file': MultipartFile.fromBytes(
+                        file.bytes!,
+                        filename: file.name,
+                      ),
+                      'metadata': jsonEncode(payload),
+                    }),
+                  );
+                  invalidateBookCover(appState, book.id);
+                } else {
+                  res = await appState.api.patch(
+                    '/api/books/${book.id}',
+                    data: payload,
+                  );
+                }
                 final shouldSaveGroupOrder =
                     _findChapterGroupOrder(_chapterGroupOrders, book.id) !=
                         selectedGroupOrder;
@@ -876,6 +913,57 @@ class _BookDetailPageState extends State<BookDetailPage> {
               } finally {
                 if (dialogContext.mounted) {
                   setDialogState(() => saving = false);
+                }
+              }
+            }
+
+            Future<void> pickCover() async {
+              if (pickingCover || saving) return;
+              setDialogState(() => pickingCover = true);
+              try {
+                final picked = await FilePicker.platform.pickFiles(
+                  type: FileType.custom,
+                  allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+                  withData: kIsWeb,
+                );
+                if (!dialogContext.mounted || picked == null) return;
+                final file = picked.files.single;
+                if (file.size > 10 * 1024 * 1024) {
+                  setDialogState(() => dialogError = context.localeText(
+                        '请选择不超过 10 MB 的 JPG、PNG 或 WebP 图片',
+                        'Choose a JPG, PNG or WebP image up to 10 MB',
+                      ));
+                  return;
+                }
+                final bytes = file.bytes ??
+                    (file.path == null
+                        ? null
+                        : await File(file.path!).readAsBytes());
+                if (!dialogContext.mounted) return;
+                if (bytes == null ||
+                    bytes.isEmpty ||
+                    bytes.length > 10 * 1024 * 1024) {
+                  setDialogState(() => dialogError = context.localeText(
+                        '无法读取封面图片，或图片超过 10 MB',
+                        'The cover could not be read or exceeds 10 MB',
+                      ));
+                  return;
+                }
+                setDialogState(() {
+                  selectedCover = PlatformFile(
+                      name: file.name, size: bytes.length, bytes: bytes);
+                  dialogError = null;
+                });
+              } catch (error) {
+                if (dialogContext.mounted) {
+                  setDialogState(() => dialogError = context.localeText(
+                        '无法选择封面：$error',
+                        'Could not select a cover: $error',
+                      ));
+                }
+              } finally {
+                if (dialogContext.mounted) {
+                  setDialogState(() => pickingCover = false);
                 }
               }
             }
@@ -946,7 +1034,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             }
 
             final compact = MediaQuery.sizeOf(dialogContext).width < 700;
-            final disabled = saving || deleting;
+            final disabled = saving || deleting || pickingCover;
 
             Widget dialogBody() {
               if (showRegexGenerator) {
@@ -1188,8 +1276,97 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     final rightColumn = Column(
                       children: [
                         _EditMetadataField(
-                            controller: cover,
-                            label: context.l10n.bookDetailCoverUrlField),
+                          controller: cover,
+                          label: context.l10n.bookDetailCoverUrlField,
+                          enabled: !saving,
+                          onChanged: (_) {
+                            if (selectedCover != null) {
+                              setDialogState(() => selectedCover = null);
+                            }
+                          },
+                          trailing: TextButton.icon(
+                            onPressed:
+                                disabled || pickingCover ? null : pickCover,
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppColors.primary600,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 6),
+                              minimumSize: const Size(0, 24),
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(Icons.upload_rounded, size: 16),
+                            label: Text(
+                              context.localeText('上传', 'Upload'),
+                              style: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                        if (selectedCover != null) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: dialogContext.isDark
+                                  ? AppColors.slate800
+                                  : AppColors.slate50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.memory(
+                                    selectedCover!.bytes!,
+                                    width: 64,
+                                    height: 64,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: 192,
+                                    errorBuilder: (_, __, ___) =>
+                                        const SizedBox(
+                                      width: 64,
+                                      height: 64,
+                                      child: Icon(Icons.broken_image_outlined),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(selectedCover!.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                          context.localeText('保存后应用新封面',
+                                              'The new cover is applied when saved'),
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: dialogContext.mutedText)),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  tooltip: context.localeText(
+                                      '取消所选封面', 'Remove selected cover'),
+                                  onPressed: saving
+                                      ? null
+                                      : () => setDialogState(
+                                          () => selectedCover = null),
+                                  icon:
+                                      const Icon(Icons.close_rounded, size: 18),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 14),
                         _ReadOnlyMetadataField(
                           label: context.localeText('书籍位置', 'Book Location'),
@@ -1369,12 +1546,16 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 children: compact
                     ? [
                         deleteButton,
-                        if (book.libraryType == 'local') writeButton,
+                        if (book.libraryType == 'local' ||
+                            book.canWriteMetadataFiles)
+                          writeButton,
                         cancelButton,
                         saveButton,
                       ]
                     : [
-                        if (book.libraryType == 'local') writeButton,
+                        if (book.libraryType == 'local' ||
+                            book.canWriteMetadataFiles)
+                          writeButton,
                         cancelButton,
                         saveButton,
                       ],
@@ -1391,61 +1572,64 @@ class _BookDetailPageState extends State<BookDetailPage> {
               );
             }
 
-            return Dialog(
-              insetPadding: EdgeInsets.all(compact ? 8 : 22),
-              backgroundColor: Colors.transparent,
-              elevation: 0,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: 900,
-                  maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: dialogContext.cardColor,
-                    borderRadius: BorderRadius.circular(26),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(
-                            alpha: dialogContext.isDark ? 0.5 : 0.2),
-                        blurRadius: 34,
-                        offset: const Offset(0, 20),
-                      ),
-                    ],
+            return PopScope(
+              canPop: !disabled,
+              child: Dialog(
+                insetPadding: EdgeInsets.all(compact ? 8 : 22),
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 900,
+                    maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
                   ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: SingleChildScrollView(child: dialogBody()),
-                      ),
-                      if (dialogError != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                          child: Text(
-                            dialogError!,
-                            style: const TextStyle(
-                              color: Color(0xffef4444),
-                              fontSize: 13,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: dialogContext.cardColor,
+                      borderRadius: BorderRadius.circular(26),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                              alpha: dialogContext.isDark ? 0.5 : 0.2),
+                          blurRadius: 34,
+                          offset: const Offset(0, 20),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: SingleChildScrollView(child: dialogBody()),
+                        ),
+                        if (dialogError != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                            child: Text(
+                              dialogError!,
+                              style: const TextStyle(
+                                color: Color(0xffef4444),
+                                fontSize: 13,
+                              ),
                             ),
                           ),
-                        ),
-                      Container(
-                        padding: EdgeInsets.fromLTRB(
-                          compact ? 18 : 30,
-                          14,
-                          compact ? 18 : 30,
-                          compact ? 18 : 24,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border(
-                            top: BorderSide(color: dialogContext.faintBorder),
+                        Container(
+                          padding: EdgeInsets.fromLTRB(
+                            compact ? 18 : 30,
+                            14,
+                            compact ? 18 : 30,
+                            compact ? 18 : 24,
                           ),
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(color: dialogContext.faintBorder),
+                            ),
+                          ),
+                          child: footer(),
                         ),
-                        child: footer(),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1455,6 +1639,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
       },
     );
 
+    final result = await Navigator.of(context).push(editorRoute);
+    // The pop result arrives before the closing animation removes the fields.
+    await editorRoute.completed;
     for (final controller in [
       title,
       author,
@@ -1474,6 +1661,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
       controller.dispose();
     }
 
+    if (!mounted) return;
     if (result?.deleted == true) {
       widget.onBack();
       return;
@@ -1488,6 +1676,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
           narrator: saved.narrator,
           description: saved.description,
           coverUrl: saved.coverUrl,
+          themeColor: saved.themeColor,
+          manualCorrected: saved.manualCorrected,
           tags: saved.tags,
           genre: saved.genre,
           year: saved.year,
@@ -1496,6 +1686,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
           chapterRegex: saved.chapterRegex,
         );
       });
+      if (mounted) {
+        AppScope.playerOf(context).updateBookMetadata(_book!);
+      }
       if (result?.reloadGroup == true) {
         await _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
       }

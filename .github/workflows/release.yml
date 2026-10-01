@@ -288,7 +288,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/checkout@v4
-        if: github.event_name == 'workflow_dispatch'
         with:
           fetch-depth: 0
       - uses: actions/download-artifact@v4
@@ -315,10 +314,33 @@ jobs:
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          version = os.environ["RELEASE_VERSION"].removeprefix("v")
+          lines = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
+          heading = f"## {version} - "
+          start = next((i for i, line in enumerate(lines) if line.startswith(heading)), None)
+          if start is None:
+              raise SystemExit(f"Missing changelog for {version}")
+          end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+          notes = "\n".join(lines[start + 1:end]).strip()
+          if not notes:
+              raise SystemExit(f"Empty changelog for {version}")
+          Path("release-notes.md").write_text(notes + "\n", encoding="utf-8")
+          PY
       - name: Publish Formal Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          name: Ting Reader Flutter ${{ github.ref_name }}
+          body_path: release-notes.md
           files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

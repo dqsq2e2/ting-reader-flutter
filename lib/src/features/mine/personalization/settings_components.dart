@@ -199,79 +199,38 @@ class _SpeedPicker extends StatelessWidget {
   const _SpeedPicker({
     required this.speed,
     required this.onSpeed,
-    this.expanded = false,
+    required this.onSpeedEnd,
   });
 
   final double speed;
   final ValueChanged<double> onSpeed;
-  final bool expanded;
-
+  final ValueChanged<double> onSpeedEnd;
   @override
   Widget build(BuildContext context) {
-    final speeds = [1.0, 1.25, 1.5, 2.0];
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: context.isDark ? AppColors.slate800 : AppColors.slate100,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: expanded ? MainAxisSize.max : MainAxisSize.min,
-        children: [
-          for (final value in speeds)
-            if (expanded)
-              Expanded(
-                child: _SpeedButton(
-                  label: value == 1.0 ? '1x' : '${value}x',
-                  selected: (speed - value).abs() < 0.01,
-                  onTap: () => onSpeed(value),
-                ),
-              )
-            else
-              _SpeedButton(
-                label: value == 1.0 ? '1x' : '${value}x',
-                selected: (speed - value).abs() < 0.01,
-                onTap: () => onSpeed(value),
-              ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SpeedButton extends StatelessWidget {
-  const _SpeedButton({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? context.cardColor : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          constraints: const BoxConstraints(minWidth: 54),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: selected ? AppColors.primary600 : context.mutedText,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('0.5x',
+                style: TextStyle(color: context.mutedText, fontSize: 12)),
+            Text('${speed.toStringAsFixed(1)}x',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text('3.0x',
+                style: TextStyle(color: context.mutedText, fontSize: 12)),
+          ],
         ),
-      ),
+        Slider(
+          min: 0.5,
+          max: 3.0,
+          divisions: 25,
+          value: speed.clamp(0.5, 3.0).toDouble(),
+          activeColor: AppColors.primary600,
+          onChanged: onSpeed,
+          onChangeEnd: onSpeedEnd,
+        ),
+      ],
     );
   }
 }

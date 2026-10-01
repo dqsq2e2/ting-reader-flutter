@@ -8,9 +8,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/application_time_zone.dart';
 import '../../core/utils/locale.dart';
-import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
-import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
 import '../../shared/fnos_logo.dart';
 
@@ -21,6 +19,7 @@ class MyPage extends StatefulWidget {
   const MyPage({
     super.key,
     required this.openHistory,
+    required this.openBookmarks,
     required this.openFavorites,
     required this.openDownloads,
     required this.openPersonalization,
@@ -32,6 +31,7 @@ class MyPage extends StatefulWidget {
   });
 
   final VoidCallback openHistory;
+  final VoidCallback openBookmarks;
   final VoidCallback openFavorites;
   final VoidCallback openDownloads;
   final VoidCallback openPersonalization;
@@ -50,7 +50,9 @@ class _MyPageState extends State<MyPage> {
   bool _accountInitialized = false;
   bool _savingAccount = false;
   bool _accountSaved = false;
-  List<ProgressItem> _recent = [];
+  int _recentBookCount = 0;
+  int _recentChapterCount = 0;
+  double _recentPositionSeconds = 0;
   List<Book> _favorites = [];
   List<Playlist> _playlists = [];
   String? _version;
@@ -85,15 +87,19 @@ class _MyPageState extends State<MyPage> {
     final appState = AppScope.appOf(context);
     try {
       final results = await Future.wait([
-        appState.api.get('/api/progress/recent'),
+        appState.api.get('/api/history/summary'),
         appState.api.get('/api/favorites'),
         appState.api.get('/api/playlists'),
         appState.api.get('/api/health'),
       ]);
       final health = asMap(results[3].data);
+      final history = asMap(results[0].data);
+      if (!mounted) return;
       setState(() {
-        _recent =
-            asMapList(results[0].data).map(ProgressItem.fromJson).toList();
+        _recentBookCount = (history['books'] as num?)?.toInt() ?? 0;
+        _recentChapterCount = (history['chapters'] as num?)?.toInt() ?? 0;
+        _recentPositionSeconds =
+            (history['position_seconds'] as num?)?.toDouble() ?? 0;
         _favorites = asMapList(results[1].data).map(Book.fromJson).toList();
         _playlists = asMapList(results[2].data).map(Playlist.fromJson).toList();
         _version = health['version']?.toString();
@@ -168,19 +174,10 @@ class _MyPageState extends State<MyPage> {
     final downloadCount = AppScope.downloadOf(context).downloads.length;
     final user = appState.user;
     final username = user?.username ?? _usernameController.text;
-    final listenedMinutes = (_recent.fold<double>(
-              0,
-              (total, item) => total + item.position.clamp(0, double.infinity),
-            ) /
-            60)
-        .round();
+    final listenedMinutes = (_recentPositionSeconds / 60).round();
     final listenedDuration =
         formatMinutesMetricForLocale(context, listenedMinutes);
-    final recentBookCount = _recent
-        .map((item) => item.bookId)
-        .where((id) => id.isNotEmpty)
-        .toSet()
-        .length;
+    final recentBookCount = _recentBookCount;
 
     final content = ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -211,15 +208,24 @@ class _MyPageState extends State<MyPage> {
                     _EntryRow(
                       icon: Icons.history_rounded,
                       title: l10n.mineHistoryTitle,
-                      description: _recent.isEmpty
+                      description: _recentChapterCount == 0
                           ? l10n.mineHistoryEmptyDescription
                           : context.localeText(
-                              '最近听过 $recentBookCount 本 / ${_recent.length} 章，约 ${listenedDuration.value} ${listenedDuration.unit}',
-                              'Recently listened to $recentBookCount books / ${_recent.length} chapters, about ${listenedDuration.value} ${listenedDuration.unit}',
+                              '最近听过 $recentBookCount 本 / $_recentChapterCount 章，约 ${listenedDuration.value} ${listenedDuration.unit}',
+                              'Recently listened to $recentBookCount books / $_recentChapterCount chapters, about ${listenedDuration.value} ${listenedDuration.unit}',
                             ),
                       color: AppColors.primary600,
                       backgroundColor: AppColors.primary50,
                       onTap: widget.openHistory,
+                    ),
+                    _EntryRow(
+                      icon: Icons.bookmarks_outlined,
+                      title: context.localeText('我的书签', 'My Bookmarks'),
+                      description: context.localeText('按书籍查看保存的位置和备注',
+                          'Saved positions and notes, grouped by book'),
+                      color: Colors.amber.shade700,
+                      backgroundColor: Colors.amber.shade50,
+                      onTap: widget.openBookmarks,
                     ),
                     _EntryRow(
                       icon: Icons.favorite_border_rounded,
@@ -319,318 +325,6 @@ class _MyPageState extends State<MyPage> {
       child: content,
     );
   }
-}
-
-class HistoryPage extends StatefulWidget {
-  const HistoryPage({
-    super.key,
-    required this.openBook,
-    required this.onBack,
-    required this.openBookshelf,
-  });
-
-  final void Function(String bookId, String? chapterId) openBook;
-  final VoidCallback onBack;
-  final VoidCallback openBookshelf;
-
-  @override
-  State<HistoryPage> createState() => _HistoryPageState();
-}
-
-class _HistoryPageState extends State<HistoryPage> {
-  bool _loading = true;
-  List<ProgressItem> _items = [];
-  bool _selectionMode = false;
-  bool _deleting = false;
-  final Set<String> _expandedBookIds = <String>{};
-  final Set<String> _selectedIds = <String>{};
-  CoverShape _coverShape = CoverShape.square;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final api = AppScope.appOf(context).api;
-    try {
-      final results = await Future.wait([
-        api.get('/api/progress/recent'),
-        api.get('/api/settings'),
-      ]);
-      final settings = asMap(asMap(results[1].data)['settings_json']);
-      if (!mounted) return;
-      setState(() {
-        _items = asMapList(results[0].data).map(ProgressItem.fromJson).toList();
-        _coverShape = coverShapeFromString(
-          settings['bookshelf_cover_shape']?.toString(),
-        );
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  String _historyKey(ProgressItem item) {
-    return item.id.isNotEmpty
-        ? item.id
-        : '${item.bookId}:${item.chapterId ?? ''}';
-  }
-
-  List<_HistoryBookGroup> get _groups {
-    final map = <String, _HistoryBookGroup>{};
-    for (final item in _items) {
-      if (item.chapterId == null || item.chapterId!.isEmpty) continue;
-      final group = map[item.bookId];
-      if (group == null) {
-        map[item.bookId] = _HistoryBookGroup(
-          bookId: item.bookId,
-          bookTitle: item.bookTitle ??
-              (mounted
-                  ? context.localeText('未知书籍', 'Unknown Book')
-                  : 'Unknown Book'),
-          coverUrl: item.coverUrl,
-          libraryId: item.libraryId,
-          latest: item,
-          chapters: [item],
-        );
-        continue;
-      }
-      group.chapters.add(item);
-      if (_historyTime(item).isAfter(_historyTime(group.latest))) {
-        group.latest = item;
-      }
-    }
-    final groups = map.values.toList();
-    for (final group in groups) {
-      group.chapters.sort((a, b) => _historyTime(b).compareTo(_historyTime(a)));
-    }
-    groups.sort(
-        (a, b) => _historyTime(b.latest).compareTo(_historyTime(a.latest)));
-    return groups;
-  }
-
-  bool get _allSelected {
-    return _items.isNotEmpty &&
-        _items.every((item) => _selectedIds.contains(_historyKey(item)));
-  }
-
-  void _setSelectionMode(bool value) {
-    setState(() {
-      _selectionMode = value;
-      _selectedIds.clear();
-    });
-  }
-
-  void _toggleExpanded(String bookId) {
-    setState(() {
-      if (_expandedBookIds.contains(bookId)) {
-        _expandedBookIds.remove(bookId);
-      } else {
-        _expandedBookIds.add(bookId);
-      }
-    });
-  }
-
-  void _toggleItem(ProgressItem item) {
-    final key = _historyKey(item);
-    setState(() {
-      if (_selectedIds.contains(key)) {
-        _selectedIds.remove(key);
-      } else {
-        _selectedIds.add(key);
-      }
-    });
-  }
-
-  void _toggleBook(_HistoryBookGroup group) {
-    final keys = group.chapters.map(_historyKey).toList(growable: false);
-    final selected = keys.every(_selectedIds.contains);
-    setState(() {
-      for (final key in keys) {
-        if (selected) {
-          _selectedIds.remove(key);
-        } else {
-          _selectedIds.add(key);
-        }
-      }
-    });
-  }
-
-  void _toggleAll() {
-    setState(() {
-      if (_allSelected) {
-        _selectedIds.clear();
-      } else {
-        _selectedIds
-          ..clear()
-          ..addAll(_items.map(_historyKey));
-      }
-    });
-  }
-
-  Future<void> _deleteSelected() async {
-    if (_selectedIds.isEmpty || _deleting) return;
-    final api = AppScope.appOf(context).api;
-    final selected = _items
-        .where((item) => _selectedIds.contains(_historyKey(item)))
-        .toList(growable: false);
-    setState(() => _deleting = true);
-    try {
-      await api.post(
-        '/api/progress/recent/delete',
-        data: {
-          'progress_ids': selected
-              .where((item) => item.id.isNotEmpty)
-              .map((item) => item.id)
-              .toList(),
-          'chapter_ids': selected
-              .where((item) => item.id.isEmpty && item.chapterId != null)
-              .map((item) => item.chapterId!)
-              .toList(),
-        },
-      );
-      if (!mounted) return;
-      setState(() {
-        _items.removeWhere((item) => _selectedIds.contains(_historyKey(item)));
-        _selectedIds.clear();
-        _selectionMode = false;
-      });
-    } finally {
-      if (mounted) setState(() => _deleting = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) return const LoadingView();
-    final l10n = context.l10n;
-    final groups = _groups;
-    final compactActions = MediaQuery.sizeOf(context).width < 420;
-    return PageListView(
-      onRefresh: _load,
-      children: [
-        AppBackButton(onPressed: widget.onBack),
-        const SizedBox(height: 28),
-        PageHeaderRow(
-          icon: Icons.history_rounded,
-          title: l10n.mineHistoryTitle,
-          subtitle: context.localeText(
-            '按书籍整理，共 ${groups.length} 本、${_items.length} 个章节。',
-            '${groups.length} books, ${_items.length} chapters grouped by book.',
-          ),
-          action: _items.isEmpty
-              ? null
-              : _selectionMode
-                  ? Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        BatchSelectButton(
-                          checked: _allSelected,
-                          label: context.localeText('全选', 'Select All'),
-                          compact: compactActions,
-                          onPressed: _deleting ? null : _toggleAll,
-                        ),
-                        _HistoryActionButton(
-                          icon: _deleting ? null : Icons.delete_outline_rounded,
-                          label: _deleting
-                              ? context.localeText('删除中...', 'Deleting...')
-                              : compactActions
-                                  ? context.localeText('删除', 'Delete')
-                                  : context.localeText(
-                                      '删除所选${_selectedIds.isEmpty ? '' : ' ${_selectedIds.length}'}',
-                                      'Delete selected${_selectedIds.isEmpty ? '' : ' ${_selectedIds.length}'}',
-                                    ),
-                          danger: true,
-                          loading: _deleting,
-                          onPressed: _selectedIds.isEmpty || _deleting
-                              ? null
-                              : _deleteSelected,
-                        ),
-                        _HistoryActionButton(
-                          icon: Icons.close_rounded,
-                          label: context.localeText('取消', 'Cancel'),
-                          onPressed:
-                              _deleting ? null : () => _setSelectionMode(false),
-                        ),
-                      ],
-                    )
-                  : TextButton.icon(
-                      onPressed: () => _setSelectionMode(true),
-                      icon: const Icon(Icons.checklist_rounded, size: 18),
-                      label: Text(context.localeText('选择', 'Select')),
-                      style: TextButton.styleFrom(
-                        foregroundColor: context.secondaryText,
-                        backgroundColor:
-                            context.isDark ? AppColors.slate800 : Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 13,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(color: context.faintBorder),
-                        ),
-                      ),
-                    ),
-        ),
-        const SizedBox(height: 24),
-        if (groups.isEmpty)
-          EmptyState(
-            icon: Icons.history_toggle_off_rounded,
-            title: context.localeText('暂无我的历史', 'No History Yet'),
-            message: context.localeText(
-              '暂无我的历史，去书架开始第一本吧。',
-              'Go to the bookshelf and start your first book.',
-            ),
-            action: PrimaryButton(
-              label: context.localeText('去书架', 'Go to Bookshelf'),
-              icon: Icons.library_books_rounded,
-              onPressed: widget.openBookshelf,
-            ),
-          )
-        else ...[
-          for (final group in groups) ...[
-            _HistoryBookCard(
-              group: group,
-              coverShape: _coverShape,
-              expanded: _expandedBookIds.contains(group.bookId),
-              selectionMode: _selectionMode,
-              selectedIds: _selectedIds,
-              historyKey: _historyKey,
-              onToggleExpanded: () => _toggleExpanded(group.bookId),
-              onToggleBook: () => _toggleBook(group),
-              onToggleItem: _toggleItem,
-              onOpenBook: widget.openBook,
-            ),
-            const SizedBox(height: 12),
-          ],
-        ],
-        const SafeBottomSpacer(),
-      ],
-    );
-  }
-}
-
-class _HistoryBookGroup {
-  _HistoryBookGroup({
-    required this.bookId,
-    required this.bookTitle,
-    required this.latest,
-    required this.chapters,
-    this.coverUrl,
-    this.libraryId,
-  });
-
-  final String bookId;
-  final String bookTitle;
-  final String? coverUrl;
-  final String? libraryId;
-  ProgressItem latest;
-  final List<ProgressItem> chapters;
 }
 
 class _AccountProfileCard extends StatelessWidget {
@@ -1155,426 +849,4 @@ class _EntryRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _HistoryActionButton extends StatelessWidget {
-  const _HistoryActionButton({
-    required this.label,
-    this.icon,
-    this.onPressed,
-    this.danger = false,
-    this.loading = false,
-  });
-
-  final String label;
-  final IconData? icon;
-  final VoidCallback? onPressed;
-  final bool danger;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    final compact = MediaQuery.sizeOf(context).width < 420;
-    return BatchActionButton(
-      label: label,
-      onPressed: onPressed,
-      icon: icon,
-      danger: danger,
-      loading: loading,
-      compact: compact,
-    );
-  }
-}
-
-class _HistoryBookCard extends StatelessWidget {
-  const _HistoryBookCard({
-    required this.group,
-    required this.coverShape,
-    required this.expanded,
-    required this.selectionMode,
-    required this.selectedIds,
-    required this.historyKey,
-    required this.onToggleExpanded,
-    required this.onToggleBook,
-    required this.onToggleItem,
-    required this.onOpenBook,
-  });
-
-  final _HistoryBookGroup group;
-  final CoverShape coverShape;
-  final bool expanded;
-  final bool selectionMode;
-  final Set<String> selectedIds;
-  final String Function(ProgressItem item) historyKey;
-  final VoidCallback onToggleExpanded;
-  final VoidCallback onToggleBook;
-  final ValueChanged<ProgressItem> onToggleItem;
-  final void Function(String bookId, String? chapterId) onOpenBook;
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.appOf(context);
-    final compact = MediaQuery.sizeOf(context).width < 640;
-    final latest = group.latest;
-    final percent = _historyPercent(latest);
-    final allSelected =
-        group.chapters.every((item) => selectedIds.contains(historyKey(item)));
-    return Container(
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: context.isDark ? AppColors.slate800 : AppColors.slate100,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color:
-                Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onToggleExpanded,
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 14 : 20,
-                  vertical: compact ? 14 : 18,
-                ),
-                child: Row(
-                  children: [
-                    if (selectionMode) ...[
-                      _HistoryCheckbox(
-                        checked: allSelected,
-                        onTap: onToggleBook,
-                      ),
-                      const SizedBox(width: 12),
-                    ],
-                    SizedBox(
-                      width: compact ? 64 : 80,
-                      child: AspectRatio(
-                        aspectRatio: coverAspectRatio(coverShape),
-                        child: CoverImage(
-                          url: coverUrl(
-                            appState,
-                            url: group.coverUrl,
-                            libraryId: group.libraryId,
-                            bookId: group.bookId,
-                          ),
-                          radius: 12,
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: compact ? 14 : 18),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  group.bookTitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: compact ? 15 : 16,
-                                    height: 1.18,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                context.localeText(
-                                  '${group.chapters.length} 章',
-                                  '${group.chapters.length} chapters',
-                                ),
-                                style: TextStyle(
-                                  color: context.mutedText,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 5),
-                          Text(
-                            latest.chapterTitle ??
-                                context.localeText('未知章节', 'Unknown Chapter'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: context.mutedText,
-                              fontSize: compact ? 12 : 13,
-                            ),
-                          ),
-                          const SizedBox(height: 7),
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.access_time_rounded,
-                                size: 14,
-                                color: AppColors.slate400,
-                              ),
-                              const SizedBox(width: 5),
-                              Expanded(
-                                child: Text(
-                                  context.localeText(
-                                    '最后收听：${_formatLastListenedTime(context, latest.updatedAt)}',
-                                    'Last listened: ${_formatLastListenedTime(context, latest.updatedAt)}',
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: AppColors.slate400,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 16),
-                          _HistoryProgressBar(percent: percent),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Icon(
-                      expanded
-                          ? Icons.keyboard_arrow_down_rounded
-                          : Icons.chevron_right_rounded,
-                      color: AppColors.slate300,
-                      size: 24,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          if (expanded)
-            Container(
-              color: context.isDark
-                  ? AppColors.slate950.withValues(alpha: 0.24)
-                  : AppColors.slate50.withValues(alpha: 0.62),
-              child: Column(
-                children: [
-                  for (var i = 0; i < group.chapters.length; i++) ...[
-                    if (i > 0)
-                      Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: context.isDark
-                            ? AppColors.slate800
-                            : AppColors.slate100,
-                      ),
-                    _HistoryChapterTile(
-                      item: group.chapters[i],
-                      selectionMode: selectionMode,
-                      selected:
-                          selectedIds.contains(historyKey(group.chapters[i])),
-                      onToggle: () => onToggleItem(group.chapters[i]),
-                      onTap: () => onOpenBook(
-                        group.bookId,
-                        group.chapters[i].chapterId,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HistoryChapterTile extends StatelessWidget {
-  const _HistoryChapterTile({
-    required this.item,
-    required this.selectionMode,
-    required this.selected,
-    required this.onToggle,
-    required this.onTap,
-  });
-
-  final ProgressItem item;
-  final bool selectionMode;
-  final bool selected;
-  final VoidCallback onToggle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final percent = _historyPercent(item);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: selectionMode ? onToggle : onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-          child: Row(
-            children: [
-              if (selectionMode) ...[
-                _HistoryCheckbox(checked: selected, onTap: onToggle),
-                const SizedBox(width: 12),
-              ],
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.chapterTitle ??
-                          context.localeText('未知章节', 'Unknown Chapter'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        height: 1.18,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.access_time_rounded,
-                          size: 14,
-                          color: AppColors.slate400,
-                        ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            _formatLastListenedTime(context, item.updatedAt),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.slate400,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    _HistoryProgressBar(percent: percent),
-                  ],
-                ),
-              ),
-              if (!selectionMode) ...[
-                const SizedBox(width: 12),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.slate300,
-                  size: 22,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HistoryCheckbox extends StatelessWidget {
-  const _HistoryCheckbox({
-    required this.checked,
-    required this.onTap,
-  });
-
-  final bool checked;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return BatchCheckbox(
-      checked: checked,
-      compact: MediaQuery.sizeOf(context).width < 640,
-      onChanged: onTap,
-    );
-  }
-}
-
-class _HistoryProgressBar extends StatelessWidget {
-  const _HistoryProgressBar({required this.percent});
-
-  final double percent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(999),
-            child: LinearProgressIndicator(
-              value: percent,
-              minHeight: 4,
-              color: percent >= 0.95
-                  ? const Color(0xff10b981)
-                  : AppColors.primary500,
-              backgroundColor:
-                  context.isDark ? AppColors.slate800 : AppColors.slate100,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 44,
-          child: Text(
-            percent >= 0.95
-                ? context.localeText('已播完', 'Done')
-                : '${(percent * 100).round()}%',
-            textAlign: TextAlign.right,
-            style: const TextStyle(
-              color: AppColors.slate400,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-DateTime _historyTime(ProgressItem item) {
-  return backendDateTimeInApplicationTimeZone(item.updatedAt) ??
-      DateTime.fromMillisecondsSinceEpoch(0);
-}
-
-double _historyPercent(ProgressItem item) {
-  final duration = (item.chapterDuration ?? item.duration).toDouble();
-  if (duration <= 0) return 0;
-  return (item.position / duration).clamp(0.0, 1.0).toDouble();
-}
-
-String _formatLastListenedTime(BuildContext context, String? value) {
-  if (value == null || value.isEmpty) {
-    return context.localeText('未知时间', 'Unknown time');
-  }
-  final appState = AppScope.appOf(context);
-  final date = backendDateTimeInApplicationTimeZone(
-    value,
-    appState.applicationTimeZone,
-  );
-  if (date == null) return context.localeText('未知时间', 'Unknown time');
-
-  final now = nowInApplicationTimeZone(appState.applicationTimeZone);
-  final today = DateTime(now.year, now.month, now.day);
-  final target = DateTime(date.year, date.month, date.day);
-  final diff = today.difference(target).inDays;
-  final time =
-      '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-  if (diff == 0) return context.localeText('今天 $time', 'Today $time');
-  if (diff == 1) return context.localeText('昨天 $time', 'Yesterday $time');
-  if (diff > 1 && diff < 7) {
-    return context.localeText('$diff 天前 $time', '$diff days ago $time');
-  }
-  return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')} $time';
 }

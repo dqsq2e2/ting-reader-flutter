@@ -355,7 +355,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
       author: _metadataString(metadata, 'author'),
       narrator: _metadataString(metadata, 'narrator'),
       description: _metadataString(metadata, 'description'),
-      coverUrl: item.localCoverPath ?? item.coverUrl,
+      coverUrl: item.localCoverPath != null
+          ? Uri.file(item.localCoverPath!).toString()
+          : item.coverUrl,
       themeColor: _metadataString(metadata, 'theme_color'),
       duration: _metadataInt(metadata, 'duration'),
       path: _metadataString(metadata, 'path'),

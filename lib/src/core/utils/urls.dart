@@ -1,10 +1,21 @@
 import '../models/models.dart';
 import '../state/app_state.dart';
 
+final _coverRevisions = <String, int>{};
+
+void invalidateBookCover(AppState appState, String bookId) {
+  final key = '${appState.activeUrl}|$bookId';
+  _coverRevisions[key] = (_coverRevisions[key] ?? 0) + 1;
+}
+
 String coverUrl(AppState appState,
     {String? url, String? libraryId, String? bookId}) {
   if (url == null || url.isEmpty) return '';
-  if (_isLocalFilePath(url)) return url;
+  // Server filesystem paths need the cover API, even when the client runs on Windows.
+  if (_isLocalFilePath(url) &&
+      (url.startsWith('file://') || libraryId == null || libraryId.isEmpty)) {
+    return url;
+  }
   final base = appState.activeUrl.replaceAll(RegExp(r'/$'), '');
   final token = appState.token;
 
@@ -25,8 +36,10 @@ String coverUrl(AppState appState,
     final params = <String, String>{
       'path': url,
       'library_id': libraryId,
-      if (url == 'embedded://first-chapter' && bookId != null)
-        'book_id': bookId,
+      if (bookId != null) 'book_id': bookId,
+      if (bookId != null &&
+          _coverRevisions.containsKey('${appState.activeUrl}|$bookId'))
+        'v': _coverRevisions['${appState.activeUrl}|$bookId'].toString(),
       if (token != null && token.isNotEmpty) 'token': token,
     };
     return Uri.parse('$base/api/proxy/cover')

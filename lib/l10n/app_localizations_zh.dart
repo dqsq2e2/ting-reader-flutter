@@ -849,10 +849,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get commonSaving => '保存中...';
 
   @override
+  String get libraryWriteMetadataToWebdav => '元数据写入网盘';
+
+  @override
+  String get libraryWriteMetadataToWebdavHelp =>
+      '开启后，修改元数据时同步更新网盘中的 metadata.json、book.nfo 和文件封面。';
+
+  @override
   String get bookDetailLastListenedChapter => '上次收听章节';
 
   @override
   String get bookDetailWriteMetadataStarted => '已开始后台写入元数据，请稍候查看任务进度。';
+
+  @override
+  String bookDetailWriteMetadataFailed(String error) {
+    return '启动元数据写入失败：$error';
+  }
 
   @override
   String get bookDetailNotFoundTitle => '未找到书籍';
@@ -980,7 +992,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get bookDetailAutoGenerate => '自动生成';
 
   @override
-  String get bookDetailCoverUrlField => '封面 URL';
+  String get bookDetailCoverUrlField => '封面';
 
   @override
   String get bookDetailSkipIntroField => '跳过片头（秒）';

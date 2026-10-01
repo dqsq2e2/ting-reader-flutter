@@ -53,7 +53,6 @@ class PluginCapabilitiesApi {
     try {
       final registrations = [
         ...await listPluginCapabilities(kind: 'ui_extension'),
-        ...await listPluginCapabilities(kind: 'client_extension'),
       ];
       final result = List<PluginCapabilityRegistration>.unmodifiable(
         registrations,

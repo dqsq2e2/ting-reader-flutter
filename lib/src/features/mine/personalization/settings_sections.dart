@@ -438,22 +438,28 @@ class _HomeLayoutItem extends StatelessWidget {
 class _PlaybackSection extends StatelessWidget {
   const _PlaybackSection({
     required this.playbackSpeed,
+    required this.bookshelfProgressEnabled,
     required this.autoPreload,
     required this.autoCache,
     required this.ignoreAudioFocus,
     required this.showAudioFocusSetting,
     required this.onSpeed,
+    required this.onSpeedEnd,
+    required this.onBookshelfProgress,
     required this.onAutoPreload,
     required this.onAutoCache,
     required this.onIgnoreAudioFocus,
   });
 
   final double playbackSpeed;
+  final bool bookshelfProgressEnabled;
   final bool autoPreload;
   final bool autoCache;
   final bool ignoreAudioFocus;
   final bool showAudioFocusSetting;
   final ValueChanged<double> onSpeed;
+  final ValueChanged<double> onSpeedEnd;
+  final ValueChanged<bool> onBookshelfProgress;
   final ValueChanged<bool> onAutoPreload;
   final ValueChanged<bool> onAutoCache;
   final ValueChanged<bool> onIgnoreAudioFocus;
@@ -467,13 +473,22 @@ class _PlaybackSection extends StatelessWidget {
       title: l10n.settingsPlayback,
       child: Column(
         children: [
+          _ToggleSettingRow(
+            title: context.localeText(
+                '书架显示阅读进度', 'Show reading progress on covers'),
+            subtitle: context.localeText('显示已读、未读或阅读百分比',
+                'Show read status or completion percentage on book covers'),
+            value: bookshelfProgressEnabled,
+            onChanged: onBookshelfProgress,
+          ),
+          const SizedBox(height: 18),
           LayoutBuilder(
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 720;
               final speedPicker = _SpeedPicker(
                 speed: playbackSpeed,
                 onSpeed: onSpeed,
-                expanded: compact,
+                onSpeedEnd: onSpeedEnd,
               );
               if (compact) {
                 return Column(
@@ -496,7 +511,7 @@ class _PlaybackSection extends StatelessWidget {
                       subtitle: l10n.settingsPlaybackSpeedDescription,
                     ),
                   ),
-                  speedPicker,
+                  SizedBox(width: 280, child: speedPicker),
                 ],
               );
             },

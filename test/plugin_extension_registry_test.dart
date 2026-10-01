@@ -15,13 +15,14 @@ void main() {
         id: 'rules',
         kind: 'ui_extension',
         extra: {
-          'slot': 'app.sidebar_page',
+          'slots': ['app.sidebar_page'],
+          'contexts': ['global'],
           'title': {'zh': '响应规则', 'en': 'Response Rules'},
-          'icon': {'type': 'lucide', 'value': 'workflow'},
+          'icon': 'workflow',
           'priority': 12,
-          'render_mode': 'web_container',
           'render': {
-            'entry': '/plugins/reading-tools/rules',
+            'mode': 'web_container',
+            'entry': 'ui/rules.html',
             'bridge': {
               'capabilities': ['rules.tools'],
               'host_methods': ['user_settings.get'],
@@ -36,15 +37,15 @@ void main() {
         registry.bySlot[ClientExtensionSlot.appSidebarPage]!.single;
 
     expect(extension.label, '响应规则');
-    expect(extension.icon, {'type': 'lucide', 'value': 'workflow'});
-    expect(extension.entry, '/plugins/reading-tools/rules');
+    expect(extension.icon, 'workflow');
+    expect(extension.entry, 'ui/rules.html');
     expect(extension.allowsCapabilityInvoke, isTrue);
     expect(extension.allowedCapabilityIds, {'rules', 'rules.tools'});
     expect(extension.allowedHostMethods, {'user_settings.get'});
     expect(extension.priority, 12);
   });
 
-  test('retired reader slots remain parseable but are never registered', () {
+  test('unsupported slots are never registered', () {
     const retiredSlots = [
       'reader.toolbar_action',
       'reader.side_panel',
@@ -57,11 +58,11 @@ void main() {
     }
 
     const registration = PluginCapabilityRegistration(
-      pluginId: 'legacy-reader-ui',
+      pluginId: 'reader-ui',
       pluginName: 'Legacy Reader UI',
       capability: PluginCapability(
         id: 'legacy-page',
-        kind: 'client_extension',
+        kind: 'ui_extension',
         extra: {'slots': retiredSlots},
       ),
     );
@@ -78,7 +79,9 @@ void main() {
       capability: PluginCapability(
         id: 'unknown-page',
         kind: 'ui_extension',
-        extra: {'slot': 'future.unknown_slot'},
+        extra: {
+          'slots': ['future.unknown_slot']
+        },
       ),
     );
 

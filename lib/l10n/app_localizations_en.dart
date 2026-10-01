@@ -880,11 +880,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get commonSaving => 'Saving...';
 
   @override
+  String get libraryWriteMetadataToWebdav => 'Write metadata to WebDAV';
+
+  @override
+  String get libraryWriteMetadataToWebdavHelp =>
+      'When enabled, metadata edits update metadata.json, book.nfo, and file covers on the drive.';
+
+  @override
   String get bookDetailLastListenedChapter => 'Last chapter';
 
   @override
   String get bookDetailWriteMetadataStarted =>
       'Metadata write started. Check task progress later.';
+
+  @override
+  String bookDetailWriteMetadataFailed(String error) {
+    return 'Failed to start metadata writing: $error';
+  }
 
   @override
   String get bookDetailNotFoundTitle => 'Book not found';
@@ -1015,7 +1027,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get bookDetailAutoGenerate => 'Generate';
 
   @override
-  String get bookDetailCoverUrlField => 'Cover URL';
+  String get bookDetailCoverUrlField => 'Cover';
 
   @override
   String get bookDetailSkipIntroField => 'Skip intro (sec)';

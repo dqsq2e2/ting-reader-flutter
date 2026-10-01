@@ -1676,6 +1676,18 @@ abstract class AppLocalizations {
   /// **'保存中...'**
   String get commonSaving;
 
+  /// No description provided for @libraryWriteMetadataToWebdav.
+  ///
+  /// In zh, this message translates to:
+  /// **'元数据写入网盘'**
+  String get libraryWriteMetadataToWebdav;
+
+  /// No description provided for @libraryWriteMetadataToWebdavHelp.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启后，修改元数据时同步更新网盘中的 metadata.json、book.nfo 和文件封面。'**
+  String get libraryWriteMetadataToWebdavHelp;
+
   /// No description provided for @bookDetailLastListenedChapter.
   ///
   /// In zh, this message translates to:
@@ -1687,6 +1699,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已开始后台写入元数据，请稍候查看任务进度。'**
   String get bookDetailWriteMetadataStarted;
+
+  /// No description provided for @bookDetailWriteMetadataFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'启动元数据写入失败：{error}'**
+  String bookDetailWriteMetadataFailed(String error);
 
   /// No description provided for @bookDetailNotFoundTitle.
   ///
@@ -1913,7 +1931,7 @@ abstract class AppLocalizations {
   /// No description provided for @bookDetailCoverUrlField.
   ///
   /// In zh, this message translates to:
-  /// **'封面 URL'**
+  /// **'封面'**
   String get bookDetailCoverUrlField;
 
   /// No description provided for @bookDetailSkipIntroField.

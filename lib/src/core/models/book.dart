@@ -18,6 +18,7 @@ class Book {
     this.updatedAt,
     this.isFavorite = false,
     this.libraryType,
+    this.canWriteMetadataFiles = false,
     this.manualCorrected = false,
     this.skipIntro = 0,
     this.skipOutro = 0,
@@ -25,6 +26,7 @@ class Book {
     this.genre,
     this.year,
     this.chapterRegex,
+    this.progressPercent = 0,
   });
 
   final String id;
@@ -43,6 +45,7 @@ class Book {
   final String? updatedAt;
   final bool isFavorite;
   final String? libraryType;
+  final bool canWriteMetadataFiles;
   final bool manualCorrected;
   final int skipIntro;
   final int skipOutro;
@@ -50,6 +53,7 @@ class Book {
   final String? genre;
   final int? year;
   final String? chapterRegex;
+  final double progressPercent;
 
   factory Book.fromJson(Map<String, dynamic> json) {
     return Book(
@@ -69,6 +73,8 @@ class Book {
       updatedAt: readString(json, 'updated_at'),
       isFavorite: readBool(json, 'is_favorite') ?? false,
       libraryType: readString(json, 'library_type'),
+      canWriteMetadataFiles: readBool(json, 'can_write_metadata_files') ??
+          (readString(json, 'library_type') == 'local'),
       manualCorrected: readBool(json, 'manual_corrected') ?? false,
       skipIntro: readInt(json, 'skip_intro') ?? 0,
       skipOutro: readInt(json, 'skip_outro') ?? 0,
@@ -76,6 +82,8 @@ class Book {
       genre: readString(json, 'genre'),
       year: readInt(json, 'year'),
       chapterRegex: readString(json, 'chapter_regex'),
+      progressPercent:
+          (readDouble(json, 'progress_percent') ?? 0).clamp(0, 100).toDouble(),
     );
   }
 
@@ -94,6 +102,7 @@ class Book {
     String? genre,
     int? year,
     String? chapterRegex,
+    double? progressPercent,
   }) {
     return Book(
       id: id,
@@ -112,6 +121,7 @@ class Book {
       updatedAt: updatedAt,
       isFavorite: isFavorite ?? this.isFavorite,
       libraryType: libraryType,
+      canWriteMetadataFiles: canWriteMetadataFiles,
       manualCorrected: manualCorrected ?? this.manualCorrected,
       skipIntro: skipIntro ?? this.skipIntro,
       skipOutro: skipOutro ?? this.skipOutro,
@@ -119,6 +129,7 @@ class Book {
       genre: genre ?? this.genre,
       year: year ?? this.year,
       chapterRegex: chapterRegex ?? this.chapterRegex,
+      progressPercent: progressPercent ?? this.progressPercent,
     );
   }
 }

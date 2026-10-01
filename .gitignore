@@ -53,10 +53,15 @@ test/
 !test/
 test/*
 !test/app_state_gateway_recovery_test.dart
+!test/api_client_gateway_token_test.dart
+!test/book_cover_upload_test.dart
+!test/webdav_metadata_config_test.dart
 !test/fn_connect_route_readiness_test.dart
 !test/fn_connect_switch_test.dart
 !test/external_links_test.dart
 !test/plugin_extension_registry_test.dart
+!test/player_source_selection_test.dart
+!test/reading_ui_test.dart
 preview_screenshots/
 real_compare_screenshots/
 web_compare_screenshots/

@@ -62,6 +62,7 @@ class AppState extends ChangeNotifier {
     'ignore_audio_focus',
     'resume_after_interruption',
     'sidebar_collapsed',
+    'player_volume',
   };
   static const _obsoleteLocalSettingKeys = <String>{
     'resume_after_interruption',

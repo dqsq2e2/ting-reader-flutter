@@ -148,6 +148,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   double duration = 0;
   double playbackSpeed = 1;
   double volume = 1;
+  bool _volumeInitialized = false;
+  bool _speedInitialized = false;
   String? error;
   // Allow other apps to keep playing audio by default.
   bool ignoreAudioFocus = true;
@@ -158,6 +160,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _resumeAfterInterruption = false;
 
   bool get hasChapter => currentBook != null && currentChapter != null;
+
+  void updateBookMetadata(Book book) {
+    if (currentBook?.id != book.id) return;
+    currentBook = book;
+    notifyListeners();
+  }
 
   int get _currentChapterIndex {
     final chapter = currentChapter;
@@ -201,7 +209,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       nested: nested,
       fallback: true,
     );
-    await setSpeed(nextSpeed);
+    final nextVolume = _doubleValue(settings['player_volume']) ??
+        _doubleValue(nested['player_volume']);
+    if (!_speedInitialized) await setSpeed(nextSpeed);
+    if (!_volumeInitialized) {
+      await _setPlayerVolume(nextVolume ?? 1, persist: false);
+    }
     await setIgnoreAudioFocus(next);
   }
 
@@ -887,15 +900,27 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> setSpeed(double speed) async {
-    playbackSpeed = speed;
-    await _audio.setSpeed(speed);
+    if (!speed.isFinite) return;
+    final normalized = (speed.clamp(0.5, 3.0) * 10).round() / 10;
+    playbackSpeed = normalized;
+    _speedInitialized = true;
+    await _audio.setSpeed(normalized);
     notifyListeners();
   }
 
   Future<void> setPlayerVolume(double value) async {
-    volume = value.clamp(0, 1);
+    await _setPlayerVolume(value);
+  }
+
+  Future<void> _setPlayerVolume(double value, {bool persist = true}) async {
+    if (!value.isFinite) return;
+    volume = value.clamp(0, 1).toDouble();
+    _volumeInitialized = true;
     await _audio.setVolume(volume);
     notifyListeners();
+    if (persist) {
+      await appState.updateLocalSettings({'player_volume': volume});
+    }
   }
 
   Future<void> setVolume(double value) => setPlayerVolume(value);
@@ -1035,7 +1060,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _mediaAuthRevision = authRevision;
       return;
     }
-    final headers = appState.api.authHeaders;
+    final headers = _streamHeaders;
     await _audio.setAudioSource(
       audio.AudioSource.uri(
         Uri.parse(url),
@@ -1162,21 +1187,24 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   Map<String, String> get _streamHeaders {
     if (kIsWeb) return const {};
-    return appState.api.authHeaders;
+    // streamUrl already authenticates with its token query parameter.
+    // just_audio caches the final redirect URI in its header proxy and
+    // reapplies supplied headers on later Range requests. Forwarding our
+    // Bearer token to a STRM origin can make that origin reject seeking.
+    // Keep gateway headers/cookies needed to reach the server, but never
+    // supply the redundant application Authorization header to media.
+    return Map.of(appState.api.authHeaders)
+      ..removeWhere((name, _) => name.toLowerCase() == 'authorization');
   }
 
   String? _localFilePathFromChapter(Chapter chapter) {
     final raw = chapter.path.trim();
     if (raw.isEmpty) return null;
     final uri = Uri.tryParse(raw);
+    // API chapter paths belong to the server, even when they are absolute.
+    // Offline chapters explicitly use file URIs; indexed downloads are
+    // resolved separately through DownloadState.
     if (uri != null && uri.scheme == 'file') return uri.toFilePath();
-    if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(raw) ||
-        raw.startsWith('/data/') ||
-        raw.startsWith('/storage/') ||
-        raw.startsWith('/var/') ||
-        raw.startsWith('/Users/')) {
-      return raw;
-    }
     return null;
   }
 
@@ -1859,7 +1887,7 @@ double _resolvePlaybackSpeedSetting(
     final value = source['playback_speed'];
     final parsed = _doubleValue(value);
     if (parsed != null && parsed.isFinite && parsed > 0) {
-      return parsed;
+      return (parsed.clamp(0.5, 3.0) * 10).round() / 10;
     }
   }
   return 1.0;

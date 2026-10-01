@@ -118,6 +118,8 @@ class _EditMetadataField extends StatelessWidget {
     this.hint,
     this.helper,
     this.trailing,
+    this.enabled = true,
+    this.onChanged,
     this.minLines = 1,
     this.maxLines = 1,
   });
@@ -129,6 +131,8 @@ class _EditMetadataField extends StatelessWidget {
   final String? hint;
   final String? helper;
   final Widget? trailing;
+  final bool enabled;
+  final ValueChanged<String>? onChanged;
   final int minLines;
   final int maxLines;
 
@@ -136,6 +140,8 @@ class _EditMetadataField extends StatelessWidget {
   Widget build(BuildContext context) {
     final input = TextField(
       controller: controller,
+      enabled: enabled,
+      onChanged: onChanged,
       minLines: minLines,
       maxLines: maxLines,
       keyboardType: number

@@ -2,15 +2,11 @@ import '../models/_helpers.dart' show asMap, readInt, readStringList;
 import '../models/plugin.dart';
 import 'types.dart';
 
-const _defaultSlots = [ClientExtensionSlot.globalPanel];
-
 ClientExtensionRegistrySnapshot buildClientExtensionRegistry(
   List<PluginCapabilityRegistration> registrations,
 ) {
   final extensions = registrations
-      .where((registration) =>
-          registration.capability.kind == 'ui_extension' ||
-          registration.capability.kind == 'client_extension')
+      .where((registration) => registration.capability.kind == 'ui_extension')
       .expand((registration) {
     final slots = _normalizeSlots(registration.capability.extra);
     return slots
@@ -45,11 +41,7 @@ ClientExtensionDescriptor _createDescriptor(
   final capability = registration.capability;
   final extra = capability.extra;
   final render = asMap(extra['render']);
-  final renderMode = ClientExtensionRenderMode.fromValue(
-    extra['render_mode'] ??
-        (extra['render'] is String ? extra['render'] : null) ??
-        render['mode'],
-  );
+  final renderMode = ClientExtensionRenderMode.fromValue(render['mode']);
 
   return ClientExtensionDescriptor(
     id: '${registration.pluginId}:${capability.id}:${slot.value}',
@@ -60,7 +52,7 @@ ClientExtensionDescriptor _createDescriptor(
     slot: slot,
     renderMode: renderMode,
     render: Map.unmodifiable(render),
-    title: _localizedText(extra['title']) ?? _localizedText(extra['label']),
+    title: _localizedText(extra['title']),
     icon: _normalizeIcon(extra['icon']),
     capability: capability,
     priority: readInt(extra, 'priority') ?? 100,
@@ -77,30 +69,15 @@ Object? _normalizeIcon(Object? value) {
   return map.isEmpty ? null : Map<String, dynamic>.unmodifiable(map);
 }
 
-List<ClientExtensionSlot> _normalizeSlots(Map<String, dynamic> extra) {
-  final declaredValues = <Object?>[
-    if (extra['slots'] is List) ...(extra['slots'] as List),
-    if (extra.containsKey('slot')) extra['slot'],
-  ];
-  final slots = <ClientExtensionSlot>{};
-  for (final value in readStringList(extra['slots'])) {
-    final slot = ClientExtensionSlot.fromValue(value);
-    if (slot != null) slots.add(slot);
-  }
-  final single = ClientExtensionSlot.fromValue(extra['slot']);
-  if (single != null) slots.add(single);
-  if (slots.isNotEmpty) return slots.toList();
+List<ClientExtensionSlot> _normalizeSlots(Map<String, dynamic> extra) =>
+    readStringList(extra['slots'])
+        .map(ClientExtensionSlot.fromValue)
+        .whereType<ClientExtensionSlot>()
+        .toSet()
+        .toList();
 
-  // An explicit legacy, unknown, or malformed slot must not silently gain a
-  // global entry. The fallback only applies when the manifest omits slots.
-  return declaredValues.isEmpty ? _defaultSlots : const [];
-}
-
-List<String> _normalizeContexts(Map<String, dynamic> extra) {
-  final contexts = readStringList(extra['contexts']);
-  if (contexts.isNotEmpty) return contexts;
-  return readStringList(extra['context']);
-}
+List<String> _normalizeContexts(Map<String, dynamic> extra) =>
+    readStringList(extra['contexts']);
 
 String? _localizedText(Object? value) {
   if (value == null) return null;

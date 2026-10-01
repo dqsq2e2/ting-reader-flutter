@@ -15,6 +15,7 @@ import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../mine/bookmarks_page.dart';
 
 part 'parts/chapter_sheet.dart';
 part 'parts/collapsed_mini_player.dart';

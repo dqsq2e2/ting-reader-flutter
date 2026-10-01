@@ -1940,9 +1940,7 @@ int _metadataCapabilityListCount(
   for (final capability in capabilities) {
     if (capability.kind != 'metadata_provider') continue;
     final direct = capability.extra[key];
-    final metadata = capability.extra['metadata'];
-    final nested = metadata is Map ? metadata[key] : null;
-    final value = direct is List ? direct : nested;
+    final value = direct;
     if (value is List) count += value.length;
   }
   return count;
@@ -1963,9 +1961,7 @@ String _pluginRuntimeLabel(String? runtime) {
 
 bool _usesClientExtension(PluginItem item) {
   return item.capabilities.any(
-    (capability) =>
-        capability.kind == 'ui_extension' ||
-        capability.kind == 'client_extension',
+    (capability) => capability.kind == 'ui_extension',
   );
 }
 

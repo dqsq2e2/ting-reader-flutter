@@ -46,6 +46,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   bool _selectionMode = false;
   bool _deletingBooks = false;
   bool _deletingSeries = false;
+  bool _updatingReadStatus = false;
   final Set<String> _selectedBookIds = {};
   final Set<String> _selectedSeriesIds = {};
   final LayerLink _filterMenuLink = LayerLink();
@@ -61,7 +62,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_loadMoreWhenNeeded);
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   @override
@@ -124,6 +127,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
         ),
       ]);
 
+      if (!mounted) return;
       setState(() {
         _libraries = libraries;
         _books = asMapList(results[0].data).map(Book.fromJson).toList();
@@ -137,6 +141,58 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   Future<void> _persist(String key, Object value) async {
     await AppScope.appOf(context).updateSettings({key: value});
+  }
+
+  Future<void> _markSelectedRead(bool read) async {
+    if (_selectedBookIds.isEmpty || _updatingReadStatus) return;
+    if (!read) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text(context.localeText('确认标记未读', 'Mark as unread?')),
+          content: Text(context.localeText(
+              '将所选 ${_selectedBookIds.length} 本书标记为未读，同时清除这些书籍的全部播放进度。确定继续吗？',
+              'Mark the ${_selectedBookIds.length} selected books as unread and clear all their playback progress. Continue?')),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(context.l10n.commonCancel)),
+            FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(context.localeText('标记未读', 'Mark as unread'))),
+          ],
+        ),
+      );
+      if (!mounted || confirmed != true) return;
+    }
+    setState(() => _updatingReadStatus = true);
+    try {
+      final ids = _selectedBookIds.toList(growable: false);
+      for (var offset = 0; offset < ids.length; offset += 200) {
+        await AppScope.appOf(context).api.post(
+          '/api/books/read-status',
+          data: {
+            'book_ids': ids.skip(offset).take(200).toList(),
+            'read': read,
+          },
+        );
+      }
+      if (!mounted) return;
+      setState(() => _selectedBookIds.clear());
+      await _load();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(context.localeText(
+                  '更新阅读状态失败：$error', 'Failed to update read status: $error'))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updatingReadStatus = false);
+    }
   }
 
   List<Book> get _sortedBooks {
@@ -178,8 +234,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   /// Groups the filtered books and series by pinyin initial (or year) for the
   /// active sort mode, mirroring the web client's bookshelf grouping.
-  ({List<String> keys, Map<String, List<Object>> groups})?
-      get _groupedContent {
+  ({List<String> keys, Map<String, List<Object>> groups})? get _groupedContent {
     if (_sortBy == 'created_at') return null;
 
     final groups = <String, List<Object>>{};
@@ -317,12 +372,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
           selectionMode: _selectionMode,
           selectedBookCount: _selectedBookIds.length,
           selectedSeriesCount: _selectedSeriesIds.length,
-          isAdmin: appState.isAdmin,
           libraries: _libraries,
           selectedLibraryId: _selectedLibraryId,
           showFilterMenu: _showFilterMenu,
           filterMenuLink: _filterMenuLink,
           deletingItems: _deletingBooks || _deletingSeries,
+          updatingReadStatus: _updatingReadStatus,
           onSearchOpen: widget.openSearch,
           onLibraryChanged: (value) async {
             setState(() {
@@ -350,18 +405,25 @@ class _BookshelfPageState extends State<BookshelfPage> {
             });
           },
           onSelectAll: _selectAllVisible,
-          onCreateSeries: _selectedBookIds.isEmpty ||
+          onCreateSeries: !appState.isAdmin ||
+                  _selectedBookIds.isEmpty ||
                   _selectedSeriesIds.isNotEmpty ||
                   _deletingBooks ||
                   _deletingSeries
               ? null
               : _showCreateSeriesDialog,
-          onDeleteSelected:
-              (_selectedBookIds.isEmpty && _selectedSeriesIds.isEmpty) ||
-                      _deletingBooks ||
-                      _deletingSeries
-                  ? null
-                  : _showDeleteSelectedDialog,
+          onDeleteSelected: !appState.isAdmin ||
+                  (_selectedBookIds.isEmpty && _selectedSeriesIds.isEmpty) ||
+                  _deletingBooks ||
+                  _deletingSeries
+              ? null
+              : _showDeleteSelectedDialog,
+          onMarkRead: _selectedBookIds.isNotEmpty && !_updatingReadStatus
+              ? () => _markSelectedRead(true)
+              : null,
+          onMarkUnread: _selectedBookIds.isNotEmpty && !_updatingReadStatus
+              ? () => _markSelectedRead(false)
+              : null,
         ),
         const SizedBox(height: 10),
         if (!hasContent)
@@ -479,8 +541,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
                         width: 80,
                         height: 80,
                         decoration: BoxDecoration(
-                          color: const Color(0xff0f172a)
-                              .withValues(alpha: 0.58),
+                          color:
+                              const Color(0xff0f172a).withValues(alpha: 0.58),
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
@@ -905,12 +967,12 @@ class _Header extends StatelessWidget {
     required this.selectionMode,
     required this.selectedBookCount,
     required this.selectedSeriesCount,
-    required this.isAdmin,
     required this.libraries,
     required this.selectedLibraryId,
     required this.showFilterMenu,
     required this.filterMenuLink,
     required this.deletingItems,
+    required this.updatingReadStatus,
     required this.onSearchOpen,
     required this.onLibraryChanged,
     required this.onToggleFilterMenu,
@@ -919,17 +981,19 @@ class _Header extends StatelessWidget {
     required this.onSelectAll,
     required this.onCreateSeries,
     required this.onDeleteSelected,
+    required this.onMarkRead,
+    required this.onMarkUnread,
   });
 
   final bool selectionMode;
   final int selectedBookCount;
   final int selectedSeriesCount;
-  final bool isAdmin;
   final List<Library> libraries;
   final String selectedLibraryId;
   final bool showFilterMenu;
   final LayerLink filterMenuLink;
   final bool deletingItems;
+  final bool updatingReadStatus;
   final VoidCallback onSearchOpen;
   final ValueChanged<String?> onLibraryChanged;
   final VoidCallback onToggleFilterMenu;
@@ -938,6 +1002,8 @@ class _Header extends StatelessWidget {
   final VoidCallback onSelectAll;
   final VoidCallback? onCreateSeries;
   final VoidCallback? onDeleteSelected;
+  final VoidCallback? onMarkRead;
+  final VoidCallback? onMarkUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -953,9 +1019,12 @@ class _Header extends StatelessWidget {
           hasSelection: hasSelection,
           canCreateSeries: onCreateSeries != null,
           canDelete: onDeleteSelected != null,
-          loading: deletingItems,
+          loading: deletingItems || updatingReadStatus,
           onCreateSeries: onCreateSeries,
           onDelete: onDeleteSelected,
+          onMarkRead: onMarkRead,
+          onMarkUnread: onMarkUnread,
+          canManage: onCreateSeries != null || onDeleteSelected != null,
         );
         final desktopToolbar = Wrap(
           spacing: 10,
@@ -983,7 +1052,7 @@ class _Header extends StatelessWidget {
                 icon: Icons.close_rounded,
                 onPressed: onCancelSelection,
               ),
-            ] else if (isAdmin)
+            ] else
               BatchActionButton(
                 icon: Icons.layers_rounded,
                 label: context.localeText('选择模式', 'Select Mode'),
@@ -1045,16 +1114,14 @@ class _Header extends StatelessWidget {
             );
           }
 
-          final modeButton = isAdmin
-              ? BatchActionButton(
-                  icon: Icons.layers_rounded,
-                  label: mobile
-                      ? context.localeText('选择', 'Select')
-                      : context.localeText('选择模式', 'Select Mode'),
-                  onPressed: onSelectionMode,
-                  compact: mobile,
-                )
-              : const SizedBox.shrink();
+          final modeButton = BatchActionButton(
+            icon: Icons.layers_rounded,
+            label: mobile
+                ? context.localeText('选择', 'Select')
+                : context.localeText('选择模式', 'Select Mode'),
+            onPressed: onSelectionMode,
+            compact: mobile,
+          );
           final libraryDropdown = libraries.isEmpty
               ? const SizedBox.shrink()
               : _LibraryDropdown(
@@ -1072,7 +1139,7 @@ class _Header extends StatelessWidget {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  if (isAdmin) ...[
+                  ...[
                     if (mobile)
                       Flexible(flex: 10, child: modeButton)
                     else
@@ -1130,7 +1197,7 @@ class _Header extends StatelessWidget {
   }
 }
 
-enum _BatchOperation { createSeries, delete }
+enum _BatchOperation { markRead, markUnread, createSeries, delete }
 
 class _BatchOperationsMenuButton extends StatelessWidget {
   const _BatchOperationsMenuButton({
@@ -1141,6 +1208,9 @@ class _BatchOperationsMenuButton extends StatelessWidget {
     required this.loading,
     required this.onCreateSeries,
     required this.onDelete,
+    required this.onMarkRead,
+    required this.onMarkUnread,
+    required this.canManage,
   });
 
   final bool compact;
@@ -1150,6 +1220,9 @@ class _BatchOperationsMenuButton extends StatelessWidget {
   final bool loading;
   final VoidCallback? onCreateSeries;
   final VoidCallback? onDelete;
+  final VoidCallback? onMarkRead;
+  final VoidCallback? onMarkUnread;
+  final bool canManage;
 
   @override
   Widget build(BuildContext context) {
@@ -1160,6 +1233,10 @@ class _BatchOperationsMenuButton extends StatelessWidget {
       offset: const Offset(0, 8),
       onSelected: (operation) {
         switch (operation) {
+          case _BatchOperation.markRead:
+            onMarkRead?.call();
+          case _BatchOperation.markUnread:
+            onMarkUnread?.call();
           case _BatchOperation.createSeries:
             onCreateSeries?.call();
           case _BatchOperation.delete:
@@ -1188,24 +1265,45 @@ class _BatchOperationsMenuButton extends StatelessWidget {
 
         return [
           PopupMenuItem<_BatchOperation>(
-            value: _BatchOperation.createSeries,
-            enabled: canCreateSeries,
+            value: _BatchOperation.markRead,
+            enabled: onMarkRead != null,
             child: _BatchOperationMenuItem(
-              icon: Icons.layers_rounded,
-              label: context.localeText('创建系列', 'Create Series'),
-              enabled: canCreateSeries,
+              icon: Icons.task_alt_rounded,
+              label: context.localeText('标记已读', 'Mark as read'),
+              enabled: onMarkRead != null,
             ),
           ),
           PopupMenuItem<_BatchOperation>(
-            value: _BatchOperation.delete,
-            enabled: canDelete,
+            value: _BatchOperation.markUnread,
+            enabled: onMarkUnread != null,
             child: _BatchOperationMenuItem(
-              icon: Icons.delete_outline_rounded,
-              label: context.localeText('删除', 'Delete'),
-              danger: true,
-              enabled: canDelete,
+              icon: Icons.radio_button_unchecked_rounded,
+              label: context.localeText('标记未读', 'Mark as unread'),
+              enabled: onMarkUnread != null,
             ),
           ),
+          if (canManage) ...[
+            const PopupMenuDivider(),
+            PopupMenuItem<_BatchOperation>(
+              value: _BatchOperation.createSeries,
+              enabled: canCreateSeries,
+              child: _BatchOperationMenuItem(
+                icon: Icons.layers_rounded,
+                label: context.localeText('创建系列', 'Create Series'),
+                enabled: canCreateSeries,
+              ),
+            ),
+            PopupMenuItem<_BatchOperation>(
+              value: _BatchOperation.delete,
+              enabled: canDelete,
+              child: _BatchOperationMenuItem(
+                icon: Icons.delete_outline_rounded,
+                label: context.localeText('删除', 'Delete'),
+                danger: true,
+                enabled: canDelete,
+              ),
+            ),
+          ],
         ];
       },
       child: _BatchOperationsButtonSurface(
@@ -1519,7 +1617,13 @@ class _ContentGrid extends StatelessWidget {
       builder: (context, constraints) {
         final columns = gridColumnsForWidth(constraints.maxWidth, iconSize);
         final spacing = gridSpacing(iconSize);
-        final ratio = coverShape == CoverShape.square ? 0.78 : 0.62;
+        final cellWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+        final textScaler = MediaQuery.textScalerOf(context);
+        final cardHeight = cellWidth / coverAspectRatio(coverShape) +
+            textScaler.scale(14) * 1.5 +
+            textScaler.scale(12) * 1.5 +
+            16;
 
         final groupKeys = this.groupKeys;
         final groups = this.groups;
@@ -1562,7 +1666,7 @@ class _ContentGrid extends StatelessWidget {
                         crossAxisCount: columns,
                         crossAxisSpacing: spacing,
                         mainAxisSpacing: spacing + 12,
-                        childAspectRatio: ratio,
+                        mainAxisExtent: cardHeight,
                       ),
                       itemBuilder: (context, index) {
                         final item = entry.value[index];
@@ -1601,7 +1705,7 @@ class _ContentGrid extends StatelessWidget {
             crossAxisCount: columns,
             crossAxisSpacing: spacing,
             mainAxisSpacing: spacing + 14,
-            childAspectRatio: ratio,
+            mainAxisExtent: cardHeight,
           ),
           itemBuilder: (context, index) {
             final item = items[index];

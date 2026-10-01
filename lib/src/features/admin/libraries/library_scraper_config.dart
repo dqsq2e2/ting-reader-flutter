@@ -192,6 +192,8 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
     final showJsonEditor = _showJson && widget.libraryType != 'webdav';
     final nfo = _boolValue('nfo_writing_enabled', false);
     final metadata = _boolValue('metadata_writing_enabled', false);
+    final webdavMetadataWriting =
+        _boolValue('webdav_metadata_writing_enabled', false);
     final preferTitle = _boolValue('use_filename_as_title', true);
     final extractCover = _boolValue('extract_audio_cover', true);
     final extractExtraChapters = _boolValue('extract_extra_chapters', true);
@@ -246,6 +248,14 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
             ),
             child: Column(
               children: [
+                if (widget.libraryType == 'webdav')
+                  _ConfigSwitchRow(
+                    title: context.l10n.libraryWriteMetadataToWebdav,
+                    subtitle: context.l10n.libraryWriteMetadataToWebdavHelp,
+                    value: webdavMetadataWriting,
+                    onChanged: (value) =>
+                        _setBool('webdav_metadata_writing_enabled', value),
+                  ),
                 if (supportsMetadataWriting) ...[
                   _ConfigSwitchRow(
                     title: context.localeText(

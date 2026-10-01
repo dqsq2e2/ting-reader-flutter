@@ -167,7 +167,7 @@ List<String> _pluginStringList(dynamic value) {
   return value
       .map((item) {
         if (item is Map) {
-          return (item['plugin_name'] ?? item['id'] ?? item).toString().trim();
+          return (item['plugin_id'] ?? '').toString().trim();
         }
         return item.toString().trim();
       })
@@ -217,9 +217,7 @@ List<String> _capabilitySupportedExtensions(
 }
 
 List<String> _capabilityExtensions(PluginCapability capability) {
-  final matches = capability.extra['matches'];
-  final nested = matches is Map ? matches['extensions'] : null;
-  final value = capability.extra['extensions'] ?? nested;
+  final value = capability.extra['extensions'];
   if (value is! List) return const [];
   return value.map((item) => item.toString()).toList();
 }

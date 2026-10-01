@@ -126,6 +126,15 @@ class BookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final url = bookCoverUrl(appState, book);
+    final settingsJson = asMap(appState.settings['settings_json']);
+    final showProgress = (appState.settings['bookshelf_progress_enabled'] ??
+            settingsJson['bookshelf_progress_enabled']) !=
+        false;
+    final progress = book.progressPercent >= 100
+        ? 100
+        : book.progressPercent <= 0
+            ? 0
+            : book.progressPercent.round().clamp(1, 99);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -176,6 +185,77 @@ class BookCard extends StatelessWidget {
                         compact: true,
                         interactive: false,
                         visualSize: 20,
+                      ),
+                    ),
+                  ),
+                if (showProgress)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: ClipRRect(
+                        borderRadius: const BorderRadius.vertical(
+                            bottom: Radius.circular(6)),
+                        child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  AppColors.slate900.withValues(alpha: 0),
+                                  AppColors.slate900.withValues(alpha: 0.18),
+                                  AppColors.slate900.withValues(alpha: 0.64),
+                                ],
+                                stops: const [0, 0.45, 1],
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(10, 32, 10, 8),
+                                  child: Row(children: [
+                                    if (progress == 100) ...[
+                                      const Icon(Icons.check_rounded,
+                                          size: 11, color: Colors.white),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Text(
+                                      progress == 100
+                                          ? context.localeText('已读', 'Read')
+                                          : progress == 0
+                                              ? context.localeText(
+                                                  '未读', 'Unread')
+                                              : '$progress%',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing: 0.3,
+                                        shadows: [
+                                          Shadow(
+                                              color: Colors.black38,
+                                              blurRadius: 3,
+                                              offset: Offset(0, 1))
+                                        ],
+                                      ),
+                                    ),
+                                  ]),
+                                ),
+                                if (progress > 0)
+                                  LinearProgressIndicator(
+                                    minHeight: 2,
+                                    value: progress / 100,
+                                    color: progress == 100
+                                        ? const Color(0xd910b981)
+                                        : AppColors.primary400,
+                                    backgroundColor:
+                                        Colors.white.withValues(alpha: 0.15),
+                                  ),
+                              ],
+                            )),
                       ),
                     ),
                   ),

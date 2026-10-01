@@ -17,7 +17,9 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load({bool silent = false}) async {
@@ -31,6 +33,7 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
     try {
       final res =
           await AppScope.appOf(context).api.get('/api/system/statistics');
+      if (!mounted) return;
       setState(() => _stats = AdminStatistics.fromJson(asMap(res.data)));
     } finally {
       if (mounted) {
@@ -73,6 +76,8 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
     final webdavPercent =
         ((_numStat(overview, 'webdav_libraries') / totalLibraries) * 100)
             .round();
+    final rssPercent =
+        ((_numStat(overview, 'rss_libraries') / totalLibraries) * 100).round();
     final totalUsers = _numStat(overview, 'total_users');
     final activeRate = totalUsers > 0
         ? ((_numStat(overview, 'active_users') / totalUsers) * 100).round()
@@ -204,8 +209,8 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
                   label: context.localeText('媒体库', 'Libraries'),
                   value: _statText(overview, 'total_libraries'),
                   detail: context.localeText(
-                      '本地 ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')}',
-                      'Local ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')}'),
+                      '本地 ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')} · RSS ${_statText(overview, 'rss_libraries')}',
+                      'Local ${_statText(overview, 'local_libraries')} · WebDAV ${_statText(overview, 'webdav_libraries')} · RSS ${_statText(overview, 'rss_libraries')}'),
                 ),
               ],
             );
@@ -228,8 +233,10 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
             total: _numStat(overview, 'total_libraries'),
             local: _numStat(overview, 'local_libraries'),
             webdav: _numStat(overview, 'webdav_libraries'),
+            rss: _numStat(overview, 'rss_libraries'),
             localPercent: localPercent,
             webdavPercent: webdavPercent,
+            rssPercent: rssPercent,
           ),
         ),
         const SizedBox(height: 24),
@@ -328,16 +335,21 @@ class _StatisticsMetricTile extends StatelessWidget {
                   ),
                   child: Icon(icon, color: color, size: tiny ? 18 : 21),
                 ),
-                const Spacer(),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: context.tertiaryText,
-                    fontSize: tiny
-                        ? 10
-                        : compact
-                            ? 11
-                            : 12,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: context.tertiaryText,
+                      fontSize: tiny
+                          ? 10
+                          : compact
+                              ? 11
+                              : 12,
+                    ),
                   ),
                 ),
               ],
@@ -365,7 +377,7 @@ class _StatisticsMetricTile extends StatelessWidget {
             SizedBox(height: tiny ? 6 : 8),
             Text(
               detail,
-              maxLines: 1,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: context.tertiaryText,
@@ -666,54 +678,69 @@ class _LibraryMix extends StatelessWidget {
     required this.total,
     required this.local,
     required this.webdav,
+    required this.rss,
     required this.localPercent,
     required this.webdavPercent,
+    required this.rssPercent,
   });
 
   final num total;
   final num local;
   final num webdav;
+  final num rss;
   final int localPercent;
   final int webdavPercent;
+  final int rssPercent;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _SmallStat(
-                label: context.localeText('总数', 'Total'),
-                value: '$total',
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _SmallStat(
-                label: context.localeText('本地', 'Local'),
-                value: '$local',
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: _SmallStat(label: 'WebDAV', value: '$webdav')),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth < 480 ? 2 : 4;
+            final width = (constraints.maxWidth - 10 * (columns - 1)) / columns;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                for (final (label, value) in [
+                  (context.localeText('总数', 'Total'), total),
+                  (context.localeText('本地', 'Local'), local),
+                  ('WebDAV', webdav),
+                  ('RSS', rss),
+                ])
+                  SizedBox(
+                    width: width,
+                    child: _SmallStat(label: label, value: '$value'),
+                  ),
+              ],
+            );
+          },
         ),
         const SizedBox(height: 18),
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
-          child: Row(
-            children: [
-              Expanded(
-                flex: math.max(1, localPercent),
-                child: Container(height: 12, color: AppColors.primary500),
+          child: Container(
+            height: 12,
+            color: context.isDark ? AppColors.slate800 : AppColors.slate100,
+            child: LayoutBuilder(
+              builder: (context, constraints) => Row(
+                children: [
+                  for (final (count, color) in [
+                    (local, AppColors.primary500),
+                    (webdav, Colors.purple),
+                    (rss, Colors.orange),
+                  ])
+                    if (count > 0 && total > 0)
+                      Container(
+                        width: constraints.maxWidth * count / total,
+                        color: color,
+                      ),
+                ],
               ),
-              Expanded(
-                flex: math.max(1, webdavPercent),
-                child: Container(height: 12, color: Colors.purple),
-              ),
-            ],
+            ),
           ),
         ),
         const SizedBox(height: 18),
@@ -724,6 +751,8 @@ class _LibraryMix extends StatelessWidget {
         const SizedBox(height: 12),
         _MixRow(
             label: 'WebDAV', value: '$webdavPercent%', color: Colors.purple),
+        const SizedBox(height: 12),
+        _MixRow(label: 'RSS', value: '$rssPercent%', color: Colors.orange),
       ],
     );
   }
@@ -1306,7 +1335,12 @@ class _TypeBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isWebdav = value.toLowerCase() == 'webdav';
-    final color = isWebdav ? Colors.purple : AppColors.primary600;
+    final isRss = value.toLowerCase() == 'rss';
+    final color = isWebdav
+        ? Colors.purple
+        : isRss
+            ? Colors.orange
+            : AppColors.primary600;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
