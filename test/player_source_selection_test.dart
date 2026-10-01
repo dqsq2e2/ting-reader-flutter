@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -59,7 +61,7 @@ class _NativeAudio {
           if (request.method == 'load') {
             final args = request.arguments as Map;
             sources.add(args['audioSource'] as Map);
-              initialPositions.add(args['initialPosition'] as int?);
+            initialPositions.add(args['initialPosition'] as int?);
             binding.channelBuffers.push(
                 events.name,
                 _codec.encodeSuccessEnvelope({
@@ -154,6 +156,14 @@ void main() {
       chapterIndex: 0,
       duration: 636);
 
+  Future<File> localAudioFile() async {
+    final directory =
+        await Directory.systemTemp.createTemp('ting-player-source-');
+    addTearDown(() => directory.delete(recursive: true));
+    return File('${directory.path}${Platform.pathSeparator}chapter.mp3')
+        .writeAsBytes([]);
+  }
+
   for (final path in [
     'D:/ting-reader/ting-reader/backend/storage/乱世书/极品家丁-第0001章-公子，公子.(m4a).strm',
     r'D:\Audiobooks\Book\chapter.m4a',
@@ -216,19 +226,31 @@ void main() {
   });
 
   test('explicit file URI still plays offline audio', () async {
-    final item = chapter('file:///C:/client/downloads/chapter.mp3');
+    final localFile = await localAudioFile();
+    final item = chapter(localFile.uri.toString());
     await player.playChapter(book, [item], item);
+    expect(native.loadedUris.single, localFile.uri);
     expect(native.loadedUris.single.scheme, 'file');
-    expect(native.loadedUris.single.path, endsWith('/chapter.mp3'));
     expect(player.usingLocalFile, isTrue);
   });
 
-  test('indexed client download takes priority over server path', () async {
-    downloads.paths['chapter'] = 'C:/client/downloads/chapter.mp3';
-    final item = chapter('D:/server/book/chapter.strm');
-    await player.playChapter(book, [item], item);
-    expect(native.loadedUris.single.scheme, 'file');
-    expect(native.loadedUris.single.path, contains('/client/downloads/'));
-    expect(player.usingLocalFile, isTrue);
-  });
+  for (final gateway in [false, true]) {
+    test(
+        'indexed client download takes priority over server path (gateway: $gateway)',
+        () async {
+      final localFile = await localAudioFile();
+      downloads.paths['chapter'] = localFile.path;
+      if (gateway) {
+        app.offlineMode = false;
+        app.api.isGatewaySession = () => true;
+      }
+      final item = chapter('D:/server/book/chapter.strm');
+      await player.playChapter(book, [item], item);
+      expect(native.loadedUris.single, localFile.uri);
+      expect(native.loadedUris.single.scheme, 'file');
+      expect(native.loadedHeaders.single, isEmpty);
+      expect(player.usingLocalFile, isTrue);
+      expect(player.error, isNull);
+    });
+  }
 }
