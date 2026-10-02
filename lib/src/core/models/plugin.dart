@@ -87,8 +87,33 @@ class PluginPermission {
         type: readString(json, 'type') ?? '',
         scope: readString(json, 'domain') ??
             readString(json, 'path') ??
-            readString(json, 'event'),
+            readString(json, 'event') ??
+            (json['plugin_id'] == null
+                ? null
+                : '${json['plugin_id']} / ${json['capability_id']}'),
       );
+}
+
+class UnverifiedPluginConfirmation {
+  UnverifiedPluginConfirmation.fromJson(Map<String, dynamic> json,
+      {required String fallbackName})
+      : pluginName = readString(json, 'plugin_name') ?? fallbackName,
+        version = readString(json, 'plugin_version') ?? '',
+        runtime = readString(json, 'runtime'),
+        digest = readString(json, 'package_sha256') ?? '',
+        packageChanged = json['package_changed'] == true,
+        permissionsAvailable = json['permissions'] is List,
+        permissions = _pluginPermissionList(json['permissions']),
+        capabilities = _capabilityList(json['capabilities']);
+
+  final String pluginName;
+  final String version;
+  final String? runtime;
+  final String digest;
+  final bool packageChanged;
+  final bool permissionsAvailable;
+  final List<PluginPermission> permissions;
+  final List<PluginCapability> capabilities;
 }
 
 class PluginCapability {

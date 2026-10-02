@@ -127,6 +127,15 @@ extension PluginLocalizationCompat on AppLocalizations {
       'user_settings_write': ('修改个人设置', 'Modify preferences'),
       'event_subscribe': ('订阅事件', 'Subscribe to events'),
       'event_publish': ('发布事件', 'Publish events'),
+      'config_read': ('读取插件配置', 'Read plugin configuration'),
+      'storage_read': ('读取插件持久数据', 'Read plugin storage'),
+      'storage_write': ('写入插件持久数据', 'Write plugin storage'),
+      'task_read': ('读取任务', 'Read tasks'),
+      'task_manage': ('管理任务', 'Manage tasks'),
+      'task_progress': ('更新任务进度', 'Update task progress'),
+      'html_parse': ('解析 HTML', 'Parse HTML'),
+      'plugin_route_revoke': ('撤销访问签名', 'Revoke signed access'),
+      'capability_invoke': ('调用其他插件', 'Invoke another plugin'),
     };
     final label = labels[type];
     return label == null ? type : _text(label.$1, label.$2);

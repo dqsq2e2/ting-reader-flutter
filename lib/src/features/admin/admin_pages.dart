@@ -17,6 +17,7 @@ import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
 import '../../shared/dialogs/dialog_label.dart';
+import '../../shared/dialogs/unverified_plugin_dialog.dart';
 
 part 'libraries/admin_libraries_page.dart';
 part 'libraries/library_folder_picker.dart';

@@ -171,37 +171,53 @@ class _PluginsPageState extends State<PluginsPage> {
   }) async {
     final api = AppScope.appOf(context).api;
 
-    Future<void> install({required bool acceptUnverified}) {
+    Future<void> install(String? confirmedDigest) {
       return api.post(
         '/api/v1/store/install',
         data: {
           'plugin_id': pluginId,
-          if (acceptUnverified) 'accept_unverified': true,
+          if (confirmedDigest != null) 'accept_unverified': true,
+          if (confirmedDigest != null)
+            'confirmed_package_sha256': confirmedDigest,
         },
       );
     }
 
-    try {
-      await install(acceptUnverified: false);
-      return true;
-    } on DioException catch (error) {
-      final response = error.response;
-      final data = response?.data;
-      if (response?.statusCode != 428 ||
-          data is! Map ||
-          data['requires_confirmation'] != true) {
-        rethrow;
+    return _installWithConfirmation(install, fallbackName);
+  }
+
+  Future<bool> _installWithConfirmation(
+    Future<void> Function(String? digest) install,
+    String fallbackName,
+  ) async {
+    String? confirmedDigest;
+    while (mounted) {
+      try {
+        await install(confirmedDigest);
+        return true;
+      } on DioException catch (error) {
+        final response = error.response;
+        final data = response?.data;
+        if (response?.statusCode != 428 ||
+            data is! Map ||
+            data['requires_confirmation'] != true) {
+          rethrow;
+        }
+
+        if (!mounted) return false;
+        final confirmation = UnverifiedPluginConfirmation.fromJson(
+          Map<String, dynamic>.from(data),
+          fallbackName: fallbackName,
+        );
+        final agreed = await _confirmUnverifiedPlugin(confirmation);
+        if (agreed != true || !mounted) return false;
+        if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(confirmation.digest)) {
+          throw StateError('Server did not provide a package digest');
+        }
+        confirmedDigest = confirmation.digest;
       }
-
-      final warning = data['warning']?.toString() ??
-          '$fallbackName由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
-      if (!mounted) return false;
-      final agreed = await _confirmUnverifiedPlugin(warning);
-      if (agreed != true || !mounted) return false;
-
-      await install(acceptUnverified: true);
-      return true;
     }
+    return false;
   }
 
   Future<bool?> _confirmDependencyInstall(
@@ -264,45 +280,24 @@ class _PluginsPageState extends State<PluginsPage> {
 
     setState(() => _uploadingPlugin = true);
 
-    Future<void> upload({required bool acceptUnverified}) async {
+    Future<void> upload(String? confirmedDigest) async {
       final uploadFile = path != null
           ? await MultipartFile.fromFile(path, filename: file.name)
           : MultipartFile.fromBytes(bytes!, filename: file.name);
       final formData = FormData.fromMap({
         'file': uploadFile,
-        if (acceptUnverified) 'accept_unverified': 'true',
+        if (confirmedDigest != null) 'accept_unverified': 'true',
+        if (confirmedDigest != null)
+          'confirmed_package_sha256': confirmedDigest,
       });
       await api.post('/api/v1/plugins/install', data: formData);
     }
 
     try {
-      await upload(acceptUnverified: false);
+      if (!await _installWithConfirmation(upload, file.name)) return;
       if (!mounted) return;
       _showSnack(context.l10n.pluginsInstalled);
       await _reloadPluginLists();
-    } on DioException catch (error) {
-      final response = error.response;
-      final data = response?.data;
-      if (response?.statusCode == 428 &&
-          data is Map &&
-          data['requires_confirmation'] == true) {
-        final warning = data['warning']?.toString() ??
-            '${file.name}由未知发布者提供，未经Ting Reader验证。单击同意，即表示你同意全权负责因使用该插件而可能导致的任何设备损坏或数据丢失。';
-        if (!mounted) return;
-        final agreed = await _confirmUnverifiedPlugin(warning);
-        if (agreed == true && mounted) {
-          try {
-            await upload(acceptUnverified: true);
-            if (!mounted) return;
-            _showSnack(context.l10n.pluginsInstalled);
-            await _reloadPluginLists();
-          } catch (_) {
-            if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
-          }
-        }
-      } else if (mounted) {
-        _showSnack(context.l10n.pluginsInstallFailed);
-      }
     } catch (_) {
       if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
     } finally {
@@ -310,23 +305,11 @@ class _PluginsPageState extends State<PluginsPage> {
     }
   }
 
-  Future<bool?> _confirmUnverifiedPlugin(String warning) {
+  Future<bool?> _confirmUnverifiedPlugin(
+      UnverifiedPluginConfirmation confirmation) {
     return showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.localeText('未经验证插件', 'Unverified plugin')),
-        content: Text(warning),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(context.l10n.commonCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(context.localeText('同意', 'Agree')),
-          ),
-        ],
-      ),
+      builder: (context) => UnverifiedPluginDialog(confirmation: confirmation),
     );
   }
 
