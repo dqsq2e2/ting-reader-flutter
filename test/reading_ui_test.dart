@@ -34,6 +34,8 @@ class _ReadingApi extends ApiClient {
   final settingsPayload = <String, dynamic>{};
   final settingsUpdates = <Map<String, dynamic>>[];
   int bookshelfBookCount = 1;
+  String bookshelfBookTitle = 'Selected Book';
+  String bookshelfSeriesTitle = 'Test Collection';
   bool includeBookshelfSeries = false;
   final statisticsPayload = <String, dynamic>{};
 
@@ -91,7 +93,7 @@ class _ReadingApi extends ApiClient {
           {
             'id': 'shelf-series',
             'library_id': 'lib',
-            'title': 'Test Collection',
+            'title': bookshelfSeriesTitle,
             'books': [
               {'id': 'series-book', 'library_id': 'lib', 'title': 'Series Book'}
             ],
@@ -105,7 +107,7 @@ class _ReadingApi extends ApiClient {
             'id': index == 0 ? 'book' : 'book-$index',
             'library_id': 'lib',
             'title': index == 0
-                ? 'Selected Book'
+                ? bookshelfBookTitle
                 : 'Book ${index.toString().padLeft(3, '0')}',
             'progress_percent': readStatuses.isEmpty ? 100 : 0,
           },
@@ -689,7 +691,109 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final width in [390.0, 1280.0]) {
+    for (final selectionMode in [false, true]) {
+      testWidgets(
+          'list progress spans the content at $width pixels (selection: $selectionMode)',
+          (tester) async {
+        tester.view.physicalSize = Size(width, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final app = _ReadingApp();
+        final player = _ReadingPlayer();
+        addTearDown(app.dispose);
+        addTearDown(player.dispose);
+        Widget card(double progress) => Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: BookCard(
+                  book: Book(
+                      id: 'book',
+                      libraryId: 'lib',
+                      title: 'Book',
+                      progressPercent: progress),
+                  viewMode: BookshelfViewMode.list,
+                  selectionMode: selectionMode,
+                  selected: selectionMode,
+                  onTap: () {},
+                ),
+              ),
+            );
+        for (final progress in [35.0, 100.0]) {
+          await _pump(tester, app, player, card(progress));
+          final tileRect = tester.getRect(find.byType(BookshelfListTile));
+          final titleRect = tester.getRect(find.text('Book'));
+          final progressRect =
+              tester.getRect(find.byType(LinearProgressIndicator));
+          expect(progressRect.left, closeTo(titleRect.left, 0.1));
+          expect(progressRect.right, closeTo(tileRect.right - 12, 0.1));
+          expect(progressRect.width, closeTo(tileRect.width - 100, 0.1));
+          expect(
+              tester
+                  .widget<LinearProgressIndicator>(
+                      find.byType(LinearProgressIndicator))
+                  .value,
+              progress / 100);
+          expect(find.text(progress == 100 ? 'Read' : '35%'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+        app.settings = {
+          'settings_json': {'bookshelf_progress_enabled': false}
+        };
+        await _pump(tester, app, player, card(100));
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(find.text('Read'), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   for (final viewMode in ['grid', 'list']) {
+    for (final iconSize in ['small', 'medium', 'large']) {
+      testWidgets(
+          'long bookshelf titles stay on one line in $viewMode with $iconSize covers',
+          (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final app = _ReadingApp();
+        final player = _ReadingPlayer();
+        app.api
+          ..includeBookshelfSeries = true
+          ..bookshelfBookTitle =
+              '超长书名${List.filled(6, '用于验证单行省略的较长书籍名称').join()}'
+          ..bookshelfSeriesTitle =
+              '超长系列名${List.filled(6, '用于验证单行省略的较长系列名称').join()}';
+        app.api.settingsPayload['settings_json'] = {
+          'bookshelf_view_mode': viewMode,
+          'bookshelf_icon_size': iconSize,
+        };
+        addTearDown(app.dispose);
+        addTearDown(player.dispose);
+        await _pump(
+            tester,
+            app,
+            player,
+            BookshelfPage(
+                openBook: (_) {},
+                openSeries: (_) {},
+                openLibraries: () {},
+                openSearch: () {}));
+        for (final title in [
+          app.api.bookshelfBookTitle,
+          app.api.bookshelfSeriesTitle
+        ]) {
+          final finder = find.text(title);
+          expect(tester.widget<Text>(finder).maxLines, 1);
+          expect(tester.widget<Text>(finder).overflow, TextOverflow.ellipsis);
+          expect(tester.getSize(finder).height, lessThan(25));
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
     for (final grouped in [false, true]) {
       testWidgets(
           'bookshelf $viewMode keeps incremental loading (grouped: $grouped)',

@@ -65,89 +65,103 @@ class BookshelfListTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (bookCount != null) ...[
-                        Row(
-                          children: [
-                            const Icon(Icons.layers_rounded,
-                                size: 12, color: AppColors.primary600),
-                            const SizedBox(width: 4),
-                            Text(context.localeText('系列', 'Series'),
-                                style: const TextStyle(
-                                    fontSize: 11, color: AppColors.primary600)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (bookCount != null) ...[
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.layers_rounded,
+                                          size: 12,
+                                          color: AppColors.primary600),
+                                      const SizedBox(width: 4),
+                                      Text(context.localeText('系列', 'Series'),
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.primary600)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                ],
+                                Text(title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.35)),
+                                const SizedBox(height: 4),
+                                Text(
+                                  [
+                                    author,
+                                    if (narrator?.isNotEmpty == true) narrator!
+                                  ].join(' · '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      color: context.mutedText, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (bookCount != null) ...[
+                            const SizedBox(width: 12),
+                            Text(
+                                context.localeText(
+                                    '$bookCount 本书', '$bookCount books'),
+                                style: TextStyle(
+                                    color: context.mutedText, fontSize: 12)),
+                          ] else if (progress != null) ...[
+                            const SizedBox(width: 12),
+                            Text(
+                              progress == 100
+                                  ? context.localeText('已读', 'Read')
+                                  : progress == 0
+                                      ? context.localeText('未读', 'Unread')
+                                      : '$progress%',
+                              style:
+                                  TextStyle(color: progressColor, fontSize: 12),
+                            ),
                           ],
-                        ),
-                        const SizedBox(height: 4),
-                      ],
-                      Text(title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              height: 1.35)),
-                      const SizedBox(height: 4),
-                      Text(
-                        [author, if (narrator?.isNotEmpty == true) narrator!]
-                            .join(' · '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style:
-                            TextStyle(color: context.mutedText, fontSize: 12),
+                          if (selectionMode) ...[
+                            const SizedBox(width: 12),
+                            BatchCheckbox(
+                              checked: selected,
+                              compact: true,
+                              interactive: false,
+                              visualSize: 20,
+                            ),
+                          ] else if (MediaQuery.sizeOf(context).width >=
+                              640) ...[
+                            const SizedBox(width: 12),
+                            Icon(Icons.chevron_right_rounded,
+                                size: 18, color: context.tertiaryText),
+                          ],
+                        ],
                       ),
+                      if (bookCount == null &&
+                          progress != null &&
+                          progress > 0) ...[
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: progress / 100,
+                            minHeight: 3,
+                            color: progress == 100
+                                ? const Color(0xff10b981)
+                                : AppColors.primary500,
+                            backgroundColor: context.faintBorder,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                if (bookCount != null) ...[
-                  const SizedBox(width: 12),
-                  Text(context.localeText('$bookCount 本书', '$bookCount books'),
-                      style: TextStyle(color: context.mutedText, fontSize: 12)),
-                ] else if (progress != null) ...[
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 56,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          progress == 100
-                              ? context.localeText('已读', 'Read')
-                              : progress == 0
-                                  ? context.localeText('未读', 'Unread')
-                                  : '$progress%',
-                          style: TextStyle(color: progressColor, fontSize: 12),
-                        ),
-                        if (progress > 0) ...[
-                          const SizedBox(height: 8),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(2),
-                            child: LinearProgressIndicator(
-                              value: progress / 100,
-                              minHeight: 3,
-                              color: progress == 100
-                                  ? const Color(0xff10b981)
-                                  : AppColors.primary500,
-                              backgroundColor: context.faintBorder,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-                if (selectionMode) ...[
-                  const SizedBox(width: 12),
-                  BatchCheckbox(
-                    checked: selected,
-                    compact: true,
-                    interactive: false,
-                    visualSize: 20,
-                  ),
-                ] else if (MediaQuery.sizeOf(context).width >= 640) ...[
-                  const SizedBox(width: 12),
-                  Icon(Icons.chevron_right_rounded,
-                      size: 18, color: context.tertiaryText),
-                ],
               ],
             ),
           ),
