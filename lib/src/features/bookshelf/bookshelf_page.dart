@@ -42,6 +42,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   String _sortBy = 'created_at';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
   CoverShape _coverShape = CoverShape.square;
+  BookshelfViewMode _viewMode = BookshelfViewMode.grid;
   bool _showFilterMenu = false;
   bool _selectionMode = false;
   bool _deletingBooks = false;
@@ -105,6 +106,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
       _sortBy = (settingValue('bookshelf_sort_by') ?? 'created_at').toString();
       _iconSize = iconSizeFromAppSettings(settingsPayload);
       _coverShape = coverShapeFromAppSettings(settingsPayload);
+      _viewMode = settingValue('bookshelf_view_mode') == 'list'
+          ? BookshelfViewMode.list
+          : BookshelfViewMode.grid;
 
       final libsRes = await appState.api.get('/api/libraries');
       final libraries = asMapList(libsRes.data).map(Library.fromJson).toList();
@@ -445,7 +449,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
             message: context.localeText('换个关键词试试吧', 'Try another keyword.'),
           )
         else
-          _ContentGrid(
+          _ShelfContent(
             books: _filteredBooks,
             series: _filteredSeries,
             visibleCount: _visibleCount,
@@ -454,6 +458,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
             groupSectionKeys: _groupSectionKeys,
             iconSize: _iconSize,
             coverShape: _coverShape,
+            viewMode: _viewMode,
             selectionMode: _selectionMode,
             selectedBookIds: _selectedBookIds,
             selectedSeriesIds: _selectedSeriesIds,
@@ -632,9 +637,11 @@ class _BookshelfPageState extends State<BookshelfPage> {
                   ],
                   iconSize: _iconSize,
                   coverShape: _coverShape,
+                  viewMode: _viewMode,
                   onSortChanged: _changeSort,
                   onIconSizeChanged: _changeIconSize,
                   onCoverShapeChanged: _changeCoverShape,
+                  onViewModeChanged: _changeViewMode,
                 ),
               ),
             ],
@@ -678,6 +685,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
       'bookshelf_cover_shape',
       value == CoverShape.square ? 'square' : 'rect',
     );
+  }
+
+  Future<void> _changeViewMode(BookshelfViewMode value) async {
+    _closeFilterMenu();
+    setState(() => _viewMode = value);
+    await _persist('bookshelf_view_mode', value.name);
   }
 
   Future<void> _showDeleteSelectedDialog() async {
@@ -1110,6 +1123,7 @@ class _Header extends StatelessWidget {
                   icon: Icons.close_rounded,
                   onPressed: onCancelSelection,
                 ),
+                compactFilterButton,
               ],
             );
           }
@@ -1580,8 +1594,8 @@ class _SquareToolbarButton extends StatelessWidget {
   }
 }
 
-class _ContentGrid extends StatelessWidget {
-  const _ContentGrid({
+class _ShelfContent extends StatelessWidget {
+  const _ShelfContent({
     required this.books,
     required this.series,
     required this.visibleCount,
@@ -1590,6 +1604,7 @@ class _ContentGrid extends StatelessWidget {
     required this.groupSectionKeys,
     required this.iconSize,
     required this.coverShape,
+    required this.viewMode,
     required this.selectionMode,
     required this.selectedBookIds,
     required this.selectedSeriesIds,
@@ -1605,11 +1620,66 @@ class _ContentGrid extends StatelessWidget {
   final Map<String, GlobalKey> groupSectionKeys;
   final IconSizeSetting iconSize;
   final CoverShape coverShape;
+  final BookshelfViewMode viewMode;
   final bool selectionMode;
   final Set<String> selectedBookIds;
   final Set<String> selectedSeriesIds;
   final ValueChanged<Book> onBook;
   final ValueChanged<Series> onSeries;
+
+  Widget _buildItem(Object item) {
+    if (item is Series) {
+      return SeriesCard(
+        series: item,
+        coverShape: coverShape,
+        viewMode: viewMode,
+        iconSize: iconSize,
+        selectionMode: selectionMode,
+        selected: selectedSeriesIds.contains(item.id),
+        onTap: () => onSeries(item),
+      );
+    }
+    final book = item as Book;
+    return BookCard(
+      book: book,
+      coverShape: coverShape,
+      viewMode: viewMode,
+      iconSize: iconSize,
+      selectionMode: selectionMode,
+      selected: selectedBookIds.contains(book.id),
+      onTap: () => onBook(book),
+    );
+  }
+
+  Widget _buildItems(BuildContext context, List<Object> items,
+      {required int columns,
+      required double spacing,
+      required double cardHeight}) {
+    if (viewMode == BookshelfViewMode.list) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: ListView.builder(
+          padding: EdgeInsets.zero,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: items.length,
+          itemBuilder: (context, index) => _buildItem(items[index]),
+        ),
+      );
+    }
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: spacing,
+        mainAxisSpacing: spacing + 12,
+        mainAxisExtent: cardHeight,
+      ),
+      itemBuilder: (context, index) => _buildItem(items[index]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1658,37 +1728,10 @@ class _ContentGrid extends StatelessWidget {
                         ),
                       ),
                     ),
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: entry.value.length,
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        crossAxisSpacing: spacing,
-                        mainAxisSpacing: spacing + 12,
-                        mainAxisExtent: cardHeight,
-                      ),
-                      itemBuilder: (context, index) {
-                        final item = entry.value[index];
-                        if (item is Series) {
-                          return SeriesCard(
-                            series: item,
-                            coverShape: coverShape,
-                            selectionMode: selectionMode,
-                            selected: selectedSeriesIds.contains(item.id),
-                            onTap: () => onSeries(item),
-                          );
-                        }
-                        final book = item as Book;
-                        return BookCard(
-                          book: book,
-                          coverShape: coverShape,
-                          selectionMode: selectionMode,
-                          selected: selectedBookIds.contains(book.id),
-                          onTap: () => onBook(book),
-                        );
-                      },
-                    ),
+                    _buildItems(context, entry.value,
+                        columns: columns,
+                        spacing: spacing,
+                        cardHeight: cardHeight),
                     const SizedBox(height: 18),
                   ],
                 ),
@@ -1697,37 +1740,8 @@ class _ContentGrid extends StatelessWidget {
         }
 
         final items = <Object>[...series, ...books].take(visibleCount).toList();
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            crossAxisSpacing: spacing,
-            mainAxisSpacing: spacing + 14,
-            mainAxisExtent: cardHeight,
-          ),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            if (item is Series) {
-              return SeriesCard(
-                series: item,
-                coverShape: coverShape,
-                selectionMode: selectionMode,
-                selected: selectedSeriesIds.contains(item.id),
-                onTap: () => onSeries(item),
-              );
-            }
-            final book = item as Book;
-            return BookCard(
-              book: book,
-              coverShape: coverShape,
-              selectionMode: selectionMode,
-              selected: selectedBookIds.contains(book.id),
-              onTap: () => onBook(book),
-            );
-          },
-        );
+        return _buildItems(context, items,
+            columns: columns, spacing: spacing, cardHeight: cardHeight);
       },
     );
   }

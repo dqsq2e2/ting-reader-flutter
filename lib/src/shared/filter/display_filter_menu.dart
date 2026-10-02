@@ -24,6 +24,8 @@ class DisplayFilterMenu extends StatelessWidget {
     required this.onIconSizeChanged,
     this.coverShape,
     this.onCoverShapeChanged,
+    this.viewMode,
+    this.onViewModeChanged,
   });
 
   final String sortBy;
@@ -33,6 +35,8 @@ class DisplayFilterMenu extends StatelessWidget {
   final ValueChanged<String> onSortChanged;
   final ValueChanged<IconSizeSetting> onIconSizeChanged;
   final ValueChanged<CoverShape>? onCoverShapeChanged;
+  final BookshelfViewMode? viewMode;
+  final ValueChanged<BookshelfViewMode>? onViewModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -49,49 +53,72 @@ class DisplayFilterMenu extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: context.faintBorder),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _DisplayFilterSection(context.localeText('排序方式', 'Sort')),
-            for (final option in sortOptions)
-              _DisplayFilterOption(
-                label: option.label,
-                selected: _sortSelected(option.value),
-                onTap: () => onSortChanged(option.value),
-              ),
-            _DisplayFilterSection(context.localeText('图标大小', 'Icon Size'),
-                topBorder: true),
-            _DisplayFilterOption(
-              label: context.localeText('大图标', 'Large'),
-              selected: iconSize == IconSizeSetting.large,
-              onTap: () => onIconSizeChanged(IconSizeSetting.large),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.65),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (viewMode != null && onViewModeChanged != null) ...[
+                  _DisplayFilterSection(
+                      context.localeText('展示模式', 'View Mode')),
+                  _DisplayFilterOption(
+                    label: context.localeText('网格（默认）', 'Grid (Default)'),
+                    selected: viewMode == BookshelfViewMode.grid,
+                    onTap: () => onViewModeChanged!(BookshelfViewMode.grid),
+                  ),
+                  _DisplayFilterOption(
+                    label: context.localeText('列表', 'List'),
+                    selected: viewMode == BookshelfViewMode.list,
+                    onTap: () => onViewModeChanged!(BookshelfViewMode.list),
+                  ),
+                ],
+                _DisplayFilterSection(context.localeText('排序方式', 'Sort'),
+                    topBorder: viewMode != null),
+                for (final option in sortOptions)
+                  _DisplayFilterOption(
+                    label: option.label,
+                    selected: _sortSelected(option.value),
+                    onTap: () => onSortChanged(option.value),
+                  ),
+                _DisplayFilterSection(context.localeText('图标大小', 'Icon Size'),
+                    topBorder: true),
+                _DisplayFilterOption(
+                  label: context.localeText('大图标', 'Large'),
+                  selected: iconSize == IconSizeSetting.large,
+                  onTap: () => onIconSizeChanged(IconSizeSetting.large),
+                ),
+                _DisplayFilterOption(
+                  label: context.localeText('中图标（默认）', 'Medium (Default)'),
+                  selected: iconSize == IconSizeSetting.medium,
+                  onTap: () => onIconSizeChanged(IconSizeSetting.medium),
+                ),
+                _DisplayFilterOption(
+                  label: context.localeText('小图标', 'Small'),
+                  selected: iconSize == IconSizeSetting.small,
+                  onTap: () => onIconSizeChanged(IconSizeSetting.small),
+                ),
+                if (coverShape != null && onCoverShapeChanged != null) ...[
+                  _DisplayFilterSection(
+                      context.localeText('封面形状', 'Cover Shape'),
+                      topBorder: true),
+                  _DisplayFilterOption(
+                    label: context.localeText('3:4 比例', '3:4'),
+                    selected: coverShape == CoverShape.rect,
+                    onTap: () => onCoverShapeChanged!(CoverShape.rect),
+                  ),
+                  _DisplayFilterOption(
+                    label: context.localeText(
+                        '1:1 方形（默认）', '1:1 Square (Default)'),
+                    selected: coverShape == CoverShape.square,
+                    onTap: () => onCoverShapeChanged!(CoverShape.square),
+                  ),
+                ],
+              ],
             ),
-            _DisplayFilterOption(
-              label: context.localeText('中图标（默认）', 'Medium (Default)'),
-              selected: iconSize == IconSizeSetting.medium,
-              onTap: () => onIconSizeChanged(IconSizeSetting.medium),
-            ),
-            _DisplayFilterOption(
-              label: context.localeText('小图标', 'Small'),
-              selected: iconSize == IconSizeSetting.small,
-              onTap: () => onIconSizeChanged(IconSizeSetting.small),
-            ),
-            if (coverShape != null && onCoverShapeChanged != null) ...[
-              _DisplayFilterSection(context.localeText('封面形状', 'Cover Shape'),
-                  topBorder: true),
-              _DisplayFilterOption(
-                label: context.localeText('3:4 比例', '3:4'),
-                selected: coverShape == CoverShape.rect,
-                onTap: () => onCoverShapeChanged!(CoverShape.rect),
-              ),
-              _DisplayFilterOption(
-                label: context.localeText('1:1 方形（默认）', '1:1 Square (Default)'),
-                selected: coverShape == CoverShape.square,
-                onTap: () => onCoverShapeChanged!(CoverShape.square),
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );

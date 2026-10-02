@@ -16,6 +16,7 @@ import 'package:ting_reader_flutter/src/features/mine/history_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/mine_page.dart';
 import 'package:ting_reader_flutter/src/shared/app_scope.dart';
 import 'package:ting_reader_flutter/src/shared/cards/book_card.dart';
+import 'package:ting_reader_flutter/src/shared/cards/bookshelf_list_tile.dart';
 
 class _ReadingApi extends ApiClient {
   final gets = <String>[];
@@ -31,6 +32,9 @@ class _ReadingApi extends ApiClient {
   List<String> seriesBookIds = ['other-book', 'book', 'alpha-book'];
   final pendingSeries = <String, Completer<Response<dynamic>>>{};
   final settingsPayload = <String, dynamic>{};
+  final settingsUpdates = <Map<String, dynamic>>[];
+  int bookshelfBookCount = 1;
+  bool includeBookshelfSeries = false;
   final statisticsPayload = <String, dynamic>{};
 
   Response<dynamic> _response(String path, dynamic value) =>
@@ -81,15 +85,30 @@ class _ReadingApi extends ApiClient {
         {'id': 'lib', 'name': 'Library', 'type': 'local'},
       ]);
     }
-    if (path == '/api/v1/series') return _response(path, []);
+    if (path == '/api/v1/series') {
+      return _response(path, [
+        if (includeBookshelfSeries)
+          {
+            'id': 'shelf-series',
+            'library_id': 'lib',
+            'title': 'Test Collection',
+            'books': [
+              {'id': 'series-book', 'library_id': 'lib', 'title': 'Series Book'}
+            ],
+          },
+      ]);
+    }
     if (path == '/api/books') {
       return _response(path, [
-        {
-          'id': 'book',
-          'library_id': 'lib',
-          'title': 'Selected Book',
-          'progress_percent': readStatuses.isEmpty ? 100 : 0,
-        },
+        for (var index = 0; index < bookshelfBookCount; index++)
+          {
+            'id': index == 0 ? 'book' : 'book-$index',
+            'library_id': 'lib',
+            'title': index == 0
+                ? 'Selected Book'
+                : 'Book ${index.toString().padLeft(3, '0')}',
+            'progress_percent': readStatuses.isEmpty ? 100 : 0,
+          },
       ]);
     }
     if (path == '/api/history/books') {
@@ -195,6 +214,13 @@ class _ReadingApi extends ApiClient {
       Map<String, dynamic>? params,
       CancelToken? cancelToken,
       Duration? receiveTimeout}) async {
+    if (path == '/api/settings') {
+      final patch = Map<String, dynamic>.from(data as Map);
+      settingsUpdates.add(patch);
+      final nested = {...asMap(settingsPayload['settings_json']), ...patch};
+      settingsPayload['settings_json'] = nested;
+      return _response(path, settingsPayload);
+    }
     if (path == '/api/books/read-status') {
       readStatuses.add(Map<String, dynamic>.from(data as Map));
       return _response(path, null);
@@ -611,6 +637,106 @@ void main() {
     expect(find.text('Unread'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('bookshelf switches modes, persists them and retains selection',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    final openedBooks = <String>[];
+    final openedSeries = <String>[];
+    app.api.includeBookshelfSeries = true;
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    final page = BookshelfPage(
+        openBook: openedBooks.add,
+        openSeries: openedSeries.add,
+        openLibraries: () {},
+        openSearch: () {});
+    await _pump(tester, app, player, page);
+    expect(find.byType(BookshelfListTile), findsNothing);
+    await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    expect(app.api.settingsUpdates.last, {'bookshelf_view_mode': 'list'});
+    expect(find.byType(BookshelfListTile), findsNWidgets(2));
+    await tester.tap(find.text('Selected Book'));
+    await tester.tap(find.text('Test Collection'));
+    expect(openedBooks, ['book']);
+    expect(openedSeries, ['shelf-series']);
+    await tester.tap(find.text('Select'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Selected Book'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Grid (Default)'));
+    await tester.pumpAndSettle();
+    expect(app.api.settingsUpdates.last, {'bookshelf_view_mode': 'grid'});
+    expect(tester.widget<BookCard>(find.byType(BookCard)).selected, isTrue);
+    expect(openedBooks, ['book']);
+    await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, app, player, page);
+    expect(find.byType(BookshelfListTile), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final viewMode in ['grid', 'list']) {
+    for (final grouped in [false, true]) {
+      testWidgets(
+          'bookshelf $viewMode keeps incremental loading (grouped: $grouped)',
+          (tester) async {
+        tester.view.physicalSize = const Size(390, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final app = _ReadingApp();
+        final player = _ReadingPlayer();
+        app.api.bookshelfBookCount = 150;
+        app.api.settingsPayload['settings_json'] = {
+          'bookshelf_view_mode': viewMode,
+          'bookshelf_sort_by': grouped ? 'title' : 'created_at',
+        };
+        addTearDown(app.dispose);
+        addTearDown(player.dispose);
+        await _pump(
+            tester,
+            app,
+            player,
+            BookshelfPage(
+                openBook: (_) {},
+                openSeries: (_) {},
+                openLibraries: () {},
+                openSearch: () {}));
+        expect(find.byType(BookCard), findsNWidgets(50));
+        expect(find.byType(BookshelfListTile),
+            viewMode == 'list' ? findsNWidgets(50) : findsNothing);
+        final mainScroll = find.byType(Scrollable).first;
+        final scrollPosition =
+            tester.state<ScrollableState>(mainScroll).position;
+        scrollPosition.jumpTo(scrollPosition.maxScrollExtent);
+        await tester.pumpAndSettle();
+        expect(find.byType(BookCard), findsNWidgets(100));
+        scrollPosition.jumpTo(0);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byIcon(Icons.filter_list_rounded));
+        await tester.pumpAndSettle();
+        await tester
+            .tap(find.text(viewMode == 'grid' ? 'List' : 'Grid (Default)'));
+        await tester.pumpAndSettle();
+        expect(find.byType(BookCard), findsNWidgets(100));
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('series selection marks books through the operations menu',
       (tester) async {

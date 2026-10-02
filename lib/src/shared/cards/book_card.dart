@@ -6,10 +6,19 @@ import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../app_scope.dart';
 import '../common/common_widgets.dart';
+import 'bookshelf_list_tile.dart';
 
 enum CoverShape { rect, square }
 
 enum IconSizeSetting { small, medium, large }
+
+enum BookshelfViewMode { grid, list }
+
+double listCoverWidth(IconSizeSetting size) => switch (size) {
+      IconSizeSetting.small => 48,
+      IconSizeSetting.medium => 64,
+      IconSizeSetting.large => 80,
+    };
 
 CoverShape coverShapeFromString(String? value) {
   return value == 'rect' ? CoverShape.rect : CoverShape.square;
@@ -114,6 +123,8 @@ class BookCard extends StatelessWidget {
     this.coverShape = CoverShape.square,
     this.selected = false,
     this.selectionMode = false,
+    this.viewMode = BookshelfViewMode.grid,
+    this.iconSize = IconSizeSetting.medium,
   });
 
   final Book book;
@@ -121,6 +132,8 @@ class BookCard extends StatelessWidget {
   final CoverShape coverShape;
   final bool selected;
   final bool selectionMode;
+  final BookshelfViewMode viewMode;
+  final IconSizeSetting iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -135,6 +148,23 @@ class BookCard extends StatelessWidget {
         : book.progressPercent <= 0
             ? 0
             : book.progressPercent.round().clamp(1, 99);
+
+    if (viewMode == BookshelfViewMode.list) {
+      return BookshelfListTile(
+        title: localizedBookTitle(context, book),
+        author: book.author?.isNotEmpty == true
+            ? book.author!
+            : context.localeText('未知作者', 'Unknown Author'),
+        narrator: book.narrator,
+        coverUrl: url,
+        coverWidth: listCoverWidth(iconSize),
+        coverAspectRatio: coverAspectRatio(coverShape),
+        progress: showProgress ? progress : null,
+        selectionMode: selectionMode,
+        selected: selected,
+        onTap: onTap,
+      );
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -300,6 +330,8 @@ class SeriesCard extends StatelessWidget {
     this.coverShape = CoverShape.square,
     this.selected = false,
     this.selectionMode = false,
+    this.viewMode = BookshelfViewMode.grid,
+    this.iconSize = IconSizeSetting.medium,
   });
 
   final Series series;
@@ -307,11 +339,30 @@ class SeriesCard extends StatelessWidget {
   final CoverShape coverShape;
   final bool selected;
   final bool selectionMode;
+  final BookshelfViewMode viewMode;
+  final IconSizeSetting iconSize;
 
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final url = seriesCoverUrl(appState, series);
+
+    if (viewMode == BookshelfViewMode.list) {
+      return BookshelfListTile(
+        title: localizedSeriesTitle(context, series),
+        author: series.author?.isNotEmpty == true
+            ? series.author!
+            : context.localeText('未知作者', 'Unknown Author'),
+        narrator: series.narrator,
+        coverUrl: url,
+        coverWidth: listCoverWidth(iconSize),
+        coverAspectRatio: coverAspectRatio(coverShape),
+        bookCount: series.books.length,
+        selectionMode: selectionMode,
+        selected: selected,
+        onTap: onTap,
+      );
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
