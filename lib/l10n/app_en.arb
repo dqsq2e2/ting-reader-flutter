@@ -1,6 +1,10 @@
 {
   "@@locale": "en",
   "appName": "Ting Reader",
+  "authDefaultCredentialsTitle": "Change the default administrator credentials",
+  "authDefaultCredentialsMessage": "You are still using the default administrator username and password. Go to Mine to change your credentials and protect your data.",
+  "authDefaultCredentialsLater": "Later",
+  "authDefaultCredentialsChange": "Change credentials",
   "commonCancel": "Cancel",
   "commonClose": "Close",
   "commonCopy": "Copy",

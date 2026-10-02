@@ -62,6 +62,7 @@ test/*
 !test/plugin_extension_registry_test.dart
 !test/player_source_selection_test.dart
 !test/reading_ui_test.dart
+!test/default_admin_credentials_test.dart
 preview_screenshots/
 real_compare_screenshots/
 web_compare_screenshots/

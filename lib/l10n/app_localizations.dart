@@ -104,6 +104,30 @@ abstract class AppLocalizations {
   /// **'Ting Reader'**
   String get appName;
 
+  /// No description provided for @authDefaultCredentialsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'请修改默认管理员账号密码'**
+  String get authDefaultCredentialsTitle;
+
+  /// No description provided for @authDefaultCredentialsMessage.
+  ///
+  /// In zh, this message translates to:
+  /// **'您仍在使用默认的管理员账号和密码。为保障数据安全，请前往「我的」修改账号密码。'**
+  String get authDefaultCredentialsMessage;
+
+  /// No description provided for @authDefaultCredentialsLater.
+  ///
+  /// In zh, this message translates to:
+  /// **'稍后再说'**
+  String get authDefaultCredentialsLater;
+
+  /// No description provided for @authDefaultCredentialsChange.
+  ///
+  /// In zh, this message translates to:
+  /// **'去修改'**
+  String get authDefaultCredentialsChange;
+
   /// No description provided for @commonCancel.
   ///
   /// In zh, this message translates to:

@@ -63,7 +63,9 @@ class _MyPageState extends State<MyPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   @override
@@ -132,19 +134,11 @@ class _MyPageState extends State<MyPage> {
       if (nextPassword.isNotEmpty) payload['password'] = nextPassword;
 
       if (payload.isNotEmpty) {
-        await appState.api.patch('/api/me', data: payload);
-        if (currentUser != null && payload.containsKey('username')) {
-          await appState.updateCurrentUser(
-            User(
-              id: currentUser.id,
-              username: nextUsername,
-              role: currentUser.role,
-              createdAt: currentUser.createdAt,
-              librariesAccessible: currentUser.librariesAccessible,
-              booksAccessible: currentUser.booksAccessible,
-            ),
-          );
-        }
+        final response = await appState.api.patch('/api/me', data: payload);
+        await appState.updateCurrentUser(User.fromJson({
+          ...?currentUser?.toJson(),
+          ...asMap(response.data),
+        }));
       }
 
       _passwordController.clear();

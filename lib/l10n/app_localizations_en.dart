@@ -12,6 +12,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appName => 'Ting Reader';
 
   @override
+  String get authDefaultCredentialsTitle =>
+      'Change the default administrator credentials';
+
+  @override
+  String get authDefaultCredentialsMessage =>
+      'You are still using the default administrator username and password. Go to Mine to change your credentials and protect your data.';
+
+  @override
+  String get authDefaultCredentialsLater => 'Later';
+
+  @override
+  String get authDefaultCredentialsChange => 'Change credentials';
+
+  @override
   String get commonCancel => 'Cancel';
 
   @override

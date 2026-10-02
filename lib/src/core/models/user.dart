@@ -7,6 +7,7 @@ class User {
     required this.id,
     required this.username,
     required this.role,
+    this.usesDefaultAdminCredentials = false,
     this.createdAt,
     this.librariesAccessible = const [],
     this.booksAccessible = const [],
@@ -15,6 +16,7 @@ class User {
   final String id;
   final String username;
   final String role;
+  final bool usesDefaultAdminCredentials;
   final String? createdAt;
   final List<String> librariesAccessible;
   final List<String> booksAccessible;
@@ -26,6 +28,8 @@ class User {
       id: readString(json, 'id') ?? '',
       username: readString(json, 'username') ?? '',
       role: readString(json, 'role') ?? 'user',
+      usesDefaultAdminCredentials:
+          json['uses_default_admin_credentials'] == true,
       createdAt: readString(json, 'created_at'),
       librariesAccessible: readStringList(json['libraries_accessible']),
       booksAccessible: readStringList(json['books_accessible']),
@@ -36,6 +40,7 @@ class User {
         'id': id,
         'username': username,
         'role': role,
+        'uses_default_admin_credentials': usesDefaultAdminCredentials,
         if (createdAt != null) 'created_at': createdAt,
         'libraries_accessible': librariesAccessible,
         'books_accessible': booksAccessible,

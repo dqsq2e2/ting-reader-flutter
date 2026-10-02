@@ -12,6 +12,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get appName => 'Ting Reader';
 
   @override
+  String get authDefaultCredentialsTitle => '请修改默认管理员账号密码';
+
+  @override
+  String get authDefaultCredentialsMessage =>
+      '您仍在使用默认的管理员账号和密码。为保障数据安全，请前往「我的」修改账号密码。';
+
+  @override
+  String get authDefaultCredentialsLater => '稍后再说';
+
+  @override
+  String get authDefaultCredentialsChange => '去修改';
+
+  @override
   String get commonCancel => '取消';
 
   @override

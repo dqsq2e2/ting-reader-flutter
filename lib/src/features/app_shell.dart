@@ -117,6 +117,7 @@ class _AppShellState extends State<AppShell> {
   bool _reloadPluginExtensions = false;
   String? _initialPluginId;
   String? _initialPluginCapabilityId;
+  String? _defaultCredentialsReminderIdentity;
 
   @override
   void initState() {
@@ -135,6 +136,7 @@ class _AppShellState extends State<AppShell> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final appState = AppScope.appOf(context);
+    _remindDefaultAdminCredentials();
     final revision = appState.pluginExtensionRevision;
     final cached = appState.pluginCapabilities.cachedClientExtensions;
     if (cached != null) {
@@ -200,6 +202,53 @@ class _AppShellState extends State<AppShell> {
       default:
         return AppDestination.home;
     }
+  }
+
+  void _remindDefaultAdminCredentials() {
+    final appState = AppScope.appOf(context);
+    final user = appState.user;
+    if (appState.offlineMode ||
+        !appState.isAuthenticated ||
+        user == null ||
+        !user.isAdmin ||
+        !user.usesDefaultAdminCredentials) {
+      return;
+    }
+    final identity = '${appState.serverUrl}:${user.id}';
+    if (_defaultCredentialsReminderIdentity == identity) return;
+    _defaultCredentialsReminderIdentity = identity;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final current = AppScope.appOf(context);
+      if (current.offlineMode ||
+          '${current.serverUrl}:${current.user?.id}' != identity ||
+          current.user?.usesDefaultAdminCredentials != true) {
+        return;
+      }
+      final changeCredentials = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.security_rounded),
+          title: Text(dialogContext.l10n.authDefaultCredentialsTitle),
+          content: Text(dialogContext.l10n.authDefaultCredentialsMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(dialogContext.l10n.authDefaultCredentialsLater),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(dialogContext.l10n.authDefaultCredentialsChange),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || changeCredentials != true) return;
+      final active = AppScope.appOf(context);
+      if ('${active.serverUrl}:${active.user?.id}' != identity) return;
+      AppScope.playerOf(context).setExpanded(false);
+      _go(AppDestination.mine);
+    });
   }
 
   List<ClientExtensionDescriptor> get _sidebarPluginPages {
