@@ -49,7 +49,7 @@ extension PluginLocalizationCompat on AppLocalizations {
   String get pluginsSearchHint => _text('搜索插件...', 'Search plugins...');
   String get pluginsNoDescription => _text('暂无插件简介', 'No description');
   String pluginsDependencyCount(int count) =>
-      _text('$count 个依赖', '$count deps');
+      _text('$count 个依赖', '$count dependencies');
   String get pluginsDependencyInstallTitle =>
       _text('安装依赖插件？', 'Install dependencies?');
   String pluginsDependencyInstallMessage(
@@ -71,7 +71,7 @@ extension PluginLocalizationCompat on AppLocalizations {
   String get pluginsConfigurable => _text('可配置', 'Configurable');
   String get pluginsAutoScrape => _text('自动刮削', 'Auto scrape');
   String pluginsSearchFieldCount(int count) =>
-      _text('$count 个搜索字段', '$count search fields');
+      _text('$count 个搜索项', '$count search fields');
   String pluginsResultFieldCount(int count) =>
       _text('$count 个结果字段', '$count result fields');
   String get pluginsRepository => _text('仓库', 'Repository');
@@ -82,6 +82,56 @@ extension PluginLocalizationCompat on AppLocalizations {
   String get pluginsInstall => _text('安装', 'Install');
   String get pluginsStateActive => _text('运行中', 'Active');
   String get pluginsStateFailed => _text('失败', 'Failed');
+  String get pluginsStateLoading => _text('加载中', 'Loading');
+  String get pluginsStateInactive => _text('未启用', 'Inactive');
+  String get pluginsAdminOnly => _text('仅管理员', 'Admin only');
+  String pluginsCapabilityLabel(String kind) {
+    const labels = {
+      'metadata_provider': ('元数据刮削', 'Metadata scraping'),
+      'format_handler': ('格式扩展', 'Format support'),
+      'content_processor': ('内容处理', 'Content processing'),
+      'tool_provider': ('工具', 'Tools'),
+      'ui_extension': ('界面扩展', 'UI extension'),
+      'http_route': ('HTTP 服务', 'HTTP service'),
+      'plugin_store': ('插件商店', 'Plugin store'),
+      'task_handler': ('后台任务', 'Background tasks'),
+      'event_handler': ('事件响应', 'Event handling'),
+    };
+    final label = labels[kind];
+    return label == null ? kind : _text(label.$1, label.$2);
+  }
+
+  String pluginsPermissionLabel(String type) {
+    const labels = {
+      'network_access': ('网络访问', 'Network access'),
+      'file_read': ('读取文件', 'Read files'),
+      'file_write': ('写入文件', 'Write files'),
+      'books_read': ('读取书籍', 'Read books'),
+      'books_write': ('修改书籍', 'Modify books'),
+      'libraries_read': ('读取存储库', 'Read libraries'),
+      'libraries_write': ('修改存储库', 'Modify libraries'),
+      'chapters_read': ('读取章节', 'Read chapters'),
+      'chapters_write': ('修改章节', 'Modify chapters'),
+      'progress_read': ('读取播放进度', 'Read playback progress'),
+      'media_read_url': ('获取音源地址', 'Get audio URLs'),
+      'plugin_route_sign': ('生成访问签名', 'Sign access URLs'),
+      'metadata_write': ('修改元数据', 'Modify metadata'),
+      'task_create': ('创建任务', 'Create tasks'),
+      'cache_read': ('读取缓存', 'Read cache'),
+      'cache_write': ('写入缓存', 'Write cache'),
+      'playlists_read': ('读取书单', 'Read playlists'),
+      'playlists_write': ('修改书单', 'Modify playlists'),
+      'favorites_read': ('读取收藏', 'Read favorites'),
+      'favorites_write': ('修改收藏', 'Modify favorites'),
+      'user_settings_read': ('读取个人设置', 'Read preferences'),
+      'user_settings_write': ('修改个人设置', 'Modify preferences'),
+      'event_subscribe': ('订阅事件', 'Subscribe to events'),
+      'event_publish': ('发布事件', 'Publish events'),
+    };
+    final label = labels[type];
+    return label == null ? type : _text(label.$1, label.$2);
+  }
+
   String get pluginsUpdateAvailable => _text('有更新', 'Update');
   String get pluginsNoUpdates => _text('暂无可用更新', 'No Updates');
   String get pluginsNoInstalled => _text('还没有安装插件', 'No Installed Plugins');

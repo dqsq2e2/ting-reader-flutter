@@ -40,7 +40,7 @@ class PluginItem {
   final String? minFlutterVersion;
   final bool adminOnly;
   final List<String> dependencies;
-  final List<String> permissions;
+  final List<PluginPermission> permissions;
   final List<PluginCapability> capabilities;
   final List<String> supportedExtensions;
   final Map<String, dynamic>? configSchema;
@@ -66,7 +66,7 @@ class PluginItem {
       minFlutterVersion: readString(json, 'min_flutter_version'),
       adminOnly: readBool(json, 'admin_only') ?? false,
       dependencies: _pluginStringList(json['dependencies']),
-      permissions: readStringList(json['permissions']),
+      permissions: _pluginPermissionList(json['permissions']),
       capabilities: capabilities,
       supportedExtensions: _capabilitySupportedExtensions(capabilities),
       configSchema: rawConfig is Map
@@ -74,6 +74,21 @@ class PluginItem {
           : null,
     );
   }
+}
+
+class PluginPermission {
+  const PluginPermission({required this.type, this.scope});
+
+  final String type;
+  final String? scope;
+
+  factory PluginPermission.fromJson(Map<String, dynamic> json) =>
+      PluginPermission(
+        type: readString(json, 'type') ?? '',
+        scope: readString(json, 'domain') ??
+            readString(json, 'path') ??
+            readString(json, 'event'),
+      );
 }
 
 class PluginCapability {
@@ -172,6 +187,14 @@ List<String> _pluginStringList(dynamic value) {
         return item.toString().trim();
       })
       .where((text) => text.isNotEmpty)
+      .toList();
+}
+
+List<PluginPermission> _pluginPermissionList(dynamic value) {
+  if (value is! List) return const [];
+  return value
+      .map((item) => PluginPermission.fromJson(asMap(item)))
+      .where((permission) => permission.type.isNotEmpty)
       .toList();
 }
 

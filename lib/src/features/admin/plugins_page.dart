@@ -26,7 +26,9 @@ class _PluginsPageState extends State<PluginsPage> {
   @override
   void initState() {
     super.initState();
-    _loadInstalled();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadInstalled();
+    });
   }
 
   bool get _hasPluginStoreProvider => _installed.any(
@@ -612,7 +614,14 @@ class _PluginTopBar extends StatelessWidget {
         if (constraints.maxWidth < 680) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: [tabs, const SizedBox(height: 12), actions],
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: tabs,
+              ),
+              const SizedBox(height: 12),
+              actions,
+            ],
           );
         }
 
@@ -852,43 +861,59 @@ class _PluginGrid extends StatelessWidget {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final columns = width >= 1120 ? 3 : (width >= 740 ? 2 : 1);
-        return GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisExtent: 318,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
-          itemBuilder: (context, index) {
-            final item = items[index];
-            final installedVersion = installedVersionFor(item.id);
-            return _PluginCard(
-              item: item,
-              installed:
-                  tab == _PluginTab.installed || installedVersion != null,
-              installedVersion: installedVersion,
-              hasUpdate: hasUpdate(item),
-              installing: installingId == item.id,
-              expanded: expandedDescriptions.contains(item.id),
-              onToggleDescription: () => onToggleDescription(item.id),
-              onInstall:
-                  tab == _PluginTab.installed ? null : () => onInstall(item),
-              onReload:
-                  tab == _PluginTab.installed ? () => onReload(item.id) : null,
-              onDelete:
-                  tab == _PluginTab.installed ? () => onDelete(item) : null,
-              onConfigure:
-                  tab == _PluginTab.installed && item.configSchema != null
-                      ? () => onConfigure(item)
-                      : null,
-              onViewLogs: tab == _PluginTab.installed && onViewLogs != null
-                  ? () => onViewLogs!(item)
-                  : null,
-            );
-          },
+        Widget buildCard(int index) {
+          final item = items[index];
+          final installedVersion = installedVersionFor(item.id);
+          return _PluginCard(
+            item: item,
+            installed: tab == _PluginTab.installed || installedVersion != null,
+            installedVersion: installedVersion,
+            hasUpdate: hasUpdate(item),
+            installing: installingId == item.id,
+            expanded: expandedDescriptions.contains(item.id),
+            onToggleDescription: () => onToggleDescription(item.id),
+            onInstall:
+                tab == _PluginTab.installed ? null : () => onInstall(item),
+            onReload:
+                tab == _PluginTab.installed ? () => onReload(item.id) : null,
+            onDelete: tab == _PluginTab.installed ? () => onDelete(item) : null,
+            onConfigure:
+                tab == _PluginTab.installed && item.configSchema != null
+                    ? () => onConfigure(item)
+                    : null,
+            onViewLogs: tab == _PluginTab.installed && onViewLogs != null
+                ? () => onViewLogs!(item)
+                : null,
+          );
+        }
+
+        return Column(
+          children: [
+            for (var start = 0; start < items.length; start += columns)
+              Padding(
+                padding: EdgeInsets.only(
+                    bottom: start + columns < items.length ? 16 : 0),
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (var column = 0; column < columns; column++) ...[
+                        if (column > 0) const SizedBox(width: 16),
+                        Expanded(
+                          child: start + column < items.length
+                              ? ConstrainedBox(
+                                  constraints:
+                                      const BoxConstraints(minHeight: 288),
+                                  child: buildCard(start + column),
+                                )
+                              : const SizedBox(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );
@@ -931,14 +956,18 @@ class _PluginCard extends StatelessWidget {
         item.description ??
         context.l10n.pluginsNoDescription;
     final typeStyle = _pluginTypeStyle(item.pluginType, context);
-    final supports = item.supportedExtensions;
     final supportLabels =
-        supports.map(_pluginSupportLabel).toList(growable: false);
+        item.supportedExtensions.map((value) => value.toUpperCase()).toList();
     final searchFieldCount =
         _metadataCapabilityListCount(item.capabilities, 'search_fields');
     final resultFieldCount =
         _metadataCapabilityListCount(item.capabilities, 'result_fields');
-    final riskSignals = _pluginRiskSignals(context, item);
+    final capabilityKinds = _pluginCapabilityKinds(item.capabilities);
+    final runtimeLabel = _pluginRuntimeLabel(item.runtime);
+    final permissionLabels = item.permissions.map((permission) {
+      final label = context.l10n.pluginsPermissionLabel(permission.type);
+      return permission.scope == null ? label : '$label (${permission.scope})';
+    }).toList();
 
     return TingCard(
       radius: 8,
@@ -1023,7 +1052,7 @@ class _PluginCard extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
             child: Text(
               description,
-              maxLines: expanded ? 7 : 3,
+              maxLines: expanded ? null : 3,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: context.isDark ? AppColors.slate300 : AppColors.slate600,
@@ -1037,56 +1066,65 @@ class _PluginCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _PluginInfoChip(
-                label: _pluginTypeLabel(context, item.pluginType),
-                icon: Icons.sell_rounded,
-              ),
-              _PluginInfoChip(
-                label: _pluginRuntimeLabel(item.runtime),
-                icon: Icons.memory_rounded,
-              ),
+              if (capabilityKinds.isEmpty)
+                _PluginInfoChip(
+                  label: _pluginTypeLabel(context, item.pluginType),
+                  icon: Icons.sell_rounded,
+                  color: typeStyle.foreground,
+                  background: typeStyle.background,
+                  border: typeStyle.border,
+                ),
+              for (final kind in capabilityKinds)
+                _PluginInfoChip(
+                  label: context.l10n.pluginsCapabilityLabel(kind),
+                  icon: kind == 'http_route'
+                      ? Icons.language_rounded
+                      : Icons.sell_rounded,
+                  color: typeStyle.foreground,
+                  background: typeStyle.background,
+                  border: typeStyle.border,
+                ),
+              if (runtimeLabel != null)
+                _PluginInfoChip(
+                  label: runtimeLabel,
+                  icon: Icons.memory_rounded,
+                ),
               if (supportLabels.isNotEmpty)
                 _PluginInfoChip(
                   label: supportLabels.length > 4
                       ? '${supportLabels.take(4).join(', ')} +${supportLabels.length - 4}'
                       : supportLabels.join(', '),
                   icon: Icons.description_rounded,
+                  tooltip: supportLabels.join(', '),
+                ),
+              if (item.adminOnly)
+                _PluginInfoChip(
+                  label: context.l10n.pluginsAdminOnly,
+                  icon: Icons.shield_outlined,
                 ),
               if (item.permissions.isNotEmpty)
                 _PluginInfoChip(
-                  label: context.l10n.pluginsPermissionCount(
-                    item.permissions.length,
-                  ),
+                  label: context.l10n
+                      .pluginsPermissionCount(item.permissions.length),
                   icon: Icons.shield_outlined,
+                  tooltip: permissionLabels.join('\n'),
                 ),
               if (searchFieldCount > 0)
                 _PluginInfoChip(
-                  label: context.l10n.pluginsSearchFieldCount(
-                    searchFieldCount,
-                  ),
+                  label: context.l10n.pluginsSearchFieldCount(searchFieldCount),
                   icon: Icons.search_rounded,
                 ),
               if (resultFieldCount > 0)
                 _PluginInfoChip(
-                  label: context.l10n.pluginsResultFieldCount(
-                    resultFieldCount,
-                  ),
+                  label: context.l10n.pluginsResultFieldCount(resultFieldCount),
                   icon: Icons.fact_check_rounded,
-                ),
-              if (riskSignals.isNotEmpty)
-                _PluginInfoChip(
-                  label: _previewChipLabels(riskSignals, limit: 3),
-                  icon: Icons.policy_rounded,
-                  color: const Color(0xffb45309),
-                  background: const Color(0xfffffbeb),
-                  border: const Color(0xfffde68a),
-                  tooltip: riskSignals.join(', '),
                 ),
               if (item.dependencies.isNotEmpty)
                 _PluginInfoChip(
                   label: context.l10n
                       .pluginsDependencyCount(item.dependencies.length),
                   icon: Icons.inventory_2_rounded,
+                  tooltip: item.dependencies.join('\n'),
                 ),
               if (item.license != null) _PluginInfoChip(label: item.license!),
               if (item.configSchema != null)
@@ -1097,6 +1135,7 @@ class _PluginCard extends StatelessWidget {
             ],
           ),
           const Spacer(),
+          const SizedBox(height: 16),
           Divider(color: context.faintBorder),
           Row(
             children: [
@@ -1309,9 +1348,13 @@ class _PluginStateBadge extends StatelessWidget {
         : active
             ? const Color(0xfff0fdf4)
             : AppColors.slate50;
-    final label = active
-        ? context.l10n.pluginsStateActive
-        : (failed ? context.l10n.pluginsStateFailed : state);
+    final label = switch (state) {
+      'active' || 'loaded' => context.l10n.pluginsStateActive,
+      'failed' => context.l10n.pluginsStateFailed,
+      'loading' => context.l10n.pluginsStateLoading,
+      'inactive' => context.l10n.pluginsStateInactive,
+      _ => context.localeText('未知', 'Unknown'),
+    };
     final icon = active
         ? Icons.check_circle_rounded
         : failed
@@ -1883,6 +1926,28 @@ class _PluginTypeStyle {
 }
 
 _PluginTypeStyle _pluginTypeStyle(String type, BuildContext context) {
+  if (context.isDark) {
+    switch (type) {
+      case 'format':
+        return _PluginTypeStyle(
+          foreground: const Color(0xff67e8f9),
+          background: const Color(0xff083344).withValues(alpha: 0.4),
+          border: const Color(0xff164e63).withValues(alpha: 0.5),
+        );
+      case 'utility':
+        return _PluginTypeStyle(
+          foreground: const Color(0xff6ee7b7),
+          background: const Color(0xff022c22).withValues(alpha: 0.4),
+          border: const Color(0xff064e3b).withValues(alpha: 0.5),
+        );
+      case 'scraper':
+        return _PluginTypeStyle(
+          foreground: const Color(0xff93c5fd),
+          background: const Color(0xff172554).withValues(alpha: 0.4),
+          border: const Color(0xff1e3a8a).withValues(alpha: 0.5),
+        );
+    }
+  }
   switch (type) {
     case 'format':
       return const _PluginTypeStyle(
@@ -1930,10 +1995,6 @@ String _pluginTypeLabel(BuildContext context, String type) {
   }
 }
 
-String _pluginSupportLabel(String support) {
-  return support;
-}
-
 int _metadataCapabilityListCount(
     List<PluginCapability> capabilities, String key) {
   var count = 0;
@@ -1946,8 +2007,9 @@ int _metadataCapabilityListCount(
   return count;
 }
 
-String _pluginRuntimeLabel(String? runtime) {
-  switch (runtime) {
+String? _pluginRuntimeLabel(String? runtime) {
+  final value = runtime?.trim();
+  switch (value?.toLowerCase()) {
     case 'wasm':
       return 'WASM';
     case 'javascript':
@@ -1955,7 +2017,7 @@ String _pluginRuntimeLabel(String? runtime) {
     case 'native':
       return 'Native';
     default:
-      return runtime?.isNotEmpty == true ? runtime! : 'unknown';
+      return value?.isNotEmpty == true ? value : null;
   }
 }
 
@@ -1965,107 +2027,20 @@ bool _usesClientExtension(PluginItem item) {
   );
 }
 
-List<String> _pluginRiskSignals(BuildContext context, PluginItem item) {
-  final signals = <String>{};
-
-  if (item.adminOnly) {
-    signals.add(context.localeText('仅管理员', 'Admin only'));
-  }
-
-  for (final permission in item.permissions.map(_normalizePluginPermission)) {
-    if (permission.contains('network')) {
-      signals.add(context.localeText('网络访问', 'Network'));
-    }
-    if (permission == 'database_read' ||
-        permission == 'books_read' ||
-        permission == 'chapters_read' ||
-        permission == 'media_read' ||
-        permission == 'media_read_url') {
-      signals.add(context.localeText('书库读取', 'Library read'));
-    }
-    if (permission.endsWith('_write') ||
-        permission == 'metadata_write' ||
-        permission == 'cache_write') {
-      signals.add(context.localeText('写入能力', 'Write access'));
-    }
-    if (permission == 'cache_read' || permission == 'cache_write') {
-      signals.add(context.localeText('缓存访问', 'Cache access'));
-    }
-    if (permission == 'task_create') {
-      signals.add(context.localeText('创建任务', 'Task create'));
-    }
-    if (permission == 'progress_read') {
-      signals.add(context.localeText('播放进度', 'Playback progress'));
-    }
-  }
-
-  for (final capability in item.capabilities) {
-    switch (capability.kind) {
-      case 'http_route':
-        final auth = _capabilityRouteAuth(capability);
-        if (auth == 'public') {
-          signals.add(context.localeText('公开 HTTP', 'Public HTTP'));
-        } else if (auth == 'signed' || auth == 'public_or_signed') {
-          signals.add(context.localeText('签名 HTTP', 'Signed HTTP'));
-        } else {
-          signals.add(context.localeText('HTTP 路由', 'HTTP route'));
-        }
-        break;
-      case 'ui_extension':
-      case 'client_extension':
-        final mode = _capabilityRenderMode(capability);
-        if (mode.contains('floating')) {
-          signals.add(context.localeText('悬浮 UI', 'Floating UI'));
-        } else if (mode == 'web_container') {
-          signals.add(context.localeText('Web UI', 'Web UI'));
-        } else {
-          signals.add(context.localeText('前端 UI', 'Client UI'));
-        }
-        break;
-      case 'tool_provider':
-        signals.add(context.localeText('工具能力', 'Tool provider'));
-        break;
-      case 'content_processor':
-        signals.add(context.localeText('文档处理', 'Document reader'));
-        break;
-      case 'task_handler':
-        signals.add(context.localeText('后台任务', 'Background task'));
-        break;
-      case 'event_handler':
-        signals.add(context.localeText('事件订阅', 'Event hook'));
-        break;
-    }
-  }
-
-  return signals.toList();
-}
-
-String _previewChipLabels(List<String> values, {required int limit}) {
-  if (values.length <= limit) return values.join(', ');
-  return '${values.take(limit).join(', ')} +${values.length - limit}';
-}
-
-String _normalizePluginPermission(String value) {
-  return value
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
-      .replaceAll(RegExp(r'_+'), '_')
-      .replaceAll(RegExp(r'^_|_$'), '');
-}
-
-String _capabilityRenderMode(PluginCapability capability) {
-  final render = capability.extra['render'];
-  final value = render is Map
-      ? render['mode']
-      : capability.extra['render_mode'] ?? capability.extra['mode'];
-  return value?.toString().trim().toLowerCase() ?? '';
-}
-
-String _capabilityRouteAuth(PluginCapability capability) {
-  final route = capability.extra['route'];
-  final value = route is Map ? route['auth'] : capability.extra['auth'];
-  return value?.toString().trim().toLowerCase() ?? '';
+List<String> _pluginCapabilityKinds(List<PluginCapability> capabilities) {
+  const order = [
+    'metadata_provider',
+    'format_handler',
+    'content_processor',
+    'tool_provider',
+    'ui_extension',
+    'http_route',
+    'plugin_store',
+    'task_handler',
+    'event_handler',
+  ];
+  final kinds = capabilities.map((capability) => capability.kind).toSet();
+  return order.where(kinds.contains).toList();
 }
 
 String? _localizedText(Map<String, String> values, BuildContext context) {
