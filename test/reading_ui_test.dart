@@ -454,7 +454,7 @@ void main() {
   for (final coverShape in ['rect', 'square']) {
     for (final collapsed in [false, true]) {
       testWidgets(
-          'mini cover stays circular ($coverShape, collapsed: $collapsed)',
+          'mini cover stays square ($coverShape, collapsed: $collapsed)',
           (tester) async {
         final app = _ReadingApp();
         app.settings = {'bookshelf_cover_shape': coverShape};
@@ -469,19 +469,21 @@ void main() {
         expect(cover, findsOneWidget);
         final bounds = tester.getSize(cover);
         expect(bounds.width, bounds.height);
+        expect(tester.widget<CoverImage>(cover).radius, 12);
+        expect(find.ancestor(of: cover, matching: find.byType(ClipOval)),
+            findsNothing);
         if (collapsed) {
-          final circularContainer = find.ancestor(
+          final squareContainer = find.ancestor(
               of: cover,
               matching: find.byWidgetPredicate((widget) =>
                   widget is Container &&
                   widget.decoration is BoxDecoration &&
                   (widget.decoration as BoxDecoration).shape ==
-                      BoxShape.circle &&
+                      BoxShape.rectangle &&
+                  (widget.decoration as BoxDecoration).borderRadius ==
+                      BorderRadius.circular(14) &&
                   widget.clipBehavior == Clip.antiAlias));
-          expect(circularContainer, findsOneWidget);
-        } else {
-          expect(find.ancestor(of: cover, matching: find.byType(ClipOval)),
-              findsOneWidget);
+          expect(squareContainer, findsOneWidget);
         }
         expect(tester.takeException(), isNull);
       });

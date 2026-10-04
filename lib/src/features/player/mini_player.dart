@@ -143,11 +143,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                               SizedBox(
                                 width: coverWidth,
                                 height: coverHeight,
-                                child: ClipOval(
-                                  child: CoverImage(
-                                    url: bookCoverUrl(appState, book),
-                                    radius: 0,
-                                  ),
+                                child: CoverImage(
+                                  url: bookCoverUrl(appState, book),
+                                  radius: 12,
                                 ),
                               ),
                               if (!compact && !tiny) ...[

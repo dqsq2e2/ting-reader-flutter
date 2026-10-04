@@ -36,7 +36,7 @@ class _CollapsedMiniPlayer extends StatelessWidget {
           width: width,
           height: height,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: borderColor.withValues(alpha: 0.9),
               width: 2,
@@ -52,7 +52,7 @@ class _CollapsedMiniPlayer extends StatelessWidget {
             ],
           ),
           clipBehavior: Clip.antiAlias,
-          child: CoverImage(url: bookCoverUrl(appState, book), radius: 0),
+          child: CoverImage(url: bookCoverUrl(appState, book), radius: 12),
         ),
       ),
     );
