@@ -32,14 +32,6 @@ class MiniPlayer extends StatefulWidget {
 }
 
 class _MiniPlayerState extends State<MiniPlayer> {
-  CoverShape _coverShape = CoverShape.square;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _coverShape = coverShapeFromAppSettings(AppScope.appOf(context).settings);
-  }
-
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
@@ -84,7 +76,6 @@ class _MiniPlayerState extends State<MiniPlayer> {
             player: player,
             book: book,
             chapter: chapter,
-            coverShape: _coverShape,
             accentColor: accentColor,
             subduedAccent: subduedAccent,
             onAccent: onAccent,
@@ -101,17 +92,16 @@ class _MiniPlayerState extends State<MiniPlayer> {
             constraints: const BoxConstraints(maxWidth: 1280),
             child: Container(
               height: miniHeight,
-              padding: EdgeInsets.symmetric(
-                horizontal: isPhoneWidth ? 10 : 24,
-              ),
+              padding: EdgeInsets.symmetric(horizontal: isPhoneWidth ? 10 : 24),
               decoration: BoxDecoration(
                 color: bgColor,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: borderColor),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black
-                        .withValues(alpha: context.isDark ? 0.36 : 0.16),
+                    color: Colors.black.withValues(
+                      alpha: context.isDark ? 0.36 : 0.16,
+                    ),
                     blurRadius: 24,
                     offset: const Offset(0, 10),
                   ),
@@ -128,20 +118,12 @@ class _MiniPlayerState extends State<MiniPlayer> {
                     final compact = !desktop;
                     final tiny = constraints.maxWidth < 500;
                     final veryTiny = constraints.maxWidth < 380;
-                    final coverWidth = _coverShape == CoverShape.square
-                        ? (veryTiny
-                            ? 42.0
-                            : desktop
-                                ? 72.0
-                                : 50.0)
-                        : (veryTiny
-                            ? 34.0
-                            : desktop
-                                ? 56.0
-                                : 44.0);
-                    final coverHeight = _coverShape == CoverShape.square
-                        ? coverWidth
-                        : coverWidth / (3 / 4);
+                    final coverWidth = (veryTiny
+                        ? 42.0
+                        : desktop
+                            ? 72.0
+                            : 50.0);
+                    final coverHeight = coverWidth;
                     final infoWidth = constraints.maxWidth >= 1024
                         ? 320.0
                         : constraints.maxWidth >= 768
@@ -161,9 +143,11 @@ class _MiniPlayerState extends State<MiniPlayer> {
                               SizedBox(
                                 width: coverWidth,
                                 height: coverHeight,
-                                child: CoverImage(
-                                  url: bookCoverUrl(appState, book),
-                                  radius: 12,
+                                child: ClipOval(
+                                  child: CoverImage(
+                                    url: bookCoverUrl(appState, book),
+                                    radius: 0,
+                                  ),
                                 ),
                               ),
                               if (!compact && !tiny) ...[
@@ -211,7 +195,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                           Expanded(
                             child: Padding(
                               padding: EdgeInsets.symmetric(
-                                  horizontal: centerHorizontalPadding),
+                                horizontal: centerHorizontalPadding,
+                              ),
                               child: Transform.translate(
                                 offset: const Offset(0, 2),
                                 child: Column(
@@ -271,7 +256,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                       children: [
                                         _MiniTimeLabel(
                                           value: formatDurationShort(
-                                              player.currentTime),
+                                            player.currentTime,
+                                          ),
                                           textAlign: TextAlign.right,
                                         ),
                                         const SizedBox(width: 12),
@@ -313,17 +299,18 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                   ),
                                 ),
                                 SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 1024 ? 16 : 10),
+                                  width: constraints.maxWidth >= 1024 ? 16 : 10,
+                                ),
                                 _MiniTextButton(
                                   label: _formatPlaybackSpeed(
-                                      player.playbackSpeed),
+                                    player.playbackSpeed,
+                                  ),
                                   color: accentColor,
                                   onPressed: () => _cycleMiniSpeed(player),
                                 ),
                                 SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 1024 ? 16 : 10),
+                                  width: constraints.maxWidth >= 1024 ? 16 : 10,
+                                ),
                                 _MiniCollapseButton(
                                   icon: Icons.chevron_left_rounded,
                                   color: subduedAccent,
@@ -332,8 +319,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                   plain: true,
                                 ),
                                 SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 1024 ? 8 : 4),
+                                  width: constraints.maxWidth >= 1024 ? 8 : 4,
+                                ),
                                 _MiniIconButton(
                                   icon: Icons.open_in_full_rounded,
                                   color: subduedAccent,
@@ -341,8 +328,8 @@ class _MiniPlayerState extends State<MiniPlayer> {
                                       _openExpanded(context, player),
                                 ),
                                 SizedBox(
-                                    width:
-                                        constraints.maxWidth >= 1024 ? 4 : 2),
+                                  width: constraints.maxWidth >= 1024 ? 4 : 2,
+                                ),
                               ],
                             ),
                           ),
@@ -414,8 +401,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
 
   Future<void> _cycleMiniSpeed(PlayerState player) async {
     const steps = [0.75, 1.0, 1.25, 1.5, 2.0];
-    final index = steps
-        .indexWhere((value) => (value - player.playbackSpeed).abs() < 0.001);
+    final index = steps.indexWhere(
+      (value) => (value - player.playbackSpeed).abs() < 0.001,
+    );
     final next = steps[(index + 1) % steps.length];
     await player.setSpeed(next);
   }
@@ -442,8 +430,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
               border: Border.all(color: context.faintBorder),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black
-                      .withValues(alpha: context.isDark ? 0.36 : 0.16),
+                  color: Colors.black.withValues(
+                    alpha: context.isDark ? 0.36 : 0.16,
+                  ),
                   blurRadius: 24,
                   offset: const Offset(0, 12),
                 ),
@@ -474,8 +463,9 @@ class _MiniPlayerState extends State<MiniPlayer> {
                             ? AppColors.slate700
                             : AppColors.slate200,
                         thumbColor: AppColors.primary500,
-                        overlayColor:
-                            AppColors.primary500.withValues(alpha: 0.14),
+                        overlayColor: AppColors.primary500.withValues(
+                          alpha: 0.14,
+                        ),
                         thumbShape: const RoundSliderThumbShape(
                           enabledThumbRadius: 6,
                         ),
@@ -530,10 +520,14 @@ class _MiniPlayerState extends State<MiniPlayer> {
     required Widget child,
   }) {
     final overlaySize = MediaQuery.sizeOf(context);
-    final left = (anchor.center.dx - width / 2)
-        .clamp(12.0, overlaySize.width - width - 12);
-    final top = (anchor.top - height - 12)
-        .clamp(12.0, overlaySize.height - height - 12);
+    final left = (anchor.center.dx - width / 2).clamp(
+      12.0,
+      overlaySize.width - width - 12,
+    );
+    final top = (anchor.top - height - 12).clamp(
+      12.0,
+      overlaySize.height - height - 12,
+    );
     return showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,

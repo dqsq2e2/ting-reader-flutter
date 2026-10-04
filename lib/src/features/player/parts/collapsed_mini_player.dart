@@ -6,7 +6,6 @@ class _CollapsedMiniPlayer extends StatelessWidget {
     required this.player,
     required this.book,
     required this.chapter,
-    required this.coverShape,
     required this.accentColor,
     required this.subduedAccent,
     required this.onAccent,
@@ -18,7 +17,6 @@ class _CollapsedMiniPlayer extends StatelessWidget {
   final PlayerState player;
   final Book book;
   final Chapter chapter;
-  final CoverShape coverShape;
   final Color accentColor;
   final Color subduedAccent;
   final Color onAccent;
@@ -27,8 +25,8 @@ class _CollapsedMiniPlayer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final width = coverShape == CoverShape.square ? 62.0 : 48.0;
-    final height = coverShape == CoverShape.square ? 62.0 : 64.0;
+    const width = 62.0;
+    const height = 62.0;
     return Align(
       alignment: Alignment.centerLeft,
       child: GestureDetector(
@@ -38,25 +36,23 @@ class _CollapsedMiniPlayer extends StatelessWidget {
           width: width,
           height: height,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
+            shape: BoxShape.circle,
             border: Border.all(
               color: borderColor.withValues(alpha: 0.9),
               width: 2,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black
-                    .withValues(alpha: context.isDark ? 0.36 : 0.16),
+                color: Colors.black.withValues(
+                  alpha: context.isDark ? 0.36 : 0.16,
+                ),
                 blurRadius: 22,
                 offset: const Offset(0, 10),
               ),
             ],
           ),
           clipBehavior: Clip.antiAlias,
-          child: CoverImage(
-            url: bookCoverUrl(appState, book),
-            radius: 12,
-          ),
+          child: CoverImage(url: bookCoverUrl(appState, book), radius: 0),
         ),
       ),
     );

@@ -38,6 +38,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   String _sortBy = 'default';
   IconSizeSetting _iconSize = IconSizeSetting.medium;
   CoverShape _coverShape = CoverShape.square;
+  BookshelfViewMode _viewMode = BookshelfViewMode.grid;
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
   bool _selectionMode = false;
@@ -103,14 +104,21 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         _coverShape = coverShapeFromString(
           settingValue('bookshelf_cover_shape')?.toString(),
         );
+        _viewMode = settingValue('series_view_mode') == 'list'
+            ? BookshelfViewMode.list
+            : BookshelfViewMode.grid;
         _selectedBookIds.retainAll(_series!.books.map((book) => book.id));
       });
     } catch (error) {
       if (mounted && version == _loadVersion) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(context.localeText(
-                '加载系列失败：$error', 'Failed to load series: $error')),
+            content: Text(
+              context.localeText(
+                '加载系列失败：$error',
+                'Failed to load series: $error',
+              ),
+            ),
           ),
         );
       }
@@ -167,12 +175,16 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (dialogContext) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
             title: Text(context.localeText('确认标记未读', 'Mark as unread?')),
-            content: Text(context.localeText(
+            content: Text(
+              context.localeText(
                 '将所选 ${ids.length} 本书标记为未读，同时清除这些书籍的全部播放进度。确定继续吗？',
-                'Mark the ${ids.length} selected books as unread and clear all their playback progress. Continue?')),
+                'Mark the ${ids.length} selected books as unread and clear all their playback progress. Continue?',
+              ),
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(dialogContext, false),
@@ -188,16 +200,23 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         if (!mounted || version != _pageVersion || confirmed != true) return;
       }
       if (operation == _SeriesBatchOperation.delete) {
-        await Future.wait(ids.map((bookId) => app.api.delete(
+        await Future.wait(
+          ids.map(
+            (bookId) => app.api.delete(
               '/api/books/$bookId',
               params: {'delete_files': deleteSourceFiles},
-            )));
+            ),
+          ),
+        );
       } else {
         for (var offset = 0; offset < ids.length; offset += 200) {
-          await app.api.post('/api/books/read-status', data: {
-            'book_ids': ids.skip(offset).take(200).toList(),
-            'read': operation == _SeriesBatchOperation.markRead,
-          });
+          await app.api.post(
+            '/api/books/read-status',
+            data: {
+              'book_ids': ids.skip(offset).take(200).toList(),
+              'read': operation == _SeriesBatchOperation.markRead,
+            },
+          );
         }
       }
       if (!mounted || version != _pageVersion) return;
@@ -210,11 +229,17 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       if (!mounted || version != _pageVersion) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(operation == _SeriesBatchOperation.delete
-              ? context.localeText(
-                  '删除书籍失败：$error', 'Failed to delete books: $error')
-              : context.localeText('更新所选书籍失败：$error',
-                  'Failed to update selected books: $error')),
+          content: Text(
+            operation == _SeriesBatchOperation.delete
+                ? context.localeText(
+                    '删除书籍失败：$error',
+                    'Failed to delete books: $error',
+                  )
+                : context.localeText(
+                    '更新所选书籍失败：$error',
+                    'Failed to update selected books: $error',
+                  ),
+          ),
         ),
       );
       await _load(showLoading: false);
@@ -285,6 +310,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                     ),
                   ],
                   iconSize: _iconSize,
+                  viewMode: _viewMode,
+                  onViewModeChanged: _setViewMode,
                   onSortChanged: _setSortBy,
                   onIconSizeChanged: _setIconSize,
                 ),
@@ -309,6 +336,14 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
     _closeFilterMenu();
     setState(() => _sortBy = value);
     await AppScope.appOf(context).updateSettings({'series_sort_by': value});
+  }
+
+  Future<void> _setViewMode(BookshelfViewMode value) async {
+    _closeFilterMenu();
+    setState(() => _viewMode = value);
+    await AppScope.appOf(context).updateSettings({
+      'series_view_mode': value == BookshelfViewMode.list ? 'list' : 'grid',
+    });
   }
 
   Future<void> _setIconSize(IconSizeSetting value) async {
@@ -336,8 +371,10 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       if (!mounted) return;
       messenger.showSnackBar(
         SnackBar(
-            content: Text(context.localeText(
-                '加载书籍失败：$error', 'Failed to load books: $error'))),
+          content: Text(
+            context.localeText('加载书籍失败：$error', 'Failed to load books: $error'),
+          ),
+        ),
       );
       return;
     }
@@ -371,8 +408,10 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           EmptyState(
             icon: Icons.layers_clear_rounded,
             title: context.localeText('未找到系列', 'Series Not Found'),
-            message: context.localeText('该系列可能已被删除或您没有访问权限。',
-                'This series may have been deleted or you may not have access.'),
+            message: context.localeText(
+              '该系列可能已被删除或您没有访问权限。',
+              'This series may have been deleted or you may not have access.',
+            ),
           ),
         ],
       );
@@ -408,12 +447,11 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         Row(
           children: [
             Text(
-              context.localeText('包含书籍 (${series.books.length})',
-                  'Books (${series.books.length})'),
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+              context.localeText(
+                '包含书籍 (${series.books.length})',
+                'Books (${series.books.length})',
               ),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
           ],
         ),
@@ -423,7 +461,9 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
             icon: Icons.menu_book_rounded,
             title: context.localeText('系列中暂无书籍', 'No Books in Series'),
             message: context.localeText(
-                '添加书籍后会在这里显示。', 'Books you add will appear here.'),
+              '添加书籍后会在这里显示。',
+              'Books you add will appear here.',
+            ),
           )
         else
           LayoutBuilder(
@@ -440,6 +480,12 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   textScaler.scale(14) * 1.5 +
                   textScaler.scale(12) * 1.5 +
                   16;
+              if (_viewMode == BookshelfViewMode.list) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Column(children: books.map(_bookCard).toList()),
+                );
+              }
               return GridView.builder(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
@@ -451,25 +497,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
                   mainAxisExtent: cardHeight,
                 ),
                 itemBuilder: (context, index) {
-                  final book = books[index];
-                  return BookCard(
-                    book: book,
-                    coverShape: _coverShape,
-                    selectionMode: _selectionMode,
-                    selected: _selectedBookIds.contains(book.id),
-                    onTap: () {
-                      if (_batchBusy) return;
-                      if (_selectionMode) {
-                        setState(() {
-                          if (!_selectedBookIds.remove(book.id)) {
-                            _selectedBookIds.add(book.id);
-                          }
-                        });
-                      } else {
-                        widget.openBook(book.id);
-                      }
-                    },
-                  );
+                  return _bookCard(books[index]);
                 },
               );
             },
@@ -478,4 +506,25 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       ],
     );
   }
+
+  Widget _bookCard(Book book) => BookCard(
+        book: book,
+        coverShape: _coverShape,
+        viewMode: _viewMode,
+        iconSize: _iconSize,
+        selectionMode: _selectionMode,
+        selected: _selectedBookIds.contains(book.id),
+        onTap: () {
+          if (_batchBusy) return;
+          if (_selectionMode) {
+            setState(() {
+              if (!_selectedBookIds.remove(book.id)) {
+                _selectedBookIds.add(book.id);
+              }
+            });
+          } else {
+            widget.openBook(book.id);
+          }
+        },
+      );
 }

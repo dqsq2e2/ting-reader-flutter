@@ -14,9 +14,12 @@ import 'package:ting_reader_flutter/src/features/bookshelf/series_detail/series_
 import 'package:ting_reader_flutter/src/features/mine/bookmarks_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/history_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/mine_page.dart';
+import 'package:ting_reader_flutter/src/features/player/mini_player.dart';
 import 'package:ting_reader_flutter/src/shared/app_scope.dart';
 import 'package:ting_reader_flutter/src/shared/cards/book_card.dart';
 import 'package:ting_reader_flutter/src/shared/cards/bookshelf_list_tile.dart';
+import 'package:ting_reader_flutter/src/shared/common/common_widgets.dart';
+import 'package:ting_reader_flutter/src/shared/filter/display_filter_menu.dart';
 
 class _ReadingApi extends ApiClient {
   final gets = <String>[];
@@ -280,6 +283,14 @@ class _ReadingPlayer extends ChangeNotifier implements PlayerState {
   bool isPlaying = true;
   @override
   String? error;
+  @override
+  double duration = 120;
+  @override
+  double volume = 1;
+  @override
+  double playbackSpeed = 1;
+  @override
+  bool isMiniCollapsed = false;
 
   @override
   Future<void> playChapter(Book book, List<Chapter> chapters, Chapter chapter,
@@ -338,6 +349,144 @@ void main() {
       chapterIndex: 0);
   const otherBook =
       Book(id: 'other-book', libraryId: 'lib', title: 'Other Book');
+
+  testWidgets('display settings open collapsed and only expand one section',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    Widget menu() => DisplayFilterMenu(
+          sortBy: 'title',
+          sortOptions: const [
+            DisplayFilterSortOption(value: 'title', label: 'Title order'),
+          ],
+          iconSize: IconSizeSetting.medium,
+          coverShape: CoverShape.rect,
+          viewMode: BookshelfViewMode.grid,
+          onSortChanged: (_) {},
+          onIconSizeChanged: (_) {},
+          onCoverShapeChanged: (_) {},
+          onViewModeChanged: (_) {},
+        );
+    await _pump(tester, app, player, menu());
+    for (final hidden in ['List', 'Title order', 'Large', '3:4']) {
+      expect(find.text(hidden), findsNothing);
+    }
+    await tester.tap(find.text('View Mode'));
+    await tester.pump();
+    expect(find.text('List'), findsOneWidget);
+    await tester.tap(find.text('Sort'));
+    await tester.pump();
+    expect(find.text('List'), findsNothing);
+    expect(find.text('Title order'), findsOneWidget);
+    await tester.tap(find.text('Icon Size'));
+    await tester.pump();
+    expect(find.text('Title order'), findsNothing);
+    expect(find.text('Large'), findsOneWidget);
+    await tester.tap(find.text('Cover Shape'));
+    await tester.pump();
+    expect(find.text('Large'), findsNothing);
+    expect(find.text('3:4'), findsOneWidget);
+    await tester.tap(find.text('Cover Shape'));
+    await tester.pump();
+    expect(find.text('3:4'), findsNothing);
+    await tester.tap(find.text('View Mode'));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, app, player, menu());
+    expect(find.text('List'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('series view mode persists without changing bookshelf mode',
+      (tester) async {
+    final app = _ReadingApp();
+    app.api.settingsPayload['settings_json'] = {
+      'bookshelf_view_mode': 'list',
+      'series_view_mode': 'grid',
+    };
+    final player = _ReadingPlayer();
+    final opened = <String>[];
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    Widget page() => SeriesDetailPage(
+        seriesId: 'series', onBack: () {}, openBook: opened.add);
+    await _pump(tester, app, player, page());
+    expect(find.byType(BookshelfListTile), findsNothing);
+    await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('List'), findsNothing);
+    await tester.tap(find.text('View Mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('List'));
+    await tester.pumpAndSettle();
+    expect(app.api.settingsUpdates.single, {'series_view_mode': 'list'});
+    expect(
+        asMap(app.api.settingsPayload['settings_json'])['bookshelf_view_mode'],
+        'list');
+    expect(find.byType(BookshelfListTile), findsNWidgets(3));
+    await tester.tap(find.text('Other Book'));
+    expect(opened, ['other-book']);
+    await tester.tap(find.text('Select Mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Selected Book'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, app, player, page());
+    expect(find.byType(BookshelfListTile), findsNWidgets(3));
+    await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('List'), findsNothing);
+    await tester.tap(find.text('View Mode'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Grid (Default)'));
+    await tester.pumpAndSettle();
+    expect(app.api.settingsUpdates.last, {'series_view_mode': 'grid'});
+    expect(
+        asMap(app.api.settingsPayload['settings_json'])['bookshelf_view_mode'],
+        'list');
+    expect(find.byType(BookshelfListTile), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final coverShape in ['rect', 'square']) {
+    for (final collapsed in [false, true]) {
+      testWidgets(
+          'mini cover stays circular ($coverShape, collapsed: $collapsed)',
+          (tester) async {
+        final app = _ReadingApp();
+        app.settings = {'bookshelf_cover_shape': coverShape};
+        final player = _ReadingPlayer()
+          ..currentBook = book
+          ..currentChapter = chapter
+          ..isMiniCollapsed = collapsed;
+        addTearDown(app.dispose);
+        addTearDown(player.dispose);
+        await _pump(tester, app, player, const MiniPlayer());
+        final cover = find.byType(CoverImage);
+        expect(cover, findsOneWidget);
+        final bounds = tester.getSize(cover);
+        expect(bounds.width, bounds.height);
+        if (collapsed) {
+          final circularContainer = find.ancestor(
+              of: cover,
+              matching: find.byWidgetPredicate((widget) =>
+                  widget is Container &&
+                  widget.decoration is BoxDecoration &&
+                  (widget.decoration as BoxDecoration).shape ==
+                      BoxShape.circle &&
+                  widget.clipBehavior == Clip.antiAlias));
+          expect(circularContainer, findsOneWidget);
+        } else {
+          expect(find.ancestor(of: cover, matching: find.byType(ClipOval)),
+              findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('same STRM chapter bookmark seeks without reloading the source',
       (tester) async {
@@ -662,6 +811,8 @@ void main() {
     expect(find.byType(BookshelfListTile), findsNothing);
     await tester.tap(find.byIcon(Icons.filter_list_rounded));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('View Mode'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
     expect(app.api.settingsUpdates.last, {'bookshelf_view_mode': 'list'});
@@ -676,12 +827,16 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.filter_list_rounded));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('View Mode'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Grid (Default)'));
     await tester.pumpAndSettle();
     expect(app.api.settingsUpdates.last, {'bookshelf_view_mode': 'grid'});
     expect(tester.widget<BookCard>(find.byType(BookCard)).selected, isTrue);
     expect(openedBooks, ['book']);
     await tester.tap(find.byIcon(Icons.filter_list_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('View Mode'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('List'));
     await tester.pumpAndSettle();
@@ -832,6 +987,8 @@ void main() {
         scrollPosition.jumpTo(0);
         await tester.pumpAndSettle();
         await tester.tap(find.byIcon(Icons.filter_list_rounded));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('View Mode'));
         await tester.pumpAndSettle();
         await tester
             .tap(find.text(viewMode == 'grid' ? 'List' : 'Grid (Default)'));

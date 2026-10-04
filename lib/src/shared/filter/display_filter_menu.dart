@@ -5,16 +5,13 @@ import '../../core/utils/locale.dart';
 import '../cards/book_card.dart';
 
 class DisplayFilterSortOption {
-  const DisplayFilterSortOption({
-    required this.value,
-    required this.label,
-  });
+  const DisplayFilterSortOption({required this.value, required this.label});
 
   final String value;
   final String label;
 }
 
-class DisplayFilterMenu extends StatelessWidget {
+class DisplayFilterMenu extends StatefulWidget {
   const DisplayFilterMenu({
     super.key,
     required this.sortBy,
@@ -39,6 +36,51 @@ class DisplayFilterMenu extends StatelessWidget {
   final ValueChanged<BookshelfViewMode>? onViewModeChanged;
 
   @override
+  State<DisplayFilterMenu> createState() => _DisplayFilterMenuState();
+}
+
+class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
+  String? _expandedSection;
+
+  Widget _section(String id, String title, List<Widget> options) {
+    final expanded = _expandedSection == id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(
+          expanded: expanded,
+          child: InkWell(
+            onTap: () =>
+                setState(() => _expandedSection = expanded ? null : id),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: context.secondaryText,
+                        fontSize: context.adaptiveFont(15, 14),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (expanded) ...options,
+      ],
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
@@ -55,67 +97,74 @@ class DisplayFilterMenu extends StatelessWidget {
         ),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * 0.65),
+            maxHeight: MediaQuery.sizeOf(context).height * 0.65,
+          ),
           child: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (viewMode != null && onViewModeChanged != null) ...[
-                  _DisplayFilterSection(
-                      context.localeText('展示模式', 'View Mode')),
+                if (widget.viewMode != null && widget.onViewModeChanged != null)
+                  _section('view', context.localeText('展示模式', 'View Mode'), [
+                    _DisplayFilterOption(
+                      label: context.localeText('网格（默认）', 'Grid (Default)'),
+                      selected: widget.viewMode == BookshelfViewMode.grid,
+                      onTap: () =>
+                          widget.onViewModeChanged!(BookshelfViewMode.grid),
+                    ),
+                    _DisplayFilterOption(
+                      label: context.localeText('列表', 'List'),
+                      selected: widget.viewMode == BookshelfViewMode.list,
+                      onTap: () =>
+                          widget.onViewModeChanged!(BookshelfViewMode.list),
+                    ),
+                  ]),
+                _section('sort', context.localeText('排序方式', 'Sort'), [
+                  for (final option in widget.sortOptions)
+                    _DisplayFilterOption(
+                      label: option.label,
+                      selected: _sortSelected(option.value),
+                      onTap: () => widget.onSortChanged(option.value),
+                    ),
+                ]),
+                _section('size', context.localeText('图标大小', 'Icon Size'), [
                   _DisplayFilterOption(
-                    label: context.localeText('网格（默认）', 'Grid (Default)'),
-                    selected: viewMode == BookshelfViewMode.grid,
-                    onTap: () => onViewModeChanged!(BookshelfViewMode.grid),
+                    label: context.localeText('大图标', 'Large'),
+                    selected: widget.iconSize == IconSizeSetting.large,
+                    onTap: () =>
+                        widget.onIconSizeChanged(IconSizeSetting.large),
                   ),
                   _DisplayFilterOption(
-                    label: context.localeText('列表', 'List'),
-                    selected: viewMode == BookshelfViewMode.list,
-                    onTap: () => onViewModeChanged!(BookshelfViewMode.list),
-                  ),
-                ],
-                _DisplayFilterSection(context.localeText('排序方式', 'Sort'),
-                    topBorder: viewMode != null),
-                for (final option in sortOptions)
-                  _DisplayFilterOption(
-                    label: option.label,
-                    selected: _sortSelected(option.value),
-                    onTap: () => onSortChanged(option.value),
-                  ),
-                _DisplayFilterSection(context.localeText('图标大小', 'Icon Size'),
-                    topBorder: true),
-                _DisplayFilterOption(
-                  label: context.localeText('大图标', 'Large'),
-                  selected: iconSize == IconSizeSetting.large,
-                  onTap: () => onIconSizeChanged(IconSizeSetting.large),
-                ),
-                _DisplayFilterOption(
-                  label: context.localeText('中图标（默认）', 'Medium (Default)'),
-                  selected: iconSize == IconSizeSetting.medium,
-                  onTap: () => onIconSizeChanged(IconSizeSetting.medium),
-                ),
-                _DisplayFilterOption(
-                  label: context.localeText('小图标', 'Small'),
-                  selected: iconSize == IconSizeSetting.small,
-                  onTap: () => onIconSizeChanged(IconSizeSetting.small),
-                ),
-                if (coverShape != null && onCoverShapeChanged != null) ...[
-                  _DisplayFilterSection(
-                      context.localeText('封面形状', 'Cover Shape'),
-                      topBorder: true),
-                  _DisplayFilterOption(
-                    label: context.localeText('3:4 比例', '3:4'),
-                    selected: coverShape == CoverShape.rect,
-                    onTap: () => onCoverShapeChanged!(CoverShape.rect),
+                    label: context.localeText('中图标（默认）', 'Medium (Default)'),
+                    selected: widget.iconSize == IconSizeSetting.medium,
+                    onTap: () =>
+                        widget.onIconSizeChanged(IconSizeSetting.medium),
                   ),
                   _DisplayFilterOption(
-                    label: context.localeText(
-                        '1:1 方形（默认）', '1:1 Square (Default)'),
-                    selected: coverShape == CoverShape.square,
-                    onTap: () => onCoverShapeChanged!(CoverShape.square),
+                    label: context.localeText('小图标', 'Small'),
+                    selected: widget.iconSize == IconSizeSetting.small,
+                    onTap: () =>
+                        widget.onIconSizeChanged(IconSizeSetting.small),
                   ),
-                ],
+                ]),
+                if (widget.coverShape != null &&
+                    widget.onCoverShapeChanged != null)
+                  _section('shape', context.localeText('封面形状', 'Cover Shape'), [
+                    _DisplayFilterOption(
+                      label: context.localeText('3:4 比例', '3:4'),
+                      selected: widget.coverShape == CoverShape.rect,
+                      onTap: () => widget.onCoverShapeChanged!(CoverShape.rect),
+                    ),
+                    _DisplayFilterOption(
+                      label: context.localeText(
+                        '1:1 方形（默认）',
+                        '1:1 Square (Default)',
+                      ),
+                      selected: widget.coverShape == CoverShape.square,
+                      onTap: () =>
+                          widget.onCoverShapeChanged!(CoverShape.square),
+                    ),
+                  ]),
               ],
             ),
           ),
@@ -125,33 +174,7 @@ class DisplayFilterMenu extends StatelessWidget {
   }
 
   bool _sortSelected(String optionValue) {
-    return sortBy == optionValue;
-  }
-}
-
-class _DisplayFilterSection extends StatelessWidget {
-  const _DisplayFilterSection(this.label, {this.topBorder = false});
-
-  final String label;
-  final bool topBorder;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, topBorder ? 12 : 8, 16, 8),
-      decoration: BoxDecoration(
-        border: topBorder
-            ? Border(top: BorderSide(color: context.faintBorder))
-            : null,
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: context.tertiaryText,
-          fontSize: context.adaptiveFont(13, 12),
-        ),
-      ),
-    );
+    return widget.sortBy == optionValue;
   }
 }
 
