@@ -46,9 +46,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         final chapter = currentChapter;
         final chapterDuration = chapter?.duration.toDouble() ?? 0;
         final discoveredDuration = durationValue.inMilliseconds / 1000;
-        duration = _usingTranscodeStream && chapterDuration > 0
-            ? chapterDuration
-            : discoveredDuration;
+        duration = _usingTranscodeStream ? chapterDuration : discoveredDuration;
         if (chapter != null && chapter.duration <= 0) {
           _syncDiscoveredChapterDuration(chapter, discoveredDuration);
         }
@@ -56,9 +54,6 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
     _playingSub = _audio.playingStream.listen((playing) {
-      if (_usingTranscodeStream && playing != isPlaying) {
-        _resetTranscodeClock(currentTime);
-      }
       isPlaying = playing;
       if (playing) {
         _cancelFocusRecovery(clearResume: true);
@@ -72,6 +67,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     });
     _completeSub = _audio.playerStateStream.listen((state) {
+      if (_usingTranscodeStream) {
+        _resetTranscodeClock(_expectedTranscodeTime());
+        _transcodeClockRunning = state.playing &&
+            state.processingState == audio.ProcessingState.ready;
+      }
       if (state.processingState == audio.ProcessingState.completed) {
         unawaited(_handlePlaybackCompleted(state));
       }
@@ -137,6 +137,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   String? _sleepEpisodeChapterId;
   double _transcodeClockPosition = 0;
   DateTime? _transcodeClockStartedAt;
+  bool _transcodeClockRunning = false;
 
   Book? currentBook;
   Chapter? currentChapter;
@@ -534,6 +535,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _usingGatewaySingleChapterSource = useGatewaySingleChapter;
       currentTime = resumePosition;
       _suppressPositionUpdates = false;
+      final loadedDuration = _audio.duration;
+      if (targetChapter.duration <= 0 && loadedDuration != null) {
+        _syncDiscoveredChapterDuration(
+          targetChapter,
+          loadedDuration.inMilliseconds / 1000,
+        );
+      }
       await _audio.setSpeed(playbackSpeed);
       await _audio.setVolume(volume);
       if (!_isActivePlay(playGeneration, targetChapter.id)) return;
@@ -558,6 +566,8 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       _usingAudioQueue = false;
       _usingGatewaySingleChapterSource = useGatewaySingleChapter;
       _usingTranscodeStream = true;
+      duration = targetChapter.duration.toDouble();
+      _transcodeClockRunning = false;
       _resetTranscodeClock(resumePosition);
       _suppressPositionUpdates = true;
       error = null;
@@ -834,7 +844,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   double _expectedTranscodeTime() {
     final startedAt = _transcodeClockStartedAt;
     var expected = _transcodeClockPosition;
-    if (startedAt != null && isPlaying) {
+    if (startedAt != null && _transcodeClockRunning) {
       expected += DateTime.now().difference(startedAt).inMilliseconds /
           1000 *
           playbackSpeed;
@@ -860,12 +870,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   void _clearTranscodeClock() {
     _transcodeClockPosition = 0;
     _transcodeClockStartedAt = null;
+    _transcodeClockRunning = false;
   }
 
   void _syncDiscoveredChapterDuration(Chapter chapter, double seconds) {
     final rounded = seconds.round();
     if (rounded <= 0) return;
-    if (_usingTranscodeStream && currentTime > 1) return;
+    if (_usingTranscodeStream || _suppressPositionUpdates) return;
     if (_durationSynced.contains(chapter.id) ||
         _durationSyncing.contains(chapter.id)) {
       return;
@@ -902,6 +913,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> setSpeed(double speed) async {
     if (!speed.isFinite) return;
     final normalized = (speed.clamp(0.5, 3.0) * 10).round() / 10;
+    if (_usingTranscodeStream) {
+      _resetTranscodeClock(_expectedTranscodeTime());
+    }
     playbackSpeed = normalized;
     _speedInitialized = true;
     await _audio.setSpeed(normalized);
@@ -1118,7 +1132,15 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         transcodeFormat: 'mp3',
         seek: seek,
       ),
-      mediaItem: mediaItem,
+      mediaItem: mediaItem.copyWith(
+        duration:
+            chapter.duration > 0 ? Duration(seconds: chapter.duration) : null,
+        extras: {
+          ...?mediaItem.extras,
+          'isTranscodedStream': true,
+          'streamOffsetSeconds': seek,
+        },
+      ),
     );
   }
 

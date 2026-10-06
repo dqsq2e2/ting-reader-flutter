@@ -238,7 +238,7 @@ class _JustAudioPlayer extends AudioPlayerPlatform {
         AudioProcessingState.completed: ProcessingStateMessage.completed,
         AudioProcessingState.error: ProcessingStateMessage.idle,
       }[playbackState.processingState]!,
-      updatePosition: playbackState.position,
+      updatePosition: playbackState.updatePosition,
       updateTime: playbackState.updateTime,
       bufferedPosition: playbackState.bufferedPosition,
       icyMetadata: _icyMetadata,
@@ -449,9 +449,13 @@ class _PlayerAudioHandler extends BaseAudioHandler
     final playbackEventMessageStream = player.playbackEventMessageStream;
     playbackEventMessageStream.listen((event) {
       final previousIndex = _justAudioEvent.currentIndex;
+      final displayPosition = _usesDisplayClock ? _displayPosition : null;
       _justAudioEvent = event;
       if (event.currentIndex != previousIndex) {
+        _displayClockOffset = null;
         _publishMediaItemAt(event.currentIndex);
+      } else if (displayPosition != null) {
+        _resetDisplayClock(displayPosition);
       }
       _broadcastState();
     });
@@ -482,6 +486,10 @@ class _PlayerAudioHandler extends BaseAudioHandler
           // ignore.
           final currentMediaItem = this.currentMediaItem;
           if (currentMediaItem != null) {
+            // A live MP3 transcode's native estimate is not the chapter duration.
+            if (_isTranscodedStream) {
+              return TrackInfo(track.index, currentMediaItem.duration);
+            }
             if (track.duration == null && currentMediaItem.duration != null) {
               return TrackInfo(track.index, currentMediaItem.duration);
             }
@@ -512,6 +520,12 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   Future<LoadResponse> customLoad(LoadRequest request) async {
     _source = request.audioSourceMessage;
+    _displayClockOffset = null;
+    _justAudioEvent = _justAudioEvent.copyWith(
+      processingState: ProcessingStateMessage.loading,
+      updatePosition: request.initialPosition ?? Duration.zero,
+      updateTime: DateTime.now(),
+    );
     _updateShuffleIndices();
     _updateQueue();
     _publishMediaItemAt(request.initialIndex ?? 0);
@@ -521,7 +535,12 @@ class _PlayerAudioHandler extends BaseAudioHandler
       initialIndex: request.initialIndex,
     ));
     _publishMediaItemAt(index ?? request.initialIndex ?? 0);
-    return LoadResponse(duration: response.duration);
+    final item = currentMediaItem ?? mediaItem.nvalue;
+    return LoadResponse(
+      duration: item?.extras?['isTranscodedStream'] == true
+          ? item?.duration
+          : response.duration,
+    );
   }
 
   Future<SetVolumeResponse> customSetVolume(SetVolumeRequest request) async =>
@@ -752,7 +771,7 @@ class _PlayerAudioHandler extends BaseAudioHandler
   }
 
   void _updatePosition() {
-    if (_mediaOffset > Duration.zero) {
+    if (_usesDisplayClock) {
       final displayPosition = _displayPosition;
       _resetDisplayClock(displayPosition);
       _justAudioEvent = _justAudioEvent.copyWith(
@@ -766,6 +785,12 @@ class _PlayerAudioHandler extends BaseAudioHandler
       updateTime: DateTime.now(),
     );
   }
+
+  bool get _isTranscodedStream =>
+      currentMediaItem?.extras?['isTranscodedStream'] == true;
+
+  bool get _usesDisplayClock =>
+      _isTranscodedStream || _mediaOffset > Duration.zero;
 
   Duration get _mediaOffset {
     final value = currentMediaItem?.extras?['streamOffsetSeconds'];
@@ -783,7 +808,7 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   Duration get _displayPosition {
     final offset = _mediaOffset;
-    if (offset > Duration.zero) {
+    if (_usesDisplayClock) {
       _ensureDisplayClock(offset);
       var position = _displayClockPosition;
       if (_playing &&
@@ -844,7 +869,9 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> setSpeed(double speed) async {
+    _updatePosition();
     _speed = speed;
+    _broadcastState();
     await (await _player).setSpeed(SetSpeedRequest(speed: speed));
   }
 
