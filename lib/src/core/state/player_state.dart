@@ -124,7 +124,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _usingGatewaySingleChapterSource = false;
   bool _suppressPositionUpdates = false;
   bool _applyingQueueStartSeek = false;
-  int? _handlingGatewayMediaCompletionGeneration;
+  ({int play, int seek})? _completedPlaybackOperation;
   bool _gatewayReauthenticationPending = false;
   bool _resumeAfterGatewayReauthentication = false;
   int _mediaAuthRevision = -1;
@@ -1267,12 +1267,15 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       (appState.api.isGatewaySession?.call() ?? false);
 
   Future<void> _handlePlaybackCompleted(audio.PlayerState state) async {
-    if (!_usingGatewaySingleChapterSource || _usingAudioQueue) {
+    // Native queues advance themselves; single transcode streams do not.
+    if (_usingAudioQueue ||
+        (!_usingGatewaySingleChapterSource && !_usingTranscodeStream)) {
       await sendProgress();
       return;
     }
-    final playGeneration = _playGeneration;
-    if (_handlingGatewayMediaCompletionGeneration == playGeneration ||
+    final completionOperation = (play: _playGeneration, seek: _seekGeneration);
+    final playGeneration = completionOperation.play;
+    if (_completedPlaybackOperation == completionOperation ||
         _suppressPositionUpdates ||
         _gatewayReauthenticationPending ||
         appState.needsGatewayLogin ||
@@ -1282,7 +1285,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
     final chapter = currentChapter;
     if (chapter == null) return;
-    _handlingGatewayMediaCompletionGeneration = playGeneration;
+    bool isActiveCompletion() =>
+        _isActivePlay(playGeneration, chapter.id) &&
+        _seekGeneration == completionOperation.seek;
+
+    _completedPlaybackOperation = completionOperation;
     final shouldResume = state.playing || isPlaying || _audio.playing;
     _resumeAfterGatewayReauthentication =
         _resumeAfterGatewayReauthentication || shouldResume;
@@ -1296,17 +1303,21 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       // 中间态，必须等重登尘埃落定再判断，否则会把「重登踢流」误判为
       // 「非网关播放」而错误跳章，或带着无鉴权的 URL 重建音源失败。
       await _waitForGatewayAuthToSettle();
-      if (!_isActivePlay(playGeneration, chapter.id) ||
+      if (!isActiveCompletion() ||
           _gatewayReauthenticationPending ||
           appState.needsGatewayLogin) {
         return;
       }
 
       if (!_usesGatewaySingleChapterPlayback) {
+        _resumeAfterGatewayReauthentication = false;
         await sendProgress();
-        if (!_gatewayReauthenticationPending && !appState.needsGatewayLogin) {
-          unawaited(nextChapter());
-        }
+        shouldAdvance = shouldResume &&
+            _audio.playing &&
+            isActiveCompletion() &&
+            !_gatewayReauthenticationPending &&
+            !appState.needsGatewayLogin &&
+            !_advancingFromOutro;
         return;
       }
 
@@ -1327,7 +1338,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       final sourceAuthWasStale =
           _mediaAuthRevision != appState.api.authRevision;
       final probeResult = await _probeGatewaySession();
-      if (!_isActivePlay(playGeneration, chapter.id)) return;
+      if (!isActiveCompletion()) return;
       if (probeResult == _GatewaySessionProbeResult.expired) return;
       if (probeResult == _GatewaySessionProbeResult.unavailable) {
         if ((sourceAuthWasStale ||
@@ -1382,21 +1393,22 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
       _resumeAfterGatewayReauthentication = false;
       await sendProgress();
-      if (!_isActivePlay(playGeneration, chapter.id) ||
+      if (!isActiveCompletion() ||
           _gatewayReauthenticationPending ||
           appState.needsGatewayLogin) {
         return;
       }
       // 跳片尾流程（_handleSkipOutro）已接管切章时，这里不再重复跳转，
       // 避免「completed 跳一次 + skipOutro 再跳一次」的双跳。
-      shouldAdvance = shouldResume && !_advancingFromOutro;
+      shouldAdvance = shouldResume && _audio.playing && !_advancingFromOutro;
     } finally {
-      if (_handlingGatewayMediaCompletionGeneration == playGeneration) {
-        _handlingGatewayMediaCompletionGeneration = null;
+      if (!shouldAdvance &&
+          _completedPlaybackOperation == completionOperation) {
+        _completedPlaybackOperation = null;
       }
-    }
-    if (shouldAdvance) {
-      unawaited(nextChapter());
+      if (shouldAdvance) {
+        unawaited(nextChapter());
+      }
     }
   }
 

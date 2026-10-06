@@ -699,6 +699,7 @@ abstract class MediaItemCopyWith {
     String? genre,
     Duration? duration,
     Uri? artUri,
+    Map<String, String>? artHeaders,
     bool? playable,
     String? displayTitle,
     String? displaySubtitle,
@@ -728,6 +729,7 @@ class _MediaItemCopyWith extends MediaItemCopyWith {
     Object? genre = _fakeNull,
     Object? duration = _fakeNull,
     Object? artUri = _fakeNull,
+    Object? artHeaders = _fakeNull,
     Object? playable = _fakeNull,
     Object? displayTitle = _fakeNull,
     Object? displaySubtitle = _fakeNull,
@@ -745,6 +747,9 @@ class _MediaItemCopyWith extends MediaItemCopyWith {
         duration:
             duration == _fakeNull ? value.duration : duration as Duration?,
         artUri: artUri == _fakeNull ? value.artUri : artUri as Uri?,
+        artHeaders: artHeaders == _fakeNull
+            ? value.artHeaders
+            : artHeaders as Map<String, String>?,
         playable: playable == _fakeNull ? value.playable : playable as bool?,
         displayTitle: displayTitle == _fakeNull
             ? value.displayTitle
