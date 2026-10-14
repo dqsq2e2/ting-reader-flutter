@@ -11,43 +11,38 @@ class NotificationSettingsPage extends StatefulWidget {
 }
 
 class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
-  bool _loading = true;
+  NotificationState? _notifications;
+  bool get _loading => _notifications?.loading ?? true;
   bool _saved = false;
-  List<NotificationWebhook> _webhooks = [];
-  List<NotificationEventOption> _events = [];
+  List<NotificationWebhook> get _webhooks =>
+      _notifications?.webhooks ?? const [];
+  List<NotificationEventOption> get _events =>
+      _notifications?.events ?? const [];
   Timer? _savedTimer;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_notifications != null) return;
+    _notifications = NotificationState(AppScope.appOf(context).api)
+      ..addListener(_changed);
     _load();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _notifications?.removeListener(_changed);
+    _notifications?.dispose();
     _savedTimer?.cancel();
     super.dispose();
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final api = AppScope.appOf(context).api;
-    try {
-      final results = await Future.wait([
-        api.get('/api/system/notifications'),
-        api.get('/api/system/notifications/events'),
-      ]);
-      setState(() {
-        _webhooks = asMapList(results[0].data)
-            .map(NotificationWebhook.fromJson)
-            .toList();
-        _events = asMapList(results[1].data)
-            .map(NotificationEventOption.fromJson)
-            .toList();
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    await _notifications?.load();
   }
 
   void _markSaved() {
@@ -59,23 +54,18 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   }
 
   Future<void> _upsert([NotificationWebhook? webhook]) async {
-    final api = AppScope.appOf(context).api;
     final data = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (context) => _WebhookDialog(webhook: webhook, events: _events),
     );
-    if (data == null) return;
-    if (webhook == null) {
-      await api.post('/api/system/notifications', data: data);
-    } else {
-      await api.put('/api/system/notifications/${webhook.id}', data: data);
-    }
+    if (data == null || !mounted) return;
+    await _notifications?.save(data, id: webhook?.id);
+    if (!mounted) return;
     _markSaved();
     await _load();
   }
 
   Future<void> _delete(NotificationWebhook webhook) async {
-    final api = AppScope.appOf(context).api;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -106,21 +96,27 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       ),
     );
     if (confirmed != true) return;
-    await api.delete('/api/system/notifications/${webhook.id}');
+    if (!mounted) return;
+    await _notifications?.delete(webhook.id);
     await _load();
   }
 
   Future<void> _toggle(NotificationWebhook webhook) async {
-    await AppScope.appOf(context).api.put(
-          '/api/system/notifications/${webhook.id}',
-          data: webhook.toRequestJson(enabledOverride: !webhook.enabled),
-        );
+    await _notifications?.save(
+        webhook.toRequestJson(enabledOverride: !webhook.enabled),
+        id: webhook.id);
     await _load();
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
+    if (_notifications?.error != null) {
+      return PageListView(children: [
+        AppBackButton(onPressed: widget.onBack),
+        LoadErrorView(onRetry: _load),
+      ]);
+    }
     final enabledCount = _webhooks.where((item) => item.enabled).length;
     final disabledCount = math.max(_webhooks.length - enabledCount, 0);
     final listenedEvents = _webhooks
@@ -610,8 +606,6 @@ class _WebhookEventChip extends StatelessWidget {
   }
 }
 
-const _defaultWebhookBodyTemplate = '{{json:payload}}';
-
 class _WebhookHeaderDraft {
   _WebhookHeaderDraft({String? id, this.key = '', this.value = ''})
       : id = id ?? '${DateTime.now().microsecondsSinceEpoch}';
@@ -620,113 +614,6 @@ class _WebhookHeaderDraft {
   String key;
   String value;
 }
-
-class _WebhookPreset {
-  const _WebhookPreset({
-    required this.id,
-    required this.name,
-    required this.urlPlaceholder,
-    required this.headers,
-    required this.bodyTemplate,
-  });
-
-  final String id;
-  final String name;
-  final String urlPlaceholder;
-  final Map<String, String> headers;
-  final String bodyTemplate;
-}
-
-class _WebhookTestResult {
-  const _WebhookTestResult({
-    required this.success,
-    required this.status,
-    this.responseBody = '',
-    this.renderedBody = '',
-    this.error,
-  });
-
-  final bool success;
-  final int status;
-  final String responseBody;
-  final String renderedBody;
-  final String? error;
-
-  factory _WebhookTestResult.fromJson(Map<String, dynamic> json) {
-    return _WebhookTestResult(
-      success: json['success'] == true,
-      status: (json['status'] as num?)?.toInt() ?? 0,
-      responseBody: (json['response_body'] ?? '').toString(),
-      renderedBody: (json['rendered_body'] ?? '').toString(),
-      error: (json['error'] as String?)?.trim(),
-    );
-  }
-}
-
-const _webhookPresets = [
-  _WebhookPreset(
-    id: 'ting-json',
-    name: 'raw-json',
-    urlPlaceholder: 'https://example.com/webhook',
-    headers: {'Content-Type': 'application/json'},
-    bodyTemplate: _defaultWebhookBodyTemplate,
-  ),
-  _WebhookPreset(
-    id: 'wecom-markdown',
-    name: 'wecom-markdown',
-    urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
-    headers: {'Content-Type': 'application/json'},
-    bodyTemplate: '''{
-  "msgtype": "markdown",
-  "markdown": {
-    "content": {{json:notification}}
-  }
-}''',
-  ),
-  _WebhookPreset(
-    id: 'wecom-text',
-    name: 'wecom-text',
-    urlPlaceholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...',
-    headers: {'Content-Type': 'application/json'},
-    bodyTemplate: '''{
-  "msgtype": "text",
-  "text": {
-    "content": {{json:notification}}
-  }
-}''',
-  ),
-  _WebhookPreset(
-    id: 'ntfy-json',
-    name: 'ntfy JSON',
-    urlPlaceholder: 'https://ntfy.example.com',
-    headers: {'Content-Type': 'application/json'},
-    bodyTemplate: '''{
-  "topic": "ting-reader",
-  "title": {{json:title}},
-  "message": {{json:message}},
-  "priority": 3,
-  "tags": ["headphones"]
-}''',
-  ),
-  _WebhookPreset(
-    id: 'gotify-json',
-    name: 'Gotify JSON',
-    urlPlaceholder: 'https://gotify.example.com/message?token=...',
-    headers: {'Content-Type': 'application/json'},
-    bodyTemplate: '''{
-  "title": {{json:title}},
-  "message": {{json:message}},
-  "priority": 5
-}''',
-  ),
-  _WebhookPreset(
-    id: 'plain-text',
-    name: 'plain-text',
-    urlPlaceholder: 'https://example.com/webhook',
-    headers: {'Content-Type': 'text/plain; charset=utf-8'},
-    bodyTemplate: '{{notification}}',
-  ),
-];
 
 class _WebhookDialog extends StatefulWidget {
   const _WebhookDialog({required this.events, this.webhook});
@@ -747,8 +634,9 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   late Set<String> _events;
   late List<_WebhookHeaderDraft> _headers;
   String? _selectedPresetId;
+  NotificationState? _tester;
   bool _testing = false;
-  _WebhookTestResult? _testResult;
+  WebhookTestResult? _testResult;
 
   @override
   void initState() {
@@ -758,7 +646,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     _url = TextEditingController(text: webhook?.url ?? '');
     _filter = TextEditingController();
     _bodyTemplate = TextEditingController(
-      text: webhook?.bodyTemplate ?? _defaultWebhookBodyTemplate,
+      text: webhook?.bodyTemplate ?? defaultWebhookBodyTemplate,
     );
     _enabled = webhook?.enabled ?? true;
     _events = webhook?.events.toSet() ?? _commonEvents();
@@ -768,7 +656,14 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _tester ??= NotificationState(AppScope.appOf(context).api);
+  }
+
+  @override
   void dispose() {
+    _tester?.dispose();
     _name.dispose();
     _url.dispose();
     _filter.dispose();
@@ -809,16 +704,16 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     return values;
   }
 
-  _WebhookPreset? get _selectedPreset {
+  WebhookPreset? get _selectedPreset {
     final id = _selectedPresetId;
     if (id == null || id.isEmpty) return null;
-    for (final preset in _webhookPresets) {
+    for (final preset in webhookPresets) {
       if (preset.id == id) return preset;
     }
     return null;
   }
 
-  String _presetDisplayName(_WebhookPreset preset) {
+  String _presetDisplayName(WebhookPreset preset) {
     return switch (preset.id) {
       'ting-json' => context.l10n.notificationsPresetRawJson,
       'wecom-markdown' => context.l10n.notificationsPresetWecomMarkdown,
@@ -830,7 +725,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
 
   void _applyPreset(String? presetId) {
     if (presetId == null || presetId.isEmpty) return;
-    final preset = _webhookPresets.firstWhere((item) => item.id == presetId);
+    final preset = webhookPresets.firstWhere((item) => item.id == presetId);
     setState(() {
       _selectedPresetId = presetId;
       _headers = _headersFromMap(preset.headers);
@@ -840,16 +735,15 @@ class _WebhookDialogState extends State<_WebhookDialog> {
   }
 
   Map<String, dynamic> _requestData({bool? enabledOverride}) {
-    return {
-      'name': _name.text.trim(),
-      'url': _url.text.trim(),
-      'enabled': enabledOverride ?? _enabled,
-      'events': _events.toList(),
-      'headers': _headersToMap(),
-      'body_template': _bodyTemplate.text.trim().isEmpty
-          ? _defaultWebhookBodyTemplate
-          : _bodyTemplate.text,
-    };
+    return NotificationWebhook(
+      id: widget.webhook?.id ?? '',
+      name: _name.text.trim(),
+      url: _url.text.trim(),
+      enabled: enabledOverride ?? _enabled,
+      events: _events.toList(),
+      headers: _headersToMap(),
+      bodyTemplate: _bodyTemplate.text,
+    ).toRequestJson();
   }
 
   bool _validate() {
@@ -870,33 +764,15 @@ class _WebhookDialogState extends State<_WebhookDialog> {
 
   Future<void> _testWebhook() async {
     if (_testing || !_validate()) return;
-    final api = AppScope.appOf(context).api;
     setState(() {
       _testing = true;
       _testResult = null;
     });
     try {
-      final response = await api.post(
-        '/api/system/notifications/test',
-        data: _requestData(enabledOverride: true),
-      );
-      if (!mounted) return;
-      setState(() {
-        _testResult = _WebhookTestResult.fromJson(asMap(response.data));
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _testResult = _WebhookTestResult(
-          success: false,
-          status: 0,
-          error: context.l10n.notificationsTestFailed('$error'),
-        );
-      });
+      final result = await _tester?.test(_requestData(enabledOverride: true));
+      if (mounted) setState(() => _testResult = result);
     } finally {
-      if (mounted) {
-        setState(() => _testing = false);
-      }
+      if (mounted) setState(() => _testing = false);
     }
   }
 
@@ -1074,7 +950,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
       initialValue: _selectedPresetId,
       hint: Text(context.l10n.notificationsSelectTemplate),
       items: [
-        for (final preset in _webhookPresets)
+        for (final preset in webhookPresets)
           DropdownMenuItem(
             value: preset.id,
             child: Text(_presetDisplayName(preset)),
@@ -1300,7 +1176,7 @@ class _WebhookDialogState extends State<_WebhookDialog> {
     );
   }
 
-  Widget _buildTestResult(_WebhookTestResult result) {
+  Widget _buildTestResult(WebhookTestResult result) {
     final success = result.success;
     final color = success ? const Color(0xff16a34a) : const Color(0xffdc2626);
     final background =

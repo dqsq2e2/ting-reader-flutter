@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
+import '../../../core/state/books_state.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/locale.dart';
@@ -8,6 +9,7 @@ import '../../../core/utils/urls.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/cards/book_card.dart';
 import '../../../shared/common/common_widgets.dart';
+import '../../../shared/common/media_widgets.dart';
 import '../../../shared/filter/display_filter_menu.dart';
 import '../book_delete_dialog.dart';
 
@@ -44,6 +46,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   bool _selectionMode = false;
   bool _batchBusy = false;
   final Set<String> _selectedBookIds = {};
+  BookOperations? _operations;
   int _loadVersion = 0;
   int _pageVersion = 0;
 
@@ -59,6 +62,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
   void didUpdateWidget(covariant SeriesDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.seriesId != widget.seriesId) {
+      _operations?.dispose();
+      _operations = null;
       _pageVersion++;
       _closeFilterMenu();
       _series = null;
@@ -71,6 +76,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
 
   @override
   void dispose() {
+    _operations?.dispose();
     _loadVersion++;
     _pageVersion++;
     _filterOverlay?.remove();
@@ -199,25 +205,12 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         );
         if (!mounted || version != _pageVersion || confirmed != true) return;
       }
+      final operations = _operations ??= BookOperations(app.api);
       if (operation == _SeriesBatchOperation.delete) {
-        await Future.wait(
-          ids.map(
-            (bookId) => app.api.delete(
-              '/api/books/$bookId',
-              params: {'delete_files': deleteSourceFiles},
-            ),
-          ),
-        );
+        await operations.deleteBooks(ids, deleteFiles: deleteSourceFiles);
       } else {
-        for (var offset = 0; offset < ids.length; offset += 200) {
-          await app.api.post(
-            '/api/books/read-status',
-            data: {
-              'book_ids': ids.skip(offset).take(200).toList(),
-              'read': operation == _SeriesBatchOperation.markRead,
-            },
-          );
-        }
+        await operations.markRead(
+            ids, operation == _SeriesBatchOperation.markRead);
       }
       if (!mounted || version != _pageVersion) return;
       setState(() {

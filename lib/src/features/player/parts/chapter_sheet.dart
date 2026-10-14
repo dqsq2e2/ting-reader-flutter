@@ -171,17 +171,15 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   Future<void> _downloadChapter(Chapter chapter) async {
     final book = widget.player.currentBook;
     if (book == null) return;
-    final downloadState = AppScope.downloadOf(context);
-    if (downloadState.hasChapter(chapter.id)) return;
-    final task = downloadState.taskForChapter(chapter.id);
-    if (task != null) {
-      if (task.status == DownloadStatus.paused ||
-          task.status == DownloadStatus.failed) {
-        await downloadState.resumeTask(chapter.id);
+    try {
+      await AppScope.downloadOf(context).requestChapter(book, chapter);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(context.localeText(
+                '加入下载失败：$error', 'Failed to add download: $error'))));
       }
-      return;
     }
-    downloadState.queueChapter(book, chapter);
   }
 
   Future<void> _playChapter(Chapter chapter) async {
@@ -774,7 +772,7 @@ class _ChapterSheetTile extends StatelessWidget {
               ),
               if (active && isPlaying) ...[
                 SizedBox(width: compact ? 6 : 10),
-                _PlayingBars(color: accent),
+                PlayingBars(color: accent),
               ],
             ],
           ),
@@ -818,23 +816,9 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
         onTap: onDownload,
       );
     }
-    final color = switch (task.status) {
-      DownloadStatus.downloading => AppColors.primary600,
-      DownloadStatus.paused => Colors.orange,
-      DownloadStatus.failed => Colors.red,
-      DownloadStatus.completed => AppColors.primary600,
-      DownloadStatus.queued => AppColors.slate500,
-    };
-    final icon = switch (task.status) {
-      DownloadStatus.downloading => Icons.downloading_rounded,
-      DownloadStatus.paused => Icons.pause_rounded,
-      DownloadStatus.failed => Icons.error_outline_rounded,
-      DownloadStatus.completed => Icons.check_rounded,
-      DownloadStatus.queued => Icons.schedule_rounded,
-    };
-    final label = task.status == DownloadStatus.downloading
-        ? '${(task.progress.clamp(0, 1) * 100).round()}%'
-        : task.status.labelForLocale(context.isEnglishLocale);
+    final color = task.status.downloadColor;
+    final icon = task.status.downloadIcon(simpleMark: true);
+    final label = task.downloadLabel(context.isEnglishLocale);
 
     return _iconMark(
       icon: icon,
@@ -870,69 +854,6 @@ class _ChapterSheetDownloadMark extends StatelessWidget {
               borderRadius: BorderRadius.circular(999),
               child: child,
             ),
-    );
-  }
-}
-
-class _PlayingBars extends StatefulWidget {
-  const _PlayingBars({required this.color});
-
-  final Color color;
-
-  @override
-  State<_PlayingBars> createState() => _PlayingBarsState();
-}
-
-class _PlayingBarsState extends State<_PlayingBars>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1600),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  double _height(double offset) {
-    final phase = (_controller.value + offset) % 1;
-    final wave = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
-    return 7 + wave * 13;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return SizedBox(
-          width: 19,
-          height: 22,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              for (final offset in const [0.0, 0.22, 0.44])
-                Container(
-                  width: 4,
-                  height: _height(offset),
-                  decoration: BoxDecoration(
-                    color: widget.color,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
+import '../../core/state/books_state.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
@@ -33,13 +33,21 @@ class BookshelfPage extends StatefulWidget {
 class _BookshelfPageState extends State<BookshelfPage> {
   static const int _pageSize = 50;
 
-  bool _loading = true;
-  List<Book> _books = [];
-  List<Series> _series = [];
-  List<Library> _libraries = [];
-  String _selectedLibraryId = '';
-  final String _searchQuery = '';
-  String _sortBy = 'created_at';
+  BookshelfState? _shelf;
+  bool get _loading => _shelf?.loading ?? true;
+  List<Book> get _books => _shelf?.books ?? const [];
+  List<Series> get _series => _shelf?.series ?? const [];
+  List<Library> get _libraries => _shelf?.libraries ?? const [];
+  String get _selectedLibraryId => _shelf?.selectedLibrary ?? '';
+  set _selectedLibraryId(String value) {
+    _shelf?.selectedLibrary = value;
+  }
+
+  String get _sortBy => _shelf?.sortBy ?? 'created_at';
+  set _sortBy(String value) {
+    _shelf?.sortBy = value;
+  }
+
   IconSizeSetting _iconSize = IconSizeSetting.medium;
   CoverShape _coverShape = CoverShape.square;
   BookshelfViewMode _viewMode = BookshelfViewMode.grid;
@@ -70,6 +78,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   @override
   void dispose() {
+    _shelf?.removeListener(_shelfChanged);
+    _shelf?.dispose();
     _indexOverlayTimer?.cancel();
     _filterOverlay?.remove();
     _scrollController
@@ -92,55 +102,30 @@ class _BookshelfPageState extends State<BookshelfPage> {
     _visibleCount = _pageSize;
   }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final appState = AppScope.appOf(context);
-    try {
-      final settingsRes = await appState.api.get('/api/settings');
-      final settingsPayload = asMap(settingsRes.data);
-      final settingsJson = asMap(settingsPayload['settings_json']);
-      dynamic settingValue(String key) =>
-          settingsPayload[key] ?? settingsJson[key];
-      _selectedLibraryId =
-          (settingValue('bookshelf_library_id') ?? '').toString();
-      _sortBy = (settingValue('bookshelf_sort_by') ?? 'created_at').toString();
-      _iconSize = iconSizeFromAppSettings(settingsPayload);
-      _coverShape = coverShapeFromAppSettings(settingsPayload);
-      _viewMode = settingValue('bookshelf_view_mode') == 'list'
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _shelf ??= BookshelfState(AppScope.appOf(context).api)
+      ..addListener(_shelfChanged);
+  }
+
+  void _shelfChanged() {
+    if (!mounted) return;
+    setState(() {
+      final settings = _shelf?.settings ?? const <String, dynamic>{};
+      _iconSize = iconSizeFromAppSettings(settings);
+      _coverShape = coverShapeFromAppSettings(settings);
+      _viewMode = settings['bookshelf_view_mode'] == 'list'
           ? BookshelfViewMode.list
           : BookshelfViewMode.grid;
+      _selectedBookIds.retainAll(_books.map((book) => book.id));
+      _selectedSeriesIds.retainAll(_series.map((series) => series.id));
+    });
+  }
 
-      final libsRes = await appState.api.get('/api/libraries');
-      final libraries = asMapList(libsRes.data).map(Library.fromJson).toList();
-      final selectedExists = _selectedLibraryId.isEmpty ||
-          libraries.any((lib) => lib.id == _selectedLibraryId);
-      if (!selectedExists) _selectedLibraryId = '';
-
-      final results = await Future.wait([
-        appState.api.get(
-          '/api/books',
-          params: {
-            if (_selectedLibraryId.isNotEmpty) 'library_id': _selectedLibraryId,
-          },
-        ),
-        appState.api.get(
-          '/api/v1/series',
-          params: {
-            if (_selectedLibraryId.isNotEmpty) 'library_id': _selectedLibraryId,
-          },
-        ),
-      ]);
-
-      if (!mounted) return;
-      setState(() {
-        _libraries = libraries;
-        _books = asMapList(results[0].data).map(Book.fromJson).toList();
-        _series = asMapList(results[1].data).map(Series.fromJson).toList();
-        _resetVisibleItems();
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  Future<void> _load() async {
+    await _shelf?.load();
+    if (mounted) setState(_resetVisibleItems);
   }
 
   Future<void> _persist(String key, Object value) async {
@@ -173,16 +158,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     }
     setState(() => _updatingReadStatus = true);
     try {
-      final ids = _selectedBookIds.toList(growable: false);
-      for (var offset = 0; offset < ids.length; offset += 200) {
-        await AppScope.appOf(context).api.post(
-          '/api/books/read-status',
-          data: {
-            'book_ids': ids.skip(offset).take(200).toList(),
-            'read': read,
-          },
-        );
-      }
+      await _shelf?.operations.markRead(_selectedBookIds.toList(), read);
       if (!mounted) return;
       setState(() => _selectedBookIds.clear());
       await _load();
@@ -199,108 +175,17 @@ class _BookshelfPageState extends State<BookshelfPage> {
     }
   }
 
-  List<Book> get _sortedBooks {
-    final result = [..._books];
-    result.sort((a, b) {
-      if (_sortBy == 'title') return compareChineseText(a.title, b.title);
-      if (_sortBy == 'author') {
-        return compareChineseText(a.author ?? '', b.author ?? '');
-      }
-      if (_sortBy == 'year') return (b.year ?? 0).compareTo(a.year ?? 0);
-      final ad = DateTime.tryParse(a.createdAt ?? '') ?? DateTime(1970);
-      final bd = DateTime.tryParse(b.createdAt ?? '') ?? DateTime(1970);
-      return bd.compareTo(ad);
-    });
-    return result;
-  }
-
-  List<Book> get _filteredBooks {
-    final booksInSeries =
-        _series.expand((item) => item.books.map((book) => book.id)).toSet();
-    final query = _searchQuery.trim().toLowerCase();
-    return _sortedBooks.where((book) {
-      if (booksInSeries.contains(book.id)) return false;
-      if (query.isEmpty) return true;
-      return book.title.toLowerCase().contains(query) ||
-          (book.author ?? '').toLowerCase().contains(query) ||
-          (book.narrator ?? '').toLowerCase().contains(query);
-    }).toList();
-  }
-
-  List<Series> get _filteredSeries {
-    final query = _searchQuery.trim().toLowerCase();
-    if (query.isEmpty) return _series;
-    return _series.where((series) {
-      return series.title.toLowerCase().contains(query) ||
-          (series.author ?? '').toLowerCase().contains(query);
-    }).toList();
-  }
-
-  /// Groups the filtered books and series by pinyin initial (or year) for the
-  /// active sort mode, mirroring the web client's bookshelf grouping.
+  List<Book> get _filteredBooks => _shelf?.filteredBooks ?? const [];
+  List<Series> get _filteredSeries => _shelf?.filteredSeries ?? const [];
   ({List<String> keys, Map<String, List<Object>> groups})? get _groupedContent {
-    if (_sortBy == 'created_at') return null;
-
-    final groups = <String, List<Object>>{};
-    for (final book in _filteredBooks) {
-      final String key;
-      if (_sortBy == 'author') {
-        key = pinyinInitial(book.author ?? '');
-      } else if (_sortBy == 'year') {
-        key = _yearGroupKey(book.year);
-      } else {
-        key = pinyinInitial(book.title);
-      }
-      groups.putIfAbsent(key, () => []).add(book);
-    }
-    for (final item in _filteredSeries) {
-      final String key;
-      if (_sortBy == 'author') {
-        key = pinyinInitial(item.author ?? '');
-      } else if (_sortBy == 'year') {
-        key = '#';
-      } else {
-        key = pinyinInitial(item.title);
-      }
-      groups.putIfAbsent(key, () => []).add(item);
-    }
-
-    for (final items in groups.values) {
-      items.sort((a, b) {
-        if (_sortBy == 'author') {
-          return compareChineseText(_itemAuthor(a), _itemAuthor(b));
-        }
-        if (_sortBy == 'year') return _itemYear(b).compareTo(_itemYear(a));
-        return compareChineseText(_itemTitle(a), _itemTitle(b));
-      });
-    }
-
-    final keys = groups.keys.toList()
-      ..sort((a, b) {
-        if (a == '#') return 1;
-        if (b == '#') return -1;
-        if (_sortBy == 'year') return b.compareTo(a);
-        return a.compareTo(b);
-      });
+    final content = _shelf?.groupedContent;
+    final keys = content?.keys.toSet() ?? <String>{};
+    _groupSectionKeys.removeWhere((key, _) => !keys.contains(key));
     for (final key in keys) {
       _groupSectionKeys.putIfAbsent(key, GlobalKey.new);
     }
-    return (keys: keys, groups: groups);
+    return content;
   }
-
-  static String _yearGroupKey(int? year) {
-    if (year == null) return '#';
-    final text = year.toString();
-    return text.length > 2 ? text.substring(text.length - 2) : text;
-  }
-
-  static String _itemTitle(Object item) =>
-      item is Book ? item.title : (item as Series).title;
-
-  static String _itemAuthor(Object item) =>
-      item is Book ? (item.author ?? '') : ((item as Series).author ?? '');
-
-  static int _itemYear(Object item) => item is Book ? (item.year ?? 0) : 0;
 
   void _scrollToGroup(String key) {
     final grouped = _groupedContent;
@@ -352,7 +237,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
     _indexOverlayTimer?.cancel();
     if (!_indexBarTouchActive) return;
     setState(() => _indexBarTouchActive = false);
-    Timer(const Duration(milliseconds: 800), () {
+    _indexOverlayTimer = Timer(const Duration(milliseconds: 800), () {
       if (mounted && !_indexBarTouchActive && _activeLetter != null) {
         setState(() => _activeLetter = null);
       }
@@ -362,6 +247,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
+    if (_shelf?.error != null) return LoadErrorView(onRetry: _load);
     final appState = AppScope.appOf(context);
     final hasContent = _books.isNotEmpty || _series.isNotEmpty;
     final grouped = _groupedContent;
@@ -793,16 +679,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   Future<bool> _deleteSeries(List<Series> selectedSeries) async {
     if (selectedSeries.isEmpty || _deletingSeries) return false;
-    final api = AppScope.appOf(context).api;
     final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _deletingSeries = true);
     try {
-      await Future.wait(
-        selectedSeries.map(
-          (series) => api.delete('/api/v1/series/${series.id}'),
-        ),
-      );
+      await _shelf?.operations
+          .deleteSeries(selectedSeries.map((series) => series.id));
       return true;
     } catch (error) {
       if (!mounted) return false;
@@ -832,19 +714,12 @@ class _BookshelfPageState extends State<BookshelfPage> {
     if (confirmation == null) return false;
     if (!mounted) return false;
 
-    final api = AppScope.appOf(context).api;
     final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _deletingBooks = true);
     try {
-      await Future.wait(
-        selectedBooks.map(
-          (book) => api.delete(
-            '/api/books/${book.id}',
-            params: {'delete_files': confirmation.deleteSourceFiles},
-          ),
-        ),
-      );
+      await _shelf?.operations.deleteBooks(selectedBooks.map((book) => book.id),
+          deleteFiles: confirmation.deleteSourceFiles);
       if (!mounted) return false;
       setState(() {
         _selectionMode = false;
@@ -936,20 +811,17 @@ class _BookshelfPageState extends State<BookshelfPage> {
                     if (titleController.text.trim().isEmpty) return;
                     setDialogState(() => saving = true);
                     try {
-                      await AppScope.appOf(context).api.post(
-                        '/api/v1/series',
-                        data: {
-                          'library_id': selectedBooks.first.libraryId,
-                          'title': titleController.text.trim(),
-                          'author': authorController.text.trim(),
-                          'description': descriptionController.text.trim(),
-                          'book_ids':
-                              selectedBooks.map((book) => book.id).toList(),
-                        },
-                      );
+                      await _shelf?.operations.createSeries({
+                        'library_id': selectedBooks.first.libraryId,
+                        'title': titleController.text.trim(),
+                        'author': authorController.text.trim(),
+                        'description': descriptionController.text.trim(),
+                        'book_ids':
+                            selectedBooks.map((book) => book.id).toList(),
+                      });
                       if (context.mounted) Navigator.pop(context, true);
                     } finally {
-                      setDialogState(() => saving = false);
+                      if (context.mounted) setDialogState(() => saving = false);
                     }
                   },
                 ),

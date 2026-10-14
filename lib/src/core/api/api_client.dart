@@ -157,30 +157,17 @@ class ApiClient {
     Duration? receiveTimeout,
   }) {
     final idempotencyKey = _idempotencyKey();
-    if (cancelToken != null) {
-      return _send(
-        () => _dio.post<dynamic>(
-          path,
-          data: data is FormData ? data.clone() : data,
-          queryParameters: params,
-          options: _authOptions(
-            idempotencyKey: idempotencyKey,
-            receiveTimeout: receiveTimeout,
-          ),
-          cancelToken: cancelToken,
-        ),
-        cancelToken: cancelToken,
-      );
-    }
     return _sendMutation(
       'POST',
       path,
       data: data,
       params: params,
+      cancelToken: cancelToken,
       () => _dio.post<dynamic>(
         path,
         data: data is FormData ? data.clone() : data,
         queryParameters: params,
+        cancelToken: cancelToken,
         options: _authOptions(
           idempotencyKey: idempotencyKey,
           receiveTimeout: receiveTimeout,
@@ -189,29 +176,35 @@ class ApiClient {
     );
   }
 
-  Future<Response<dynamic>> put(String path, {Object? data}) {
+  Future<Response<dynamic>> put(String path,
+      {Object? data, CancelToken? cancelToken}) {
     final idempotencyKey = _idempotencyKey();
     return _sendMutation(
       'PUT',
       path,
       data: data,
+      cancelToken: cancelToken,
       () => _dio.put<dynamic>(
         path,
         data: data,
+        cancelToken: cancelToken,
         options: _authOptions(idempotencyKey: idempotencyKey),
       ),
     );
   }
 
-  Future<Response<dynamic>> patch(String path, {Object? data}) {
+  Future<Response<dynamic>> patch(String path,
+      {Object? data, CancelToken? cancelToken}) {
     final idempotencyKey = _idempotencyKey();
     return _sendMutation(
       'PATCH',
       path,
       data: data,
+      cancelToken: cancelToken,
       () => _dio.patch<dynamic>(
         path,
         data: data,
+        cancelToken: cancelToken,
         options: _authOptions(idempotencyKey: idempotencyKey),
       ),
     );
@@ -221,6 +214,7 @@ class ApiClient {
     String path, {
     Object? data,
     Map<String, dynamic>? params,
+    CancelToken? cancelToken,
   }) {
     final idempotencyKey = _idempotencyKey();
     return _sendMutation(
@@ -228,10 +222,12 @@ class ApiClient {
       path,
       data: data,
       params: params,
+      cancelToken: cancelToken,
       () => _dio.delete<dynamic>(
         path,
         data: data,
         queryParameters: params,
+        cancelToken: cancelToken,
         options: _authOptions(idempotencyKey: idempotencyKey),
       ),
     );
@@ -243,7 +239,13 @@ class ApiClient {
     Future<Response<dynamic>> Function() request, {
     Object? data,
     Map<String, dynamic>? params,
+    CancelToken? cancelToken,
   }) {
+    // Requests owned by separate cancellable operations must not share a
+    // transport: disposing one page must not cancel another page's mutation.
+    if (cancelToken != null || data is FormData || data is List<int>) {
+      return _send(request, cancelToken: cancelToken);
+    }
     final fingerprint = _mutationFingerprint(method, path, data, params);
     final existing = _inFlightMutations[fingerprint];
     if (existing != null) return existing;
@@ -261,7 +263,7 @@ class ApiClient {
     Object? data,
     Map<String, dynamic>? params,
   ) {
-    return '$method|$_baseUrl|$path|${_stableEncode(params)}|${_stableEncode(data)}';
+    return '$method|$_baseUrl|$_authRevision|${_stableEncode(authHeaders)}|$path|${_stableEncode(params)}|${_stableEncode(data)}';
   }
 
   String _idempotencyKey() {

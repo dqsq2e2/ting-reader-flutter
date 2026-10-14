@@ -212,3 +212,51 @@ extension ThemeBits on BuildContext {
     return regular;
   }
 }
+
+Color? effectiveBookThemeColor(String? raw) {
+  final color = parseBookThemeColor(raw);
+  if (color == null) return null;
+  return bookThemeLuminance(color) > 0.9 ? null : color;
+}
+
+Color? parseBookThemeColor(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return null;
+  final value = raw.trim();
+  if (value.startsWith('#')) {
+    var hex = value.substring(1);
+    if (hex.length == 3) {
+      hex = hex.split('').map((char) => '$char$char').join();
+    }
+    if (hex.length == 6) {
+      final rgb = int.tryParse(hex, radix: 16);
+      if (rgb != null) return Color(0xff000000 | rgb);
+    }
+  }
+  final match = RegExp(r'rgba?\(([^)]+)\)').firstMatch(value);
+  final channels = match?.group(1);
+  if (channels != null) {
+    final parts =
+        channels.split(',').map((part) => part.trim()).toList(growable: false);
+    if (parts.length >= 3) {
+      int? channel(String text) {
+        final parsed = double.tryParse(text);
+        if (parsed == null) return null;
+        return parsed.round().clamp(0, 255);
+      }
+
+      final r = channel(parts[0]);
+      final g = channel(parts[1]);
+      final b = channel(parts[2]);
+      if (r != null && g != null && b != null) {
+        return Color.fromARGB(255, r, g, b);
+      }
+    }
+  }
+  return null;
+}
+
+double bookThemeLuminance(Color color) {
+  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
+}
+
+bool isBookThemeLight(Color color) => bookThemeLuminance(color) > 0.65;

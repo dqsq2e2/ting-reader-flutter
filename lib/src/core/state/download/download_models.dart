@@ -1,4 +1,5 @@
-part of '../download_state.dart';
+import '../../models/_helpers.dart' show readInt, readDouble, readString;
+import '../../models/models.dart';
 
 const legacyDownloadServerKey = 'legacy';
 
@@ -95,25 +96,47 @@ class LocalDownload {
   String get storageKey => downloadRecordKey(serverKey, chapterId);
   String get bookGroupKey => downloadRecordKey(serverKey, bookId);
 
+  Book toBook({Map<String, dynamic> fallbackMetadata = const {}}) =>
+      Book.fromJson({
+        ...(bookMetadata.isEmpty ? fallbackMetadata : bookMetadata),
+        'id': bookId,
+        'library_id': libraryId ?? '',
+        'title': bookTitle,
+        'can_write_metadata_files': false,
+        'cover_url': localCoverPath == null
+            ? coverUrl
+            : Uri.file(localCoverPath!).toString(),
+      });
+
+  Chapter get chapter => Chapter(
+        id: chapterId,
+        bookId: bookId,
+        title: chapterTitle,
+        path: Uri.file(filePath).toString(),
+        chapterIndex: chapterIndex,
+        duration: duration ?? 0,
+        isExtra: isExtra,
+      );
+
   factory LocalDownload.fromJson(Map<String, dynamic> json) {
     return LocalDownload(
       chapterId: json['chapter_id']?.toString() ?? '',
       bookId: json['book_id']?.toString() ?? '',
       bookTitle: json['book_title']?.toString() ?? '',
       chapterTitle: json['chapter_title']?.toString() ?? '',
-      chapterIndex: _int(json['chapter_index']) ?? 0,
+      chapterIndex: readInt(json, 'chapter_index') ?? 0,
       filePath: json['file_path']?.toString() ?? '',
-      fileSize: _int(json['file_size']) ?? 0,
+      fileSize: readInt(json, 'file_size') ?? 0,
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
-      coverUrl: _string(json['cover_url']),
-      localCoverPath: _string(json['local_cover_path']),
-      libraryId: _string(json['library_id']),
-      duration: _int(json['duration']),
+      coverUrl: readString(json, 'cover_url'),
+      localCoverPath: readString(json, 'local_cover_path'),
+      libraryId: readString(json, 'library_id'),
+      duration: readInt(json, 'duration'),
       isExtra: _boolLike(json['is_extra']),
       bookMetadata: asMap(json['book_metadata']),
-      serverKey: _string(json['server_key']) ?? legacyDownloadServerKey,
-      serverName: _string(json['server_name']),
+      serverKey: readString(json, 'server_key') ?? legacyDownloadServerKey,
+      serverName: readString(json, 'server_name'),
     );
   }
 
@@ -194,29 +217,14 @@ class DownloadTask {
   String get storageKey => downloadRecordKey(serverKey, chapterId);
   String get bookGroupKey => downloadRecordKey(serverKey, bookId);
 
-  Book get book => Book(
-        id: bookId,
-        libraryId: libraryId ?? '',
-        title: bookTitle,
-        author: _string(bookMetadata['author']),
-        narrator: _string(bookMetadata['narrator']),
-        description: _string(bookMetadata['description']),
-        coverUrl: coverUrl,
-        themeColor: _string(bookMetadata['theme_color']),
-        duration: _int(bookMetadata['duration']),
-        size: _int(bookMetadata['size']),
-        path: _string(bookMetadata['path']),
-        hash: _string(bookMetadata['hash']),
-        createdAt: _string(bookMetadata['created_at']),
-        updatedAt: _string(bookMetadata['updated_at']),
-        libraryType: _string(bookMetadata['library_type']),
-        skipIntro: _int(bookMetadata['skip_intro']) ?? 0,
-        skipOutro: _int(bookMetadata['skip_outro']) ?? 0,
-        tags: _string(bookMetadata['tags']),
-        genre: _string(bookMetadata['genre']),
-        year: _int(bookMetadata['year']),
-        chapterRegex: _string(bookMetadata['chapter_regex']),
-      );
+  Book get book => Book.fromJson({
+        ...bookMetadata,
+        'id': bookId,
+        'library_id': libraryId ?? '',
+        'title': bookTitle,
+        'can_write_metadata_files': false,
+        'cover_url': coverUrl,
+      });
 
   Chapter get chapter => Chapter(
         id: chapterId,
@@ -260,21 +268,21 @@ class DownloadTask {
       bookId: json['book_id']?.toString() ?? '',
       bookTitle: json['book_title']?.toString() ?? '',
       chapterTitle: json['chapter_title']?.toString() ?? '',
-      chapterIndex: _int(json['chapter_index']) ?? 0,
+      chapterIndex: readInt(json, 'chapter_index') ?? 0,
       chapterPath: json['chapter_path']?.toString() ?? '',
-      coverUrl: _string(json['cover_url']),
-      libraryId: _string(json['library_id']),
-      duration: _int(json['duration']),
+      coverUrl: readString(json, 'cover_url'),
+      libraryId: readString(json, 'library_id'),
+      duration: readInt(json, 'duration'),
       isExtra: _boolLike(json['is_extra']),
       bookMetadata: asMap(json['book_metadata']),
-      serverKey: _string(json['server_key']) ?? legacyDownloadServerKey,
-      serverName: _string(json['server_name']),
+      serverKey: readString(json, 'server_key') ?? legacyDownloadServerKey,
+      serverName: readString(json, 'server_name'),
       transcode: json['transcode'] == true,
-      progress: _double(json['progress']) ?? 0,
+      progress: readDouble(json, 'progress') ?? 0,
       status:
           status == DownloadStatus.downloading ? DownloadStatus.queued : status,
-      receivedBytes: _int(json['received_bytes']) ?? 0,
-      totalBytes: _int(json['total_bytes']) ?? 0,
+      receivedBytes: readInt(json, 'received_bytes') ?? 0,
+      totalBytes: readInt(json, 'total_bytes') ?? 0,
       filePath: json['file_path']?.toString(),
       tempPath: json['temp_path']?.toString(),
       error: json['error']?.toString(),
@@ -312,4 +320,108 @@ class DownloadTask {
   void touch() {
     updatedAt = DateTime.now();
   }
+}
+
+bool _boolLike(dynamic value) {
+  if (value == null) return false;
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final text = value.toString().trim().toLowerCase();
+  return text == 'true' || text == '1' || text == 'yes';
+}
+
+Map<String, dynamic> _bookMetadataFromBook(Book book) {
+  return {
+    'id': book.id,
+    'library_id': book.libraryId,
+    'title': book.title,
+    'author': book.author,
+    'narrator': book.narrator,
+    'description': book.description,
+    'cover_url': book.coverUrl,
+    'theme_color': book.themeColor,
+    'duration': book.duration,
+    'size': book.size,
+    'path': book.path,
+    'hash': book.hash,
+    'created_at': book.createdAt,
+    'updated_at': book.updatedAt,
+    'library_type': book.libraryType,
+    'skip_intro': book.skipIntro,
+    'skip_outro': book.skipOutro,
+    'tags': book.tags,
+    'genre': book.genre,
+    'year': book.year,
+    'chapter_regex': book.chapterRegex,
+  }..removeWhere((_, value) => value == null || value == '');
+}
+
+/// Result of asking the queue to start or resume one chapter.
+enum DownloadRequestOutcome { downloaded, resumed, existing, queued }
+
+class DownloadRequestResult {
+  const DownloadRequestResult(this.outcome, {this.status});
+  final DownloadRequestOutcome outcome;
+  final DownloadStatus? status;
+
+  String messageForLocale(bool english, String title) => switch (outcome) {
+        DownloadRequestOutcome.downloaded =>
+          english ? 'Chapter already downloaded' : '章节已下载',
+        DownloadRequestOutcome.resumed =>
+          english ? 'Resumed download: $title' : '已恢复下载：$title',
+        DownloadRequestOutcome.existing => english
+            ? 'Download task already exists: ${status?.labelForLocale(true) ?? "Queued"}'
+            : '下载任务已存在：${status?.labelForLocale(false) ?? "排队中"}',
+        DownloadRequestOutcome.queued =>
+          english ? 'Added to download queue: $title' : '已加入下载队列：$title',
+      };
+}
+
+/// Versioned disk snapshot; legacy lists and interrupted transfers share one parser.
+class DownloadIndex {
+  const DownloadIndex(
+      {this.downloads = const [],
+      this.tasks = const [],
+      this.maxConcurrent = 2});
+  final List<LocalDownload> downloads;
+  final List<DownloadTask> tasks;
+  final int maxConcurrent;
+
+  factory DownloadIndex.fromJson(Object? decoded) {
+    final payload = asMap(decoded);
+    final downloads = asMapList(
+            decoded is List ? decoded : payload['downloads'])
+        .map(LocalDownload.fromJson)
+        .where((item) => item.chapterId.isNotEmpty && item.filePath.isNotEmpty)
+        .toList();
+    final completed = downloads.map((item) => item.storageKey).toSet();
+    final tasks = asMapList(payload['tasks'])
+        .map(DownloadTask.fromJson)
+        .where((task) =>
+            task.chapterId.isNotEmpty &&
+            task.bookId.isNotEmpty &&
+            task.chapterPath.isNotEmpty &&
+            !completed.contains(task.storageKey))
+        .toList();
+    return DownloadIndex(
+        downloads: downloads,
+        tasks: tasks,
+        maxConcurrent:
+            (readInt(asMap(payload['settings']), 'max_concurrent_downloads') ??
+                    2)
+                .clamp(1, 6));
+  }
+
+  Map<String, dynamic> toJson({String? directory}) => {
+        'version': 2,
+        'settings': {
+          'max_concurrent_downloads': maxConcurrent,
+          if (directory != null) 'cache_directory': directory
+        },
+        'downloads': downloads.map((item) => item.toJson()).toList(),
+        'tasks': tasks
+            .where((task) => task.status != DownloadStatus.completed)
+            .map((task) => task.toJson())
+            .toList(),
+      };
 }

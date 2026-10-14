@@ -5,7 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
-import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 
 class ActivityBookCard extends StatelessWidget {
   const ActivityBookCard({
@@ -86,8 +86,7 @@ class ActivityBookCard extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        fontSize: compact ? 14 : 16,
-                                        fontWeight: FontWeight.w700))),
+                                        fontSize: compact ? 14 : 16))),
                             const SizedBox(width: 8),
                             DecoratedBox(
                               decoration: BoxDecoration(

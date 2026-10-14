@@ -1,17 +1,17 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../../core/models/models.dart';
 import '../../core/state/download_state.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/chapter_sort.dart';
 import '../../core/utils/application_time_zone.dart';
+import '../../core/utils/chapter_sort.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key, this.onBack});
@@ -345,46 +345,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
           b.chapterId,
         ),
       );
-    final metadata = item.bookMetadata.isNotEmpty
-        ? item.bookMetadata
-        : group.first.bookMetadata;
-    final book = Book(
-      id: item.bookId,
-      libraryId: item.libraryId ?? '',
-      title: item.bookTitle,
-      author: _metadataString(metadata, 'author'),
-      narrator: _metadataString(metadata, 'narrator'),
-      description: _metadataString(metadata, 'description'),
-      coverUrl: item.localCoverPath != null
-          ? Uri.file(item.localCoverPath!).toString()
-          : item.coverUrl,
-      themeColor: _metadataString(metadata, 'theme_color'),
-      duration: _metadataInt(metadata, 'duration'),
-      path: _metadataString(metadata, 'path'),
-      hash: _metadataString(metadata, 'hash'),
-      createdAt: _metadataString(metadata, 'created_at'),
-      updatedAt: _metadataString(metadata, 'updated_at'),
-      libraryType: _metadataString(metadata, 'library_type'),
-      skipIntro: _metadataInt(metadata, 'skip_intro') ?? 0,
-      skipOutro: _metadataInt(metadata, 'skip_outro') ?? 0,
-      tags: _metadataString(metadata, 'tags'),
-      genre: _metadataString(metadata, 'genre'),
-      year: _metadataInt(metadata, 'year'),
-      chapterRegex: _metadataString(metadata, 'chapter_regex'),
-    );
-    final chapters = ordered
-        .map(
-          (download) => Chapter(
-            id: download.chapterId,
-            bookId: download.bookId,
-            title: download.chapterTitle,
-            path: Uri.file(download.filePath).toString(),
-            chapterIndex: download.chapterIndex,
-            duration: download.duration ?? 0,
-            isExtra: download.isExtra,
-          ),
-        )
-        .toList();
+    final book = item.toBook(fallbackMetadata: group.first.bookMetadata);
+    final chapters = ordered.map((download) => download.chapter).toList();
     final chapter = chapters.firstWhere(
       (chapter) => chapter.id == item.chapterId,
       orElse: () => chapters.first,
@@ -698,7 +660,7 @@ class _ActiveTaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(task.status);
+    final color = task.status.downloadColor;
     final value = task.progress.clamp(0.0, 1.0);
     final percent = (value * 100).round();
     final sizeText = task.totalBytes > 0
@@ -729,7 +691,7 @@ class _ActiveTaskRow extends StatelessWidget {
                   color: color.withValues(alpha: context.isDark ? 0.2 : 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(_statusIcon(task.status), color: color, size: 20),
+                child: Icon(task.status.downloadIcon(), color: color, size: 20),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -841,7 +803,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _statusColor(status);
+    final color = status.downloadColor;
     final text = status == DownloadStatus.downloading
         ? '$percent%'
         : _downloadStatusLabel(context, status);
@@ -1563,26 +1525,6 @@ class _DownloadSelectionBar extends StatelessWidget {
   }
 }
 
-IconData _statusIcon(DownloadStatus status) {
-  return switch (status) {
-    DownloadStatus.queued => Icons.schedule_rounded,
-    DownloadStatus.downloading => Icons.downloading_rounded,
-    DownloadStatus.paused => Icons.pause_circle_outline_rounded,
-    DownloadStatus.completed => Icons.download_done_rounded,
-    DownloadStatus.failed => Icons.error_outline_rounded,
-  };
-}
-
-Color _statusColor(DownloadStatus status) {
-  return switch (status) {
-    DownloadStatus.queued => AppColors.slate500,
-    DownloadStatus.downloading => AppColors.primary600,
-    DownloadStatus.paused => Colors.orange,
-    DownloadStatus.completed => AppColors.primary600,
-    DownloadStatus.failed => Colors.red,
-  };
-}
-
 String _downloadStatusLabel(BuildContext context, DownloadStatus status) {
   return switch (status) {
     DownloadStatus.queued => context.l10n.downloadsStatusQueued,
@@ -1610,19 +1552,4 @@ String _formatLocalTime(BuildContext context, DateTime time) {
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
   return '$year-$month-$day $hour:$minute';
-}
-
-String? _metadataString(Map<String, dynamic> metadata, String key) {
-  final value = metadata[key];
-  if (value == null) return null;
-  final text = value.toString().trim();
-  return text.isEmpty ? null : text;
-}
-
-int? _metadataInt(Map<String, dynamic> metadata, String key) {
-  final value = metadata[key];
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value.toString());
 }

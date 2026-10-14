@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/src/core/models/plugin.dart';
 import 'package:ting_reader_flutter/src/core/plugin_extensions/registry.dart';
@@ -6,6 +7,50 @@ import 'package:ting_reader_flutter/src/core/state/app_state.dart';
 import 'package:ting_reader_flutter/src/shared/plugin_extensions/plugin_extension_host.dart';
 
 void main() {
+  test(
+      'one registry load is shared and late login responses cannot replace the active snapshot',
+      () async {
+    final responses = <Completer<List<PluginCapabilityRegistration>>>[];
+    var notifications = 0;
+    final owner = ClientExtensionRegistryState(
+        load: () {
+          final response = Completer<List<PluginCapabilityRegistration>>();
+          responses.add(response);
+          return response.future;
+        },
+        onChanged: () => notifications++);
+    List<PluginCapabilityRegistration> registration(String id) => [
+          PluginCapabilityRegistration.fromJson({
+            'plugin_id': id,
+            'plugin_name': id,
+            'capability': {
+              'id': 'ui',
+              'kind': 'ui_extension',
+              'slots': ['app.sidebar_page'],
+              'contexts': ['global'],
+              'render': {'mode': 'web_container', 'entry': 'ui.html'}
+            },
+          })
+        ];
+    owner.sync('first');
+    owner.sync('first');
+    expect(responses, hasLength(1));
+    owner.sync('second');
+    responses[1].complete(registration('current'));
+    await Future<void>.delayed(Duration.zero);
+    expect(owner.snapshot.extensions.single.pluginId, 'current');
+    responses[0].complete(registration('stale'));
+    await Future<void>.delayed(Duration.zero);
+    expect(owner.snapshot.extensions.single.pluginId, 'current');
+    owner.sync(null);
+    expect(owner.snapshot.extensions, isEmpty);
+    owner.sync('third');
+    owner.dispose();
+    responses[2].complete(registration('closed'));
+    await Future<void>.delayed(Duration.zero);
+    expect(notifications, 1);
+  });
+
   test('registers sidebar pages with their declared icon and render metadata',
       () {
     const registration = PluginCapabilityRegistration(

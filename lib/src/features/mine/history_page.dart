@@ -456,8 +456,7 @@ class _HistoryBookSection extends StatelessWidget {
                               context.localeText('未知章节', 'Unknown chapter'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w700)),
+                          style: const TextStyle(fontSize: 14)),
                       const SizedBox(height: 6),
                       Row(children: [
                         Icon(Icons.access_time_rounded,

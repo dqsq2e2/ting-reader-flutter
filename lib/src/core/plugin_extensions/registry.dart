@@ -2,6 +2,45 @@ import '../models/_helpers.dart' show asMap, readInt, readStringList;
 import '../models/plugin.dart';
 import 'types.dart';
 
+/// One registry owner per authenticated application. Shell navigation and
+/// extension slots consume the same snapshot and never run their own loaders.
+class ClientExtensionRegistryState {
+  ClientExtensionRegistryState({required this.load, required this.onChanged});
+  final Future<List<PluginCapabilityRegistration>> Function() load;
+  final void Function() onChanged;
+  ClientExtensionRegistrySnapshot snapshot =
+      ClientExtensionRegistrySnapshot.empty;
+  bool loading = false;
+  String? _identity;
+  int _revision = 0;
+  bool _disposed = false;
+
+  void sync(String? identity) {
+    if (_disposed || identity == _identity) return;
+    _identity = identity;
+    final revision = ++_revision;
+    snapshot = ClientExtensionRegistrySnapshot.empty;
+    loading = identity != null;
+    if (identity == null) return;
+    load().then((registrations) {
+      if (_disposed || revision != _revision) return;
+      snapshot = buildClientExtensionRegistry(registrations);
+      loading = false;
+      onChanged();
+    }).catchError((Object _) {
+      if (_disposed || revision != _revision) return;
+      snapshot = ClientExtensionRegistrySnapshot.empty;
+      loading = false;
+      onChanged();
+    });
+  }
+
+  void dispose() {
+    _disposed = true;
+    _revision++;
+  }
+}
+
 ClientExtensionRegistrySnapshot buildClientExtensionRegistry(
   List<PluginCapabilityRegistration> registrations,
 ) {

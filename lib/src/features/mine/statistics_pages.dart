@@ -13,6 +13,8 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
   bool _loading = true;
   bool _refreshing = false;
   AdminStatistics? _stats;
+  CancelToken? _request;
+  bool _loadFailed = false;
 
   @override
   void initState() {
@@ -23,7 +25,11 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
   }
 
   Future<void> _load({bool silent = false}) async {
+    _request?.cancel('Statistics query replaced');
+    final request = CancelToken();
+    _request = request;
     setState(() {
+      _loadFailed = false;
       if (silent) {
         _refreshing = true;
       } else {
@@ -31,12 +37,19 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
       }
     });
     try {
-      final res =
-          await AppScope.appOf(context).api.get('/api/system/statistics');
-      if (!mounted) return;
+      final res = await AppScope.appOf(context)
+          .api
+          .get('/api/system/statistics', cancelToken: request);
+      if (!mounted || request.isCancelled || !identical(_request, request)) {
+        return;
+      }
       setState(() => _stats = AdminStatistics.fromJson(asMap(res.data)));
+    } catch (_) {
+      if (mounted && !request.isCancelled && identical(_request, request)) {
+        setState(() => _loadFailed = true);
+      }
     } finally {
-      if (mounted) {
+      if (mounted && identical(_request, request)) {
         setState(() {
           _loading = false;
           _refreshing = false;
@@ -46,8 +59,20 @@ class _AdminStatisticsPageState extends State<AdminStatisticsPage> {
   }
 
   @override
+  void dispose() {
+    _request?.cancel('Statistics page disposed');
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
+    if (_loadFailed) {
+      return PageListView(children: [
+        if (widget.onBack != null) AppBackButton(onPressed: widget.onBack!),
+        LoadErrorView(onRetry: _load),
+      ]);
+    }
     final stats = _stats;
     if (stats == null) {
       return PageListView(

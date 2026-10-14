@@ -56,9 +56,17 @@ jobs:
           git commit -m "Update Flutter dependency lockfile"
           git push origin HEAD:main
 
+  quality:
+    needs: dependencies
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+    with:
+      release_lockfile: true
+
   android:
     name: Android
-    needs: dependencies
+    needs: [dependencies, quality]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,14 +128,6 @@ jobs:
               > android/key.properties
           fi
       - run: flutter pub get --enforce-lockfile
-      - run: flutter analyze --no-fatal-infos
-      - name: Run tests if present
-        run: |
-          if [[ -d test ]]; then
-            flutter test
-          else
-            echo "No committed test scripts to run."
-          fi
       - run: flutter build apk --release --target-platform android-arm,android-arm64 --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: flutter build appbundle --release --build-name "$BUILD_NAME" --build-number "$BUILD_NUMBER"
       - run: |
@@ -141,7 +141,7 @@ jobs:
 
   windows:
     name: Windows
-    needs: dependencies
+    needs: [dependencies, quality]
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
@@ -180,7 +180,7 @@ jobs:
 
   linux:
     name: Linux
-    needs: dependencies
+    needs: [dependencies, quality]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -219,7 +219,7 @@ jobs:
 
   macos:
     name: macOS
-    needs: dependencies
+    needs: [dependencies, quality]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -249,7 +249,7 @@ jobs:
 
   ios:
     name: iOS self-sign IPA
-    needs: dependencies
+    needs: [dependencies, quality]
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4

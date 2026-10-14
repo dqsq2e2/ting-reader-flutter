@@ -1,4 +1,9 @@
-part of '../download_state.dart';
+import 'dart:io';
+
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import 'download_models.dart';
 
 /// Always transcode these source extensions, regardless of platform.
 const _alwaysTranscodeDownloadExtensions = {'strm', 'm3u8'};
@@ -19,7 +24,7 @@ const _androidTranscodeDownloadExtensions = {
   'dts',
 };
 
-int _statusSort(DownloadStatus status) {
+int downloadStatusOrder(DownloadStatus status) {
   return switch (status) {
     DownloadStatus.downloading => 0,
     DownloadStatus.queued => 1,
@@ -29,92 +34,14 @@ int _statusSort(DownloadStatus status) {
   };
 }
 
-int? _int(dynamic value) {
-  if (value == null) return null;
-  if (value is int) return value;
-  if (value is num) return value.toInt();
-  return int.tryParse(value.toString());
-}
-
-bool _boolLike(dynamic value) {
-  if (value == null) return false;
-  if (value is bool) return value;
-  if (value is num) return value != 0;
-  final text = value.toString().trim().toLowerCase();
-  return text == 'true' || text == '1' || text == 'yes';
-}
-
-double? _double(dynamic value) {
-  if (value == null) return null;
-  if (value is double) return value;
-  if (value is num) return value.toDouble();
-  return double.tryParse(value.toString());
-}
-
-String? _string(dynamic value) {
-  if (value == null) return null;
-  final text = value.toString().trim();
-  return text.isEmpty ? null : text;
-}
-
-String? _normalizeDirectoryPath(String? value) {
-  final text = value?.trim();
-  if (text == null || text.isEmpty) return null;
-  return Directory(text).absolute.path;
-}
-
-Map<String, dynamic> _bookMetadataFromBook(Book book) {
-  return {
-    'id': book.id,
-    'library_id': book.libraryId,
-    'title': book.title,
-    'author': book.author,
-    'narrator': book.narrator,
-    'description': book.description,
-    'cover_url': book.coverUrl,
-    'theme_color': book.themeColor,
-    'duration': book.duration,
-    'size': book.size,
-    'path': book.path,
-    'hash': book.hash,
-    'created_at': book.createdAt,
-    'updated_at': book.updatedAt,
-    'library_type': book.libraryType,
-    'skip_intro': book.skipIntro,
-    'skip_outro': book.skipOutro,
-    'tags': book.tags,
-    'genre': book.genre,
-    'year': book.year,
-    'chapter_regex': book.chapterRegex,
-  }..removeWhere((_, value) => value == null || value == '');
-}
-
-String _coverExtension({String? contentType, required String source}) {
-  final type = contentType?.toLowerCase() ?? '';
-  if (type.contains('png')) return 'png';
-  if (type.contains('webp')) return 'webp';
-  if (type.contains('gif')) return 'gif';
-  if (type.contains('jpeg') || type.contains('jpg')) return 'jpg';
-
-  final path = Uri.tryParse(source)?.path ?? source.split('?').first;
-  final dot = path.lastIndexOf('.');
-  if (dot >= 0 && dot < path.length - 1) {
-    final ext = path.substring(dot + 1).toLowerCase();
-    if (const ['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(ext)) {
-      return ext == 'jpeg' ? 'jpg' : ext;
-    }
-  }
-  return 'jpg';
-}
-
-int? _parseContentRangeTotal(String? value) {
+int? parseDownloadRangeTotal(String? value) {
   if (value == null || value.isEmpty) return null;
   final slash = value.lastIndexOf('/');
   if (slash < 0 || slash == value.length - 1) return null;
   return int.tryParse(value.substring(slash + 1));
 }
 
-String? _downloadExtensionFromHeaders(Headers headers) {
+String? downloadExtensionFromHeaders(Headers headers) {
   final explicit = headers.value('x-download-extension') ??
       headers.value('x-audio-extension') ??
       headers.value('x-content-extension');
@@ -147,7 +74,7 @@ String? _sanitizeExtension(String? value) {
   return null;
 }
 
-String _replacePathExtension(String path, String extension) {
+String replaceDownloadExtension(String path, String extension) {
   final separator = Platform.pathSeparator;
   final separatorIndex = path.lastIndexOf(separator);
   final dotIndex = path.lastIndexOf('.');
@@ -157,7 +84,7 @@ String _replacePathExtension(String path, String extension) {
   return '$path.$extension';
 }
 
-String _extensionFromPath(String path) {
+String downloadPathExtension(String path) {
   final clean = path.split('?').first;
   final dot = clean.lastIndexOf('.');
   if (dot >= 0 && dot < clean.length - 1) {
@@ -167,11 +94,14 @@ String _extensionFromPath(String path) {
   return 'mp3';
 }
 
-String _safeSegment(String input) {
-  final cleaned = input
-      .replaceAll(RegExp(r'[\\/:*?"<>|]+'), '_')
-      .replaceAll(RegExp(r'\s+'), '_')
-      .trim();
-  if (cleaned.isEmpty) return 'item';
-  return cleaned.length > 72 ? cleaned.substring(0, 72) : cleaned;
+bool shouldTranscodeDownload(DownloadTask task) {
+  final extension = downloadPathExtension(task.chapterPath);
+  return task.transcode ||
+      _alwaysTranscodeDownloadExtensions.contains(extension) ||
+      !kIsWeb &&
+          Platform.isAndroid &&
+          _androidTranscodeDownloadExtensions.contains(extension);
 }
+
+int estimatedDownloadBytes(DownloadTask task, bool transcode) =>
+    transcode ? (task.duration ?? 0) * 16000 : 0;

@@ -123,6 +123,8 @@ extension PluginLocalizationCompat on AppLocalizations {
       'playlists_write': ('修改书单', 'Modify playlists'),
       'favorites_read': ('读取收藏', 'Read favorites'),
       'favorites_write': ('修改收藏', 'Modify favorites'),
+      'bookmarks_read': ('读取当前用户书签', "Read current user's bookmarks"),
+      'bookmarks_write': ('修改当前用户书签', "Modify current user's bookmarks"),
       'user_settings_read': ('读取个人设置', 'Read preferences'),
       'user_settings_write': ('修改个人设置', 'Modify preferences'),
       'event_subscribe': ('订阅事件', 'Subscribe to events'),

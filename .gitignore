@@ -53,6 +53,9 @@ test/
 !test/
 test/*
 !test/app_state_gateway_recovery_test.dart
+!test/credential_store_test.dart
+!test/download_state_test.dart
+!test/flutter_test_config.dart
 !test/api_client_gateway_token_test.dart
 !test/book_cover_upload_test.dart
 !test/webdav_metadata_config_test.dart

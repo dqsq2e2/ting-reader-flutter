@@ -37,7 +37,8 @@ class _LibraryApi extends ApiClient {
   }
 
   @override
-  Future<Response<dynamic>> patch(String path, {Object? data}) async {
+  Future<Response<dynamic>> patch(String path,
+      {Object? data, CancelToken? cancelToken}) async {
     expect(path, '/api/libraries/dav-library');
     updates.add(Map<String, dynamic>.from(data as Map));
     library = {...library, ...updates.last};

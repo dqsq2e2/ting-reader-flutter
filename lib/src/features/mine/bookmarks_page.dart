@@ -109,22 +109,19 @@ class _BookmarksPageState extends State<BookmarksPage> {
               onExpand: () => setState(() {
                 if (!_expanded.add(id)) _expanded.remove(id);
               }),
-              child: SizedBox(
-                  height: ((readInt(item, 'chapter_count') ?? 0) * 155.0 + 24)
-                      .clamp(180, 460),
-                  child: BookBookmarkPanel(
-                    book: book,
-                    onCountChanged: (count) => setState(() {
-                      item['chapter_count'] = count;
-                      if (count == 0) {
-                        _books.remove(item);
-                        _total--;
-                        if (_books.isEmpty && _page > 1) {
-                          _load(_page - 1);
-                        }
-                      }
-                    }),
-                  )),
+              child: BookBookmarkPanel(
+                book: book,
+                onCountChanged: (count) => setState(() {
+                  item['chapter_count'] = count;
+                  if (count == 0) {
+                    _books.remove(item);
+                    _total--;
+                    if (_books.isEmpty && _page > 1) {
+                      _load(_page - 1);
+                    }
+                  }
+                }),
+              ),
             );
           }),
           const SizedBox(height: 10),
@@ -390,13 +387,111 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
   void _message(String text) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
+  Widget _expandedBookmark(BuildContext context, Map<String, dynamic> item) {
+    final note = item['note']?.toString() ?? '';
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    return Padding(
+      padding:
+          EdgeInsets.symmetric(horizontal: compact ? 16 : 20, vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: _saving ? null : () => _jump(item),
+              borderRadius: BorderRadius.circular(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    readString(item, 'chapter_title') ??
+                        context.localeText('未知章节', 'Unknown chapter'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Icon(Icons.access_time_rounded,
+                          size: 13, color: context.mutedText),
+                      const SizedBox(width: 6),
+                      Text(
+                        _bookmarkTime(readDouble(item, 'position') ?? 0),
+                        style:
+                            TextStyle(fontSize: 12, color: context.mutedText),
+                      ),
+                    ],
+                  ),
+                  if (note.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: context.isDark
+                            ? AppColors.slate900.withValues(alpha: 0.6)
+                            : Colors.white.withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Icon(Icons.chat_bubble_outline_rounded,
+                                size: 13, color: context.mutedText),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(note,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    height: 1.6,
+                                    color: context.mutedText)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  ActivityProgress(percent: _bookmarkPercent(item)),
+                ],
+              ),
+            ),
+          ),
+          SizedBox(width: compact ? 8 : 12),
+          IconButton(
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            tooltip: context.localeText('编辑备注', 'Edit note'),
+            color: context.mutedText,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            onPressed: () => _edit(item),
+          ),
+          SizedBox(width: compact ? 8 : 12),
+          IconButton(
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+            padding: EdgeInsets.zero,
+            tooltip: context.localeText('删除', 'Delete'),
+            color: context.mutedText,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () => _remove(item),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final player = widget.allowAdd ? AppScope.playerOf(context) : null;
     final canAdd = player?.currentBook?.id == widget.book.id &&
         player?.currentChapter != null;
     return Column(
-      mainAxisSize: widget.allowAdd ? MainAxisSize.min : MainAxisSize.max,
+      mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.allowAdd) ...[
           Padding(
@@ -414,8 +509,7 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
                               context.localeText('本书书签', 'Book bookmarks'),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 18, fontWeight: FontWeight.w700))),
+                              style: const TextStyle(fontSize: 18))),
                     ]),
                     const SizedBox(height: 4),
                     Text(widget.book.title,
@@ -477,7 +571,7 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
           Divider(height: 1, color: context.faintBorder),
         ],
         Flexible(
-            fit: widget.allowAdd ? FlexFit.loose : FlexFit.tight,
+            fit: FlexFit.loose,
             child: _loading
                 ? const SizedBox(
                     height: 80,
@@ -497,13 +591,20 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
                                 child: Text(context.localeText(
                                     '还没有书签', 'No bookmarks yet'))))
                         : ListView.separated(
-                            shrinkWrap: widget.allowAdd,
+                            shrinkWrap: true,
+                            primary: false,
+                            physics: widget.allowAdd
+                                ? null
+                                : const NeverScrollableScrollPhysics(),
                             padding: EdgeInsets.zero,
                             itemCount: _items.length,
                             separatorBuilder: (context, index) =>
                                 Divider(height: 1, color: context.faintBorder),
                             itemBuilder: (context, index) {
                               final item = _items[index];
+                              if (!widget.allowAdd) {
+                                return _expandedBookmark(context, item);
+                              }
                               final note = item['note']?.toString() ?? '';
                               return InkWell(
                                 onTap: _saving ? null : () => _jump(item),
@@ -531,10 +632,7 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
                                                         overflow: TextOverflow
                                                             .ellipsis,
                                                         style: const TextStyle(
-                                                            fontSize: 13,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .w500))),
+                                                            fontSize: 13))),
                                                 const SizedBox(width: 6),
                                                 Text('·',
                                                     style: TextStyle(

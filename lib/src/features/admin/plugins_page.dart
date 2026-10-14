@@ -12,10 +12,11 @@ class PluginsPage extends StatefulWidget {
 enum _PluginTab { store, installed, updates }
 
 class _PluginsPageState extends State<PluginsPage> {
-  bool _installedLoading = true;
-  bool _storeLoading = false;
-  List<PluginItem> _installed = [];
-  List<PluginItem> _store = [];
+  PluginState? _catalog;
+  bool get _installedLoading => _catalog?.installedLoading ?? true;
+  bool get _storeLoading => _catalog?.storeLoading ?? false;
+  List<PluginItem> get _installed => _catalog?.installed ?? const [];
+  List<PluginItem> get _store => _catalog?.store ?? const [];
   _PluginTab _tab = _PluginTab.installed;
   String _category = 'all';
   String _query = '';
@@ -24,61 +25,38 @@ class _PluginsPageState extends State<PluginsPage> {
   final Set<String> _expandedDescriptions = {};
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_catalog != null) return;
+    _catalog = PluginState(AppScope.appOf(context).api)
+      ..addListener(_catalogChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _loadInstalled();
     });
   }
 
-  bool get _hasPluginStoreProvider => _installed.any(
-        (item) => item.capabilities.any(
-          (capability) => capability.kind == 'plugin_store',
-        ),
-      );
+  void _catalogChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (!_hasPluginStoreProvider) _tab = _PluginTab.installed;
+    });
+  }
+
+  @override
+  void dispose() {
+    _catalog?.removeListener(_catalogChanged);
+    _catalog?.dispose();
+    super.dispose();
+  }
+
+  bool get _hasPluginStoreProvider => _catalog?.hasStore ?? false;
 
   Future<void> _loadInstalled() async {
-    setState(() => _installedLoading = true);
-    try {
-      final res = await AppScope.appOf(context).api.get('/api/v1/plugins');
-      if (!mounted) return;
-      setState(() {
-        _installed = asMapList(res.data).map(PluginItem.fromJson).toList();
-        if (!_hasPluginStoreProvider) {
-          _store = [];
-          if (_tab != _PluginTab.installed) _tab = _PluginTab.installed;
-        }
-      });
-    } finally {
-      if (mounted) setState(() => _installedLoading = false);
-    }
+    await _catalog?.loadInstalled();
   }
 
   Future<void> _loadStore({bool clearCache = false}) async {
-    if (!_hasPluginStoreProvider) {
-      if (!mounted) return;
-      setState(() {
-        _store = [];
-        if (_tab != _PluginTab.installed) _tab = _PluginTab.installed;
-      });
-      return;
-    }
-
-    setState(() => _storeLoading = true);
-    try {
-      final api = AppScope.appOf(context).api;
-      if (clearCache) await api.post('/api/v1/store/cache/clear');
-      final res = await api.get(
-        '/api/v1/store/plugins',
-        params: clearCache ? {'refresh': 'true'} : null,
-      );
-      if (!mounted) return;
-      setState(() {
-        _store = asMapList(res.data).map(PluginItem.fromJson).toList();
-      });
-    } finally {
-      if (mounted) setState(() => _storeLoading = false);
-    }
+    await _catalog?.loadStore(refresh: clearCache);
   }
 
   Future<void> _refresh() {
@@ -89,135 +67,54 @@ class _PluginsPageState extends State<PluginsPage> {
   }
 
   Future<void> _reloadPluginLists({bool refreshStore = false}) async {
-    await _loadInstalled();
-    if (_hasPluginStoreProvider) {
-      await _loadStore(clearCache: refreshStore);
-    }
+    await _catalog?.refresh(refreshStore: refreshStore);
     if (mounted) AppScope.appOf(context).notifyPluginExtensionsChanged();
   }
 
   Future<void> _reload(String id) async {
-    await AppScope.appOf(context).api.post('/api/v1/plugins/$id/reload');
-    if (!mounted) return;
-    _showSnack(context.l10n.pluginsReloaded);
-    await _loadInstalled();
-    if (mounted) AppScope.appOf(context).notifyPluginExtensionsChanged();
+    try {
+      if (await _catalog?.reload(id) != true || !mounted) return;
+      _showSnack(context.l10n.pluginsReloaded);
+      AppScope.appOf(context).notifyPluginExtensionsChanged();
+    } catch (error) {
+      if (mounted) {
+        _showSnack(context.localeText('重载失败：$error', 'Reload failed: $error'));
+      }
+    }
   }
 
   Future<void> _install(PluginItem item) async {
-    if (!await _ensureFlutterVersionSupported(item)) return;
-    if (!mounted) return;
-
-    final missingDependencies = item.dependencies
-        .where((dependencyId) => _installedVersion(dependencyId) == null)
-        .toList();
-
+    final catalog = _catalog;
+    if (catalog == null) return;
+    var attemptedInstall = false;
     try {
-      if (missingDependencies.isNotEmpty) {
-        final dependencyNames = missingDependencies
-            .map((dependencyId) =>
-                _storePlugin(dependencyId)?.name ?? dependencyId)
-            .toList();
-        final agreed = await _confirmDependencyInstall(item, dependencyNames);
-        if (agreed != true || !mounted) return;
-
-        for (final dependencyId in missingDependencies) {
-          final dependency = _storePlugin(dependencyId);
-          if (dependency != null &&
-              !await _ensureFlutterVersionSupported(dependency)) {
-            return;
-          }
-          if (!mounted) return;
-
-          setState(() => _installingId = dependencyId);
-          try {
-            final installed = await _installStorePlugin(
-              pluginId: dependencyId,
-              fallbackName: dependency?.name ?? dependencyId,
-            );
-            if (!installed || !mounted) return;
-          } catch (_) {
-            if (mounted) {
-              _showSnack(context.l10n.pluginsDependencyInstallFailed(
-                dependency?.name ?? dependencyId,
-              ));
-            }
-            return;
-          }
-        }
-
-        await _reloadPluginLists();
-        if (!mounted) return;
-      }
-
-      setState(() => _installingId = item.id);
-      final installed = await _installStorePlugin(
-        pluginId: item.id,
-        fallbackName: item.name,
+      final installed = await catalog.install(
+        item,
+        checkClientVersion: _ensureFlutterVersionSupported,
+        confirmDependencies: (dependencies) async {
+          if (!mounted) return false;
+          return await _confirmDependencyInstall(item,
+                  dependencies.map((dependency) => dependency.name).toList()) ==
+              true;
+        },
+        confirmPackage: (confirmation) async {
+          if (!mounted) return false;
+          return await _confirmUnverifiedPlugin(confirmation) == true;
+        },
+        onInstalling: (id) {
+          if (id != null) attemptedInstall = true;
+          if (mounted) setState(() => _installingId = id);
+        },
       );
-      if (!installed || !mounted) return;
+      if (!mounted || !installed) return;
       _showSnack(context.l10n.pluginsInstalled);
-      await _reloadPluginLists();
     } catch (_) {
       if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
     } finally {
-      if (mounted) setState(() => _installingId = null);
-    }
-  }
-
-  Future<bool> _installStorePlugin({
-    required String pluginId,
-    required String fallbackName,
-  }) async {
-    final api = AppScope.appOf(context).api;
-
-    Future<void> install(String? confirmedDigest) {
-      return api.post(
-        '/api/v1/store/install',
-        data: {
-          'plugin_id': pluginId,
-          if (confirmedDigest != null) 'accept_unverified': true,
-          if (confirmedDigest != null)
-            'confirmed_package_sha256': confirmedDigest,
-        },
-      );
-    }
-
-    return _installWithConfirmation(install, fallbackName);
-  }
-
-  Future<bool> _installWithConfirmation(
-    Future<void> Function(String? digest) install,
-    String fallbackName,
-  ) async {
-    String? confirmedDigest;
-    while (mounted) {
-      try {
-        await install(confirmedDigest);
-        return true;
-      } on DioException catch (error) {
-        final response = error.response;
-        final data = response?.data;
-        if (response?.statusCode != 428 ||
-            data is! Map ||
-            data['requires_confirmation'] != true) {
-          rethrow;
-        }
-
-        if (!mounted) return false;
-        final confirmation = UnverifiedPluginConfirmation.fromJson(
-          Map<String, dynamic>.from(data),
-          fallbackName: fallbackName,
-        );
-        final agreed = await _confirmUnverifiedPlugin(confirmation);
-        if (agreed != true || !mounted) return false;
-        if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(confirmation.digest)) {
-          throw StateError('Server did not provide a package digest');
-        }
-        confirmedDigest = confirmation.digest;
+      if (mounted && attemptedInstall) {
+        AppScope.appOf(context).notifyPluginExtensionsChanged();
       }
     }
-    return false;
   }
 
   Future<bool?> _confirmDependencyInstall(
@@ -254,7 +151,7 @@ class _PluginsPageState extends State<PluginsPage> {
 
     final useEnglish = context.isEnglishLocale;
     final current = (await PackageInfo.fromPlatform()).version;
-    if (_comparePluginVersions(current, required) >= 0) return true;
+    if (comparePluginVersions(current, required) >= 0) return true;
 
     if (mounted) {
       _showSnack(useEnglish
@@ -266,7 +163,6 @@ class _PluginsPageState extends State<PluginsPage> {
 
   Future<void> _uploadPlugin() async {
     if (_uploadingPlugin) return;
-    final api = AppScope.appOf(context).api;
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['tr'],
@@ -280,24 +176,18 @@ class _PluginsPageState extends State<PluginsPage> {
 
     setState(() => _uploadingPlugin = true);
 
-    Future<void> upload(String? confirmedDigest) async {
-      final uploadFile = path != null
-          ? await MultipartFile.fromFile(path, filename: file.name)
-          : MultipartFile.fromBytes(bytes!, filename: file.name);
-      final formData = FormData.fromMap({
-        'file': uploadFile,
-        if (confirmedDigest != null) 'accept_unverified': 'true',
-        if (confirmedDigest != null)
-          'confirmed_package_sha256': confirmedDigest,
-      });
-      await api.post('/api/v1/plugins/install', data: formData);
-    }
-
     try {
-      if (!await _installWithConfirmation(upload, file.name)) return;
+      final installed = await _catalog?.installPackage(
+        name: file.name,
+        path: path,
+        bytes: bytes,
+        confirm: (confirmation) async =>
+            mounted && await _confirmUnverifiedPlugin(confirmation) == true,
+      );
+      if (installed != true) return;
       if (!mounted) return;
       _showSnack(context.l10n.pluginsInstalled);
-      await _reloadPluginLists();
+      AppScope.appOf(context).notifyPluginExtensionsChanged();
     } catch (_) {
       if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
     } finally {
@@ -334,10 +224,16 @@ class _PluginsPageState extends State<PluginsPage> {
     );
     if (ok != true || !mounted) return;
 
-    await AppScope.appOf(context).api.delete('/api/v1/plugins/${item.id}');
-    if (!mounted) return;
-    _showSnack(context.l10n.pluginsUninstalled);
-    await _reloadPluginLists();
+    try {
+      if (await _catalog?.uninstall(item.id) != true || !mounted) return;
+      _showSnack(context.l10n.pluginsUninstalled);
+      AppScope.appOf(context).notifyPluginExtensionsChanged();
+    } catch (error) {
+      if (mounted) {
+        _showSnack(
+            context.localeText('卸载失败：$error', 'Uninstall failed: $error'));
+      }
+    }
   }
 
   Future<void> _configure(PluginItem item) async {
@@ -367,32 +263,8 @@ class _PluginsPageState extends State<PluginsPage> {
     });
   }
 
-  String? _installedVersion(String pluginId) {
-    final exact = _installed.where((item) => item.id == pluginId);
-    if (exact.isNotEmpty) return exact.first.version;
-    final base = _basePluginId(pluginId);
-    final baseMatch =
-        _installed.where((item) => _basePluginId(item.id) == base);
-    if (baseMatch.isNotEmpty) return baseMatch.first.version;
-    return null;
-  }
-
-  PluginItem? _storePlugin(String pluginId) {
-    for (final item in _store) {
-      if (item.id == pluginId) return item;
-    }
-    final base = _basePluginId(pluginId);
-    for (final item in _store) {
-      if (_basePluginId(item.id) == base) return item;
-    }
-    return null;
-  }
-
-  bool _hasUpdate(PluginItem item) {
-    final installed = _installedVersion(item.id);
-    if (installed == null) return false;
-    return _comparePluginVersions(item.version, installed) > 0;
-  }
+  String? _installedVersion(String id) => _catalog?.installedVersion(id);
+  bool _hasUpdate(PluginItem item) => _catalog?.hasUpdate(item) ?? false;
 
   bool _matches(PluginItem item) {
     if (_category != 'all' && item.pluginType != _category) return false;
@@ -433,6 +305,12 @@ class _PluginsPageState extends State<PluginsPage> {
     return PageListView(
       onRefresh: _refresh,
       children: [
+        if (_catalog?.error case final String error)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(error,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
         _PluginTopBar(
           tab: _tab,
           hasStoreProvider: hasStoreProvider,
@@ -1453,90 +1331,57 @@ class _PluginConfigDialog extends StatefulWidget {
 
 class _PluginConfigDialogState extends State<_PluginConfigDialog> {
   final Map<String, TextEditingController> _controllers = {};
-  Map<String, dynamic> _config = {};
-  bool _loading = true;
-  bool _saving = false;
-  String? _error;
-
-  static const _secretPlaceholder = '__TING_READER_SECRET_UNCHANGED__';
+  PluginConfigurationState? _configuration;
+  bool get _loading => _configuration?.loading ?? true;
+  bool get _saving => _configuration?.saving ?? false;
+  String? get _error => _configuration?.error;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_configuration != null) return;
+    _configuration =
+        PluginConfigurationState(AppScope.appOf(context).api, widget.plugin)
+          ..addListener(_configurationChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
+  }
+
+  void _configurationChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _configuration?.removeListener(_configurationChanged);
+    _configuration?.dispose();
     for (final controller in _controllers.values) {
       controller.dispose();
     }
     super.dispose();
   }
 
-  Map<String, Map<String, dynamic>> get _properties {
-    final schema = widget.plugin.configSchema;
-    final raw = schema == null ? null : schema['properties'];
-    if (raw is! Map) return const {};
-    return raw.map((key, value) {
-      return MapEntry(
-        key.toString(),
-        value is Map
-            ? value.map((k, v) => MapEntry(k.toString(), v))
-            : <String, dynamic>{},
-      );
-    });
-  }
+  Map<String, Map<String, dynamic>> get _properties =>
+      _configuration?.properties ?? const {};
 
   Future<void> _load() async {
-    try {
-      final res = await AppScope.appOf(context)
-          .api
-          .get('/api/v1/plugins/${widget.plugin.id}/config');
-      if (!mounted) return;
-      final config = asMap(asMap(res.data)['config']);
-      setState(() {
-        _config = Map<String, dynamic>.from(config);
-        _syncControllers();
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error.toString());
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    await _configuration?.load();
+    if (mounted) setState(_syncControllers);
   }
 
   Future<void> _save() async {
-    Map<String, dynamic> config;
+    Map<String, dynamic> values;
     try {
-      config = _readFormConfig();
+      values = _readFormConfig();
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(context.localeText(
-            '配置格式不正确: $error',
-            'Invalid config: $error',
-          )),
-        ),
-      );
+              '配置格式不正确: $error', 'Invalid config: $error'))));
       return;
     }
-
-    setState(() => _saving = true);
-    try {
-      await AppScope.appOf(context).api.put(
-        '/api/v1/plugins/${widget.plugin.id}/config',
-        data: {'config': config},
-      );
-      if (mounted) Navigator.pop(context, true);
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = error.toString());
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    final saved = await _configuration?.save(values) ?? false;
+    if (mounted && saved) Navigator.pop(context, true);
   }
 
   void _syncControllers() {
@@ -1544,7 +1389,7 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
       final prop = entry.value;
       if (_usesTextController(prop)) {
         _controllerFor(entry.key, prop).text =
-            _editorTextForValue(_valueFor(entry.key, prop), prop);
+            pluginEditorText(_valueFor(entry.key, prop), prop);
       }
     }
   }
@@ -1553,19 +1398,21 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
     return _controllers.putIfAbsent(
       key,
       () => TextEditingController(
-        text: _editorTextForValue(_valueFor(key, prop), prop),
+        text: pluginEditorText(_valueFor(key, prop), prop),
       ),
     );
   }
 
   Object? _valueFor(String key, Map<String, dynamic> prop) {
-    if (_config.containsKey(key)) return _config[key];
-    return prop['default'];
+    final configuration = _configuration;
+    return configuration == null
+        ? prop['default']
+        : configuration.valueFor(key, prop);
   }
 
   bool _usesTextController(Map<String, dynamic> prop) {
-    final type = _schemaType(prop);
-    return _isEncryptedField(prop) ||
+    final type = pluginSchemaType(prop);
+    return isEncryptedPluginField(prop) ||
         type == 'string' ||
         type == 'integer' ||
         type == 'number' ||
@@ -1573,50 +1420,23 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
         type == 'object';
   }
 
-  Map<String, dynamic> _readFormConfig() {
-    final result = Map<String, dynamic>.from(_config);
-    for (final entry in _properties.entries) {
-      final key = entry.key;
-      final prop = entry.value;
-      final type = _schemaType(prop);
-      final enumValues = _schemaEnum(prop);
+  Map<String, dynamic> _readFormConfig() =>
+      _configuration?.readForm({
+        for (final entry in _properties.entries)
+          if (_usesTextController(entry.value))
+            entry.key: _controllerFor(entry.key, entry.value).text,
+      }) ??
+      {};
 
-      if (enumValues.isNotEmpty || type == 'boolean') {
-        result[key] = _config.containsKey(key) ? _config[key] : prop['default'];
-        continue;
-      }
-
-      final controller = _controllerFor(key, prop);
-      final text = controller.text.trim();
-      if (_isEncryptedField(prop) && text.isEmpty) {
-        result[key] = _secretPlaceholder;
-      } else if (type == 'integer') {
-        result[key] = text.isEmpty ? null : int.parse(text);
-      } else if (type == 'number') {
-        result[key] = text.isEmpty ? null : num.parse(text);
-      } else if (type == 'array' || type == 'object') {
-        result[key] = text.isEmpty
-            ? (type == 'array' ? <dynamic>[] : {})
-            : jsonDecode(text);
-      } else {
-        result[key] = text;
-      }
-    }
-    return result;
-  }
-
-  void _setConfigValue(String key, Object? value) {
-    setState(() {
-      _config = {..._config, key: value};
-    });
-  }
+  void _setConfigValue(String key, Object? value) =>
+      _configuration?.setValue(key, value);
 
   Widget _field(String key, Map<String, dynamic> prop) {
     final label = _schemaLabel(context, key, prop);
     final description = _schemaDescription(context, prop);
-    final type = _schemaType(prop);
-    final enumValues = _schemaEnum(prop);
-    final encrypted = _isEncryptedField(prop);
+    final type = pluginSchemaType(prop);
+    final enumValues = pluginSchemaEnum(prop);
+    final encrypted = isEncryptedPluginField(prop);
 
     if (enumValues.isNotEmpty) {
       final current = (_valueFor(key, prop) ?? enumValues.first).toString();
@@ -1813,38 +1633,6 @@ class _PluginConfigFieldFrame extends StatelessWidget {
       ],
     );
   }
-}
-
-String _schemaType(Map<String, dynamic> prop) {
-  final type = prop['type'];
-  if (type is String && type.trim().isNotEmpty) return type.trim();
-  return 'string';
-}
-
-List<String> _schemaEnum(Map<String, dynamic> prop) {
-  final values = prop['enum'];
-  if (values is! List) return const [];
-  return values.map((value) => value.toString()).toList();
-}
-
-bool _isEncryptedField(Map<String, dynamic> prop) {
-  return prop['x-encrypted'] == true ||
-      prop['encrypted'] == true ||
-      prop['format'] == 'password' ||
-      prop['format'] == 'secret';
-}
-
-String _editorTextForValue(Object? value, Map<String, dynamic> prop) {
-  if (_isEncryptedField(prop) &&
-      value == _PluginConfigDialogState._secretPlaceholder) {
-    return '';
-  }
-  if (value == null) return '';
-  final type = _schemaType(prop);
-  if (type == 'array' || type == 'object') {
-    return _prettyLibraryJson(value);
-  }
-  return value.toString();
 }
 
 String _schemaLabel(
@@ -2059,29 +1847,6 @@ String? _localizedText(Map<String, String> values, BuildContext context) {
 String _formatPluginVersion(String? version) {
   if (version == null || version.isEmpty) return 'v?';
   return version.startsWith('v') ? version : 'v$version';
-}
-
-String _basePluginId(String id) => id.split('@').first;
-
-int _comparePluginVersions(String a, String b) {
-  final left = _versionParts(a);
-  final right = _versionParts(b);
-  final length = left.length > right.length ? left.length : right.length;
-  for (var i = 0; i < length; i++) {
-    final diff =
-        (i < left.length ? left[i] : 0) - (i < right.length ? right[i] : 0);
-    if (diff != 0) return diff;
-  }
-  return 0;
-}
-
-List<int> _versionParts(String value) {
-  return value
-      .replaceFirst(RegExp(r'^[vV]'), '')
-      .split(RegExp(r'[^0-9]+'))
-      .where((part) => part.isNotEmpty)
-      .map((part) => int.tryParse(part) ?? 0)
-      .toList();
 }
 
 class _GitHubIcon extends StatelessWidget {

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:audio_service_platform_interface/audio_service_platform_interface.dart';
@@ -12,6 +13,7 @@ import 'package:ting_reader_flutter/src/core/models/models.dart';
 import 'package:ting_reader_flutter/src/core/state/app_state.dart';
 import 'package:ting_reader_flutter/src/core/state/download_state.dart';
 import 'package:ting_reader_flutter/src/core/state/player_state.dart';
+import 'package:ting_reader_flutter/src/core/state/player/playback_sleep.dart';
 
 class _PlaybackApi extends ApiClient {
   final durationUpdates = <Object?>[];
@@ -28,7 +30,8 @@ class _PlaybackApi extends ApiClient {
   }
 
   @override
-  Future<Response<dynamic>> patch(String path, {Object? data}) async {
+  Future<Response<dynamic>> patch(String path,
+      {Object? data, CancelToken? cancelToken}) async {
     durationUpdates.add(data);
     return Response(requestOptions: RequestOptions(path: path), data: {});
   }
@@ -220,12 +223,48 @@ class _NativeAudio {
 }
 
 void main() {
+  testWidgets(
+      'minute and episode sleep share an owner that pauses and releases its timer',
+      (tester) async {
+    var playing = false;
+    var expired = 0;
+    var changes = 0;
+    final sleep = PlaybackSleep(
+      isPlaying: () => playing,
+      onChanged: () => changes++,
+      onExpire: () async {
+        expired++;
+      },
+    );
+    sleep.minutes(1);
+    await tester.pump(const Duration(seconds: 20));
+    expect(sleep.seconds, 60);
+    playing = true;
+    await tester.pump(const Duration(seconds: 5));
+    expect(sleep.seconds, 55);
+    sleep.chapterCount(2, 'one');
+    expect(sleep.seconds, isNull);
+    expect(sleep.chapterChanged('one'), isFalse);
+    expect(sleep.chapterChanged('two'), isFalse);
+    expect(sleep.chapterChanged('three'), isTrue);
+    expect(sleep.episodes, isNull);
+    sleep.minutes(1);
+    await tester.pump(const Duration(seconds: 60));
+    expect(expired, 1);
+    sleep.minutes(1);
+    sleep.dispose();
+    final changed = changes;
+    await tester.pump(const Duration(seconds: 70));
+    expect(changes, changed);
+    expect(expired, 1);
+  });
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
   const book = Book(id: 'book', libraryId: 'library', title: 'Book');
   late _NativeAudio native;
   late _PlaybackApp app;
   late _Downloads downloads;
   late PlayerState player;
+  bool playerDisposed = false;
   final notifications = _NativeNotifications(binding);
   const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
   late Directory cacheDirectory;
@@ -267,6 +306,7 @@ void main() {
   });
 
   setUp(() {
+    playerDisposed = false;
     native = _NativeAudio(binding)..install();
     app = _PlaybackApp()
       ..activeUrl = 'http://127.0.0.1:9'
@@ -714,11 +754,108 @@ void main() {
   });
 
   tearDown(() async {
-    player.dispose();
+    if (!playerDisposed) player.dispose();
     await Future<void>.delayed(Duration.zero);
     native.uninstall();
     downloads.dispose();
     app.dispose();
+  });
+
+  for (final invalidateByDisposal in [false, true]) {
+    test(
+        'late progress socket is closed after ${invalidateByDisposal ? 'player disposal' : 'credentials change'}',
+        () async {
+      final previousOverrides = HttpOverrides.current;
+      HttpOverrides.global = null;
+      addTearDown(() => HttpOverrides.global = previousOverrides);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      final received = Completer<void>();
+      final allowUpgrade = Completer<void>();
+      final closed = Completer<void>();
+      final messages = <Object?>[];
+      server.listen((request) async {
+        expect(request.uri.path, '/api/ws');
+        expect(request.uri.queryParameters['token'], 'fixture');
+        if (!received.isCompleted) received.complete();
+        await allowUpgrade.future;
+        final socket = await WebSocketTransformer.upgrade(request);
+        socket.listen(messages.add, onDone: () {
+          if (!closed.isCompleted) closed.complete();
+        });
+      });
+      addTearDown(() {
+        if (!allowUpgrade.isCompleted) allowUpgrade.complete();
+      });
+      app
+        ..offlineMode = false
+        ..activeUrl = 'http://127.0.0.1:${server.port}';
+      app.api.configure(baseUrl: app.activeUrl, token: app.token);
+      final item = chapter('/server/chapter.mp3');
+      await player.playChapter(book, [item], item);
+      await received.future.timeout(const Duration(seconds: 3));
+      final progressBefore = app.api.progressUpdates.length;
+      if (invalidateByDisposal) {
+        player.dispose();
+        playerDisposed = true;
+      } else {
+        app.api.configure(baseUrl: app.activeUrl, token: 'renewed-token');
+      }
+      allowUpgrade.complete();
+      await closed.future.timeout(const Duration(seconds: 3));
+      expect(messages, isEmpty);
+      if (invalidateByDisposal) {
+        expect(app.api.progressUpdates.length, progressBefore);
+      }
+    });
+  }
+
+  test('progress synchronization sends one consistent chapter snapshot',
+      () async {
+    final previousOverrides = HttpOverrides.current;
+    HttpOverrides.global = null;
+    addTearDown(() => HttpOverrides.global = previousOverrides);
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    final received = Completer<void>();
+    final allowUpgrade = Completer<void>();
+    final update = Completer<Map<String, dynamic>>();
+    server.listen((request) async {
+      if (!received.isCompleted) received.complete();
+      await allowUpgrade.future;
+      final socket = await WebSocketTransformer.upgrade(request);
+      socket.listen((message) {
+        final value = jsonDecode(message as String) as Map<String, dynamic>;
+        if (value['type'] == 'progress_update' && !update.isCompleted) {
+          update.complete(value);
+        }
+      });
+    });
+    addTearDown(() {
+      if (!allowUpgrade.isCompleted) allowUpgrade.complete();
+    });
+    app
+      ..offlineMode = false
+      ..activeUrl = 'http://127.0.0.1:${server.port}';
+    app.api.configure(baseUrl: app.activeUrl, token: app.token);
+    final first = chapter('/server/first.mp3', id: 'first');
+    final second = chapter('/server/second.mp3', id: 'second');
+    player
+      ..currentBook = book
+      ..currentChapter = first
+      ..currentTime = 12.5
+      ..duration = 636;
+    final pending = player.sendProgress(playbackStart: 12.5);
+    await received.future.timeout(const Duration(seconds: 3));
+    player
+      ..currentChapter = second
+      ..currentTime = 300;
+    allowUpgrade.complete();
+    final value = await update.future.timeout(const Duration(seconds: 3));
+    await pending;
+    expect(value['chapter_id'], 'first');
+    expect(value['position'], 12);
+    expect(value['playback_start'], 12);
   });
 
   Future<File> localAudioFile() async {

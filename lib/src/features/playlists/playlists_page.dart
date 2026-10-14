@@ -11,6 +11,7 @@ import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 import '../../shared/filter/display_filter_menu.dart';
 
 part 'playlist_cover_grid.dart';

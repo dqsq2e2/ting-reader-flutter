@@ -49,8 +49,7 @@ class FnConnectTwofaTrustPendingException extends FnConnectProtocolException {
 
 /// 飞牛账号已开启访问码保护，但调用方未提供访问码。
 class FnConnectAccessCodeRequiredException extends FnConnectException {
-  const FnConnectAccessCodeRequiredException()
-      : super('服务器已开启访问码，请输入访问码');
+  const FnConnectAccessCodeRequiredException() : super('服务器已开启访问码，请输入访问码');
 }
 
 /// 访问码校验失败（访问码错误）。
@@ -63,8 +62,7 @@ class FnConnectAccessCodeException extends FnConnectAuthenticationException {
 /// 仅在未提供 [FnConnectClient.login] 的 `onTwofaRequired` 回调时抛出；
 /// 提供回调后 SDK 会自动完成 `user.2fa.loginVerify` 流程。
 class FnConnectTwofaRequiredException extends FnConnectException {
-  const FnConnectTwofaRequiredException()
-      : super('飞牛账号已开启二步验证，请输入动态验证码');
+  const FnConnectTwofaRequiredException() : super('飞牛账号已开启二步验证，请输入动态验证码');
 }
 
 /// 飞牛账号被管理员强制要求二步验证，但尚未绑定 TOTP 密钥，
@@ -285,13 +283,26 @@ class FnConnectLoginResult {
 }
 
 class FnConnectClient {
-  FnConnectClient({Dio? discoveryDio}) : _discoveryDio = discoveryDio ?? Dio();
+  FnConnectClient({Dio? discoveryDio})
+      : _ownsDiscoveryDio = discoveryDio == null,
+        _discoveryDio = discoveryDio ?? Dio();
 
   static const _discoveryPath = '/api/v1/fn/con';
   static const _authxPrefix = 'NDzZTVxnRKP8Z0jXg1VAMonaG8akvh';
   static const _authxSuffix = 'zIGtkc3dqZnJpd29qZXJqa2w7c';
 
   final Dio _discoveryDio;
+  final bool _ownsDiscoveryDio;
+  final Set<Dio> _probeClients = {};
+
+  void dispose() {
+    if (_ownsDiscoveryDio) _discoveryDio.close(force: true);
+    for (final client in _probeClients) {
+      client.close(force: true);
+    }
+    _probeClients.clear();
+  }
+
   final Random _random = Random.secure();
 
   Future<FnConnectLoginResult> loginAndConnect({
@@ -494,8 +505,7 @@ class FnConnectClient {
     final accessCodeHeaders = switch (accessCodeStatus) {
       FnAccessCodeStatus.required =>
         throw const FnConnectAccessCodeRequiredException(),
-      FnAccessCodeStatus.rejected =>
-        throw const FnConnectAccessCodeException(),
+      FnAccessCodeStatus.rejected => throw const FnConnectAccessCodeException(),
       FnAccessCodeStatus.accepted => FnAccessCode.headers(trimmedAccessCode),
       _ => const <String, String>{},
     };
@@ -849,9 +859,8 @@ class FnConnectClient {
   /// 因此客户端应持久化该值并在后续登录复用（见 AppState 的安全存储）。
   String generateDeviceId() {
     String encodePart(String value, [int? maxLength]) {
-      final encoded = _base32Encode(utf8.encode(value))
-          .toLowerCase()
-          .replaceAll('=', '');
+      final encoded =
+          _base32Encode(utf8.encode(value)).toLowerCase().replaceAll('=', '');
       if (maxLength != null && encoded.length > maxLength) {
         return encoded.substring(0, maxLength);
       }
@@ -938,6 +947,7 @@ class FnConnectClient {
       ),
     );
     configureFnConnectHttpAdapter(dio, ignoreSsl: ignoreSsl);
+    _probeClients.add(dio);
     final accessCodeHeaders = FnAccessCode.headers(accessCode);
     final results = await Future.wait(
       candidates.map((candidate) async {
@@ -965,8 +975,7 @@ class FnConnectClient {
               status < 300 &&
               !invalidToken &&
               response.data is Map &&
-              const {'healthy', 'unhealthy'}
-                  .contains(response.data['status']);
+              const {'healthy', 'unhealthy'}.contains(response.data['status']);
           return FnConnectCandidateResult(
             candidate: candidate,
             reachable: reachable,
@@ -999,7 +1008,10 @@ class FnConnectClient {
           );
         }
       }),
-    );
+    ).whenComplete(() {
+      _probeClients.remove(dio);
+      dio.close(force: true);
+    });
     _throwIfCancelled(cancelToken);
     return results;
   }

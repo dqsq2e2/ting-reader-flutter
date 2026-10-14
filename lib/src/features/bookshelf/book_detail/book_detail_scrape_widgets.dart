@@ -1,10 +1,11 @@
-part of 'book_detail_page.dart';
+part of 'book_detail_scrape.dart';
 
 class _ScrapeHeader extends StatelessWidget {
   const _ScrapeHeader({
     required this.step,
     required this.selectedCount,
     required this.resultsCount,
+    required this.searching,
     required this.onStep,
     required this.onClose,
   });
@@ -12,6 +13,7 @@ class _ScrapeHeader extends StatelessWidget {
   final String step;
   final int selectedCount;
   final int resultsCount;
+  final bool searching;
   final ValueChanged<String> onStep;
   final VoidCallback? onClose;
 
@@ -62,7 +64,7 @@ class _ScrapeHeader extends StatelessWidget {
                       enabled: items[i].$1 == 'search' ||
                           step == items[i].$1 ||
                           (items[i].$1 == 'results' && resultsCount > 0) ||
-                          (items[i].$1 == 'review' && selectedCount > 0),
+                          (items[i].$1 == 'review' && !searching),
                       onTap: () => onStep(items[i].$1),
                     ),
                     if (i != items.length - 1)
@@ -220,8 +222,8 @@ class _ScrapeSearchAside extends StatelessWidget {
   });
 
   final Book book;
-  final _ScrapeSource? source;
-  final Map<String, _SelectedScrapeField> selectedFields;
+  final ScrapeSource? source;
+  final Map<String, SelectedScrapeField> selectedFields;
 
   Object? _draftField(String key) {
     final selected = selectedFields[key]?.value;
@@ -286,7 +288,7 @@ class _ScrapeSearchAside extends StatelessWidget {
                         context.localeText('当前书籍', 'Current Book')),
                     const SizedBox(height: 8),
                     Text(
-                      _formatScrapeValue(_draftField('title'), book.title),
+                      formatScrapeValue(_draftField('title'), book.title),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -353,7 +355,7 @@ class _ScrapeReturnFieldPill extends StatelessWidget {
     required this.keyName,
   });
 
-  final _ScrapeSource source;
+  final ScrapeSource source;
   final String keyName;
 
   @override
@@ -397,7 +399,7 @@ class _ScrapeSourceTile extends StatelessWidget {
     required this.onTap,
   });
 
-  final _ScrapeSource source;
+  final ScrapeSource source;
   final bool active;
   final bool enabled;
   final VoidCallback onToggle;
@@ -487,11 +489,11 @@ class _ScrapeSearchForm extends StatelessWidget {
     required this.onFieldChanged,
   });
 
-  final _ScrapeSource source;
+  final ScrapeSource source;
   final Map<String, TextEditingController> controllers;
   final bool enabled;
   final VoidCallback onToggle;
-  final void Function(_ScrapeSearchField field, String value) onFieldChanged;
+  final void Function(ScrapeSearchField field, String value) onFieldChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -655,17 +657,17 @@ class _ScrapeResultCard extends StatelessWidget {
     required this.onOpen,
   });
 
-  final _ScrapeResult result;
-  final Map<String, _SelectedScrapeField> selectedFields;
+  final ScrapeResult result;
+  final Map<String, SelectedScrapeField> selectedFields;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
     final coverShape =
         coverShapeFromAppSettings(AppScope.appOf(context).settings);
-    final cover = _scrapeItemValue(result.item, 'cover_url')?.toString() ?? '';
+    final cover = scrapeItemValue(result.item, 'cover_url')?.toString() ?? '';
     final fields = result.source.resultFields
-        .where((key) => _hasScrapeValue(_scrapeItemValue(result.item, key)))
+        .where((key) => hasScrapeValue(scrapeItemValue(result.item, key)))
         .toList();
     final selectedFromThisResult = selectedFields.values
         .where((field) =>
@@ -856,8 +858,8 @@ class _ScrapeResultFieldTile extends StatelessWidget {
   });
 
   final Book book;
-  final _ScrapeResult result;
-  final Map<String, _SelectedScrapeField> selectedFields;
+  final ScrapeResult result;
+  final Map<String, SelectedScrapeField> selectedFields;
   final String keyName;
   final bool selected;
   final bool selectedFromOther;
@@ -868,9 +870,9 @@ class _ScrapeResultFieldTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final definition = _scrapeFieldDefinitions[keyName];
-    final value = _scrapeItemValue(result.item, keyName);
-    final hasValue = _hasScrapeValue(value);
-    final currentValue = _draftScrapeFieldValue(book, selectedFields, keyName);
+    final value = scrapeItemValue(result.item, keyName);
+    final hasValue = hasScrapeValue(value);
+    final currentValue = draftScrapeFieldValue(book, selectedFields, keyName);
     final label =
         _localizedScrapeResultFieldLabel(context, result.source, keyName);
     final isCover = keyName == 'cover_url';
@@ -1024,7 +1026,7 @@ class _ScrapeResultFieldTile extends StatelessWidget {
                 ),
               ],
             ),
-          if (isDescription && _hasScrapeValue(value)) ...[
+          if (isDescription && hasScrapeValue(value)) ...[
             const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerLeft,

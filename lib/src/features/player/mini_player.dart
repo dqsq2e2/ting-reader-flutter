@@ -8,20 +8,20 @@ import '../../core/state/app_state.dart';
 import '../../core/state/download_state.dart';
 import '../../core/state/player_state.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/utils/chapter_sort.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 import '../mine/bookmarks_page.dart';
 
 part 'parts/chapter_sheet.dart';
 part 'parts/collapsed_mini_player.dart';
 part 'parts/expanded_player.dart';
 part 'parts/player_controls.dart';
-part 'parts/scrolling_title.dart';
 part 'parts/theme_utils.dart';
 
 class MiniPlayer extends StatefulWidget {
@@ -49,7 +49,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
             : 0.0;
         final duration =
             player.duration > 0 ? player.duration : chapter.duration.toDouble();
-        final themeColor = _effectivePlayerThemeColor(book.themeColor);
+        final themeColor = effectiveBookThemeColor(book.themeColor);
         final accentColor = themeColor ?? AppColors.primary600;
         final subduedAccent =
             themeColor != null && !_isPlayerThemeLight(themeColor)

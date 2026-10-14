@@ -1,18 +1,24 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/models.dart';
 import '../state/app_state.dart';
 
 final _coverRevisions = <String, int>{};
+int _nextCoverRevision = 0;
 
 void invalidateBookCover(AppState appState, String bookId) {
   final key = '${appState.activeUrl}|$bookId';
-  _coverRevisions[key] = (_coverRevisions[key] ?? 0) + 1;
+  _coverRevisions.remove(key);
+  _coverRevisions[key] = ++_nextCoverRevision;
+  if (_coverRevisions.length > 1024) {
+    _coverRevisions.remove(_coverRevisions.keys.first);
+  }
 }
 
 String coverUrl(AppState appState,
     {String? url, String? libraryId, String? bookId}) {
   if (url == null || url.isEmpty) return '';
   // Server filesystem paths need the cover API, even when the client runs on Windows.
-  if (_isLocalFilePath(url) &&
+  if (isLocalFilePath(url) &&
       (url.startsWith('file://') || libraryId == null || libraryId.isEmpty)) {
     return url;
   }
@@ -51,7 +57,7 @@ String coverUrl(AppState appState,
   return url;
 }
 
-bool _isLocalFilePath(String value) {
+bool isLocalFilePath(String value) {
   if (value.startsWith('file://')) return true;
   if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(value)) return true;
   if (value.startsWith('/data/') ||
@@ -80,4 +86,16 @@ String seriesCoverUrl(AppState appState, Series series) {
     libraryId: series.libraryId,
     bookId: firstBook?.id,
   );
+}
+
+String? localCoverFilePath(String value) {
+  if (kIsWeb || !isLocalFilePath(value)) return null;
+  if (value.startsWith('file://')) {
+    try {
+      return Uri.parse(value).toFilePath();
+    } on FormatException {
+      return null;
+    }
+  }
+  return value;
 }

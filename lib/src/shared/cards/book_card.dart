@@ -6,6 +6,7 @@ import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../app_scope.dart';
 import '../common/common_widgets.dart';
+import '../common/media_widgets.dart';
 import 'bookshelf_list_tile.dart';
 
 enum CoverShape { rect, square }

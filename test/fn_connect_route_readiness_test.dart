@@ -55,33 +55,45 @@ class _Client extends FnConnectClient {
   }) async {
     probeCount++;
     afterProbe?.call();
-    return candidates.map((candidate) => FnConnectCandidateResult(
-      candidate: candidate,
-      reachable: probeCount >= readyOnAttempt,
-      latency: Duration.zero,
-      error: probeCount >= readyOnAttempt ? null : 'HTTP 302',
-    )).toList();
+    return candidates
+        .map((candidate) => FnConnectCandidateResult(
+              candidate: candidate,
+              reachable: probeCount >= readyOnAttempt,
+              latency: Duration.zero,
+              error: probeCount >= readyOnAttempt ? null : 'HTTP 302',
+            ))
+        .toList();
   }
 }
 
 void main() {
-  test('retries readiness with the same session after an initial 302', () async {
+  test('retries readiness with the same session after an initial 302',
+      () async {
     final client = _Client();
     final result = await client.loginAndConnect(
-      fnId: 'example', username: 'user', password: 'password',
+      fnId: 'example',
+      username: 'user',
+      password: 'password',
     );
     expect(result.session.token, 'fresh');
     expect(client.loginCount, 1);
     expect(client.probeCount, 2);
-    expect(result.candidates.any((item) =>
-        item.reachable && item.candidate == result.selected), isTrue);
+    expect(
+        result.candidates
+            .any((item) => item.reachable && item.candidate == result.selected),
+        isTrue);
   });
 
-  test('never selects an unreachable fallback when every probe fails', () async {
+  test('never selects an unreachable fallback when every probe fails',
+      () async {
     final client = _Client()..readyOnAttempt = 10;
-    await expectLater(client.loginAndConnect(
-      fnId: 'example', username: 'user', password: 'password',
-    ), throwsA(isA<FnConnectProtocolException>()));
+    await expectLater(
+        client.loginAndConnect(
+          fnId: 'example',
+          username: 'user',
+          password: 'password',
+        ),
+        throwsA(isA<FnConnectProtocolException>()));
     expect(client.loginCount, 1);
     expect(client.probeCount, 3);
   });
@@ -89,10 +101,14 @@ void main() {
   test('cancellation prevents further readiness attempts', () async {
     final token = CancelToken();
     final client = _Client()..afterProbe = () => token.cancel();
-    await expectLater(client.loginAndConnect(
-      fnId: 'example', username: 'user', password: 'password',
-      cancelToken: token,
-    ), throwsA(isA<DioException>()));
+    await expectLater(
+        client.loginAndConnect(
+          fnId: 'example',
+          username: 'user',
+          password: 'password',
+          cancelToken: token,
+        ),
+        throwsA(isA<DioException>()));
     expect(client.probeCount, 1);
   });
 
@@ -108,19 +124,31 @@ void main() {
       await request.response.close();
     });
     final client = FnConnectClient();
-    final candidates = [FnConnectCandidate(
-      rootUrl: 'http://127.0.0.1:${server.port}',
-      description: 'test',
-      group: FnConnectCandidateGroup.lan,
-      isRelay: false,
-    )];
-    expect((await client.probeCandidates(
-      candidates: candidates, token: 'fresh',
-    )).single.reachable, isFalse);
+    final candidates = [
+      FnConnectCandidate(
+        rootUrl: 'http://127.0.0.1:${server.port}',
+        description: 'test',
+        group: FnConnectCandidateGroup.lan,
+        isRelay: false,
+      )
+    ];
+    expect(
+        (await client.probeCandidates(
+          candidates: candidates,
+          token: 'fresh',
+        ))
+            .single
+            .reachable,
+        isFalse);
     healthy = true;
-    expect((await client.probeCandidates(
-      candidates: candidates, token: 'fresh',
-    )).single.reachable, isTrue);
+    expect(
+        (await client.probeCandidates(
+          candidates: candidates,
+          token: 'fresh',
+        ))
+            .single
+            .reachable,
+        isTrue);
   });
 
   test('does not accept a 200 response from a different service', () async {
@@ -265,8 +293,7 @@ void main() {
       onTwofaRequired: askCode,
     );
     expect(prompts, 2);
-    expect(client.twofaAnswers.map((answer) => answer?.code),
-        ['1', '1', '2']);
+    expect(client.twofaAnswers.map((answer) => answer?.code), ['1', '1', '2']);
   });
 
   test('does not retry trust registration indefinitely', () async {

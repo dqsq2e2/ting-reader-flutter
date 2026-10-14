@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/utils/formatters.dart';
 import '../../core/utils/application_time_zone.dart';
+import '../../core/utils/formatters.dart';
 import '../../core/utils/home_layout.dart';
 import '../../core/utils/locale.dart';
 import '../../core/utils/urls.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 
 part 'home_hero.dart';
 part 'home_sections.dart';

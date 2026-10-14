@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:dio/dio.dart';
@@ -9,6 +11,10 @@ import 'package:ting_reader_flutter/src/core/models/plugin.dart';
 import 'package:ting_reader_flutter/src/core/state/app_state.dart';
 import 'package:ting_reader_flutter/src/core/state/download_state.dart';
 import 'package:ting_reader_flutter/src/core/state/player_state.dart';
+import 'package:ting_reader_flutter/src/core/state/plugin_state.dart';
+import 'package:ting_reader_flutter/src/core/state/log_state.dart';
+import 'package:ting_reader_flutter/src/core/state/notification_state.dart';
+import 'package:ting_reader_flutter/src/core/models/notification.dart';
 import 'package:ting_reader_flutter/src/features/admin/admin_pages.dart';
 import 'package:ting_reader_flutter/src/shared/app_scope.dart';
 
@@ -111,6 +117,7 @@ class _PluginPlayer extends ChangeNotifier implements PlayerState {
 }
 
 void main() {
+  adminStateTests();
   test('permissions decode their declared type and formats are deduplicated',
       () {
     final plugin = PluginItem.fromJson(_plugin);
@@ -220,4 +227,367 @@ void main() {
       });
     }
   }
+}
+
+class _ControlledAdminApi extends ApiClient {
+  final requests = <({
+    String path,
+    Map<String, dynamic>? query,
+    CancelToken? token,
+    Completer<Response<dynamic>> response
+  })>[];
+  final digests = <String?>[];
+  final mutations = <({String path, CancelToken? token, Object? data})>[];
+  Completer<Response<dynamic>>? mutationGate;
+  bool requireConfirmation = false;
+  static final digest = 'a' * 64;
+
+  @override
+  Future<Response<dynamic>> get(String path,
+      {Map<String, dynamic>? params, CancelToken? cancelToken}) {
+    final response = Completer<Response<dynamic>>();
+    requests.add(
+        (path: path, query: params, token: cancelToken, response: response));
+    return response.future;
+  }
+
+  @override
+  Future<Response<dynamic>> post(String path,
+      {Object? data,
+      Map<String, dynamic>? params,
+      CancelToken? cancelToken,
+      Duration? receiveTimeout}) async {
+    mutations.add((path: path, token: cancelToken, data: data));
+    if (!path.endsWith('/install')) {
+      return mutationGate?.future ?? _adminResponse({});
+    }
+    final digest = data is FormData
+        ? data.fields
+            .where((field) => field.key == 'confirmed_package_sha256')
+            .firstOrNull
+            ?.value
+        : (data as Map)['confirmed_package_sha256'] as String?;
+    digests.add(digest);
+    if (requireConfirmation && digest == null) {
+      final options = RequestOptions(path: path);
+      throw DioException(
+          requestOptions: options,
+          response: Response(
+            requestOptions: options,
+            statusCode: 428,
+            data: {
+              'requires_confirmation': true,
+              'package_sha256': _ControlledAdminApi.digest,
+              'name': 'Unknown developer package',
+            },
+          ));
+    }
+    return Response(requestOptions: RequestOptions(path: path), data: {});
+  }
+
+  @override
+  Future<Response<dynamic>> delete(String path,
+      {Object? data, Map<String, dynamic>? params, CancelToken? cancelToken}) {
+    mutations.add((path: path, token: cancelToken, data: data));
+    return mutationGate?.future ?? Future.value(_adminResponse({}));
+  }
+}
+
+Response<dynamic> _adminResponse(Object? data) =>
+    Response(requestOptions: RequestOptions(path: '/test'), data: data);
+
+void adminStateTests() {
+  test(
+      'plugin mutation owns refresh and cancels a late uninstall without reloading',
+      () async {
+    final api = _ControlledAdminApi();
+    final state = PluginState(api);
+    final reloaded = state.reload('plugin@2.0.5');
+    await Future<void>.delayed(Duration.zero);
+    expect(api.mutations.single.path, '/api/v1/plugins/plugin%402.0.5/reload');
+    expect(api.requests.single.path, '/api/v1/plugins');
+    api.requests.single.response.complete(_adminResponse([
+      {'id': 'current'}
+    ]));
+    expect(await reloaded, isTrue);
+    expect(state.installed.single.id, 'current');
+    api.mutationGate = Completer<Response<dynamic>>();
+    final uninstall = state.uninstall('plugin@2.0.5');
+    state.dispose();
+    expect(api.mutations.last.token!.isCancelled, isTrue);
+    api.mutationGate!.complete(_adminResponse({}));
+    expect(await uninstall, isFalse);
+    expect(api.requests, hasLength(1));
+  });
+
+  test('local plugin packages rebuild each confirmed upload and refresh once',
+      () async {
+    final api = _ControlledAdminApi()..requireConfirmation = true;
+    final state = PluginState(api);
+    addTearDown(state.dispose);
+    final installing = state.installPackage(
+      name: 'unknown.tr',
+      bytes: Uint8List.fromList([1, 2, 3]),
+      confirm: (confirmation) async {
+        expect(confirmation.digest, _ControlledAdminApi.digest);
+        return true;
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(api.digests, [null, _ControlledAdminApi.digest]);
+    final bodies =
+        api.mutations.map((request) => request.data as FormData).toList();
+    expect(identical(bodies[0], bodies[1]), isFalse);
+    expect(bodies.every((body) => body.files.single.value.length == 3), isTrue);
+    expect(api.requests, hasLength(1));
+    api.requests.single.response.complete(_adminResponse([]));
+    expect(await installing, isTrue);
+  });
+  test(
+      'notification reload ignores an old response and dispose cancels pending reads',
+      () async {
+    final api = _ControlledAdminApi();
+    final state = NotificationState(api);
+    final old = state.load();
+    final current = state.load();
+    expect(api.requests.take(2).every((request) => request.token!.isCancelled),
+        isTrue);
+    api.requests[2].response.complete(_adminResponse([
+      {'id': 'active', 'name': 'Current', 'url': 'https://example.com'}
+    ]));
+    api.requests[3].response.complete(_adminResponse([]));
+    await current;
+    expect(state.webhooks.single.id, 'active');
+    api.requests[0].response.complete(_adminResponse([
+      {'id': 'stale'}
+    ]));
+    api.requests[1].response.complete(_adminResponse([]));
+    await old;
+    expect(state.webhooks.single.id, 'active');
+    final closing = state.load();
+    state.dispose();
+    for (final request in api.requests.skip(4)) {
+      expect(request.token!.isCancelled, isTrue);
+      request.response.complete(_adminResponse([]));
+    }
+    await closing;
+  });
+
+  test('notification toggle preserves the same request template and secret',
+      () {
+    final webhook = NotificationWebhook.fromJson({
+      'id': 'hook',
+      'name': 'Webhook',
+      'url': 'https://example.com',
+      'secret': 'kept',
+      'headers': {'Authorization': 'Bearer value'},
+      'events': ['book.added']
+    });
+    final payload = webhook.toRequestJson(enabledOverride: false);
+    expect(payload['enabled'], isFalse);
+    expect(payload['secret'], 'kept');
+    expect(payload['body_template'], defaultWebhookBodyTemplate);
+    expect(payload['headers'], {'Authorization': 'Bearer value'});
+    expect(payload['events'], ['book.added']);
+  });
+  test(
+      'plugin configuration keeps secrets and coerces schema values outside the form',
+      () {
+    final state = PluginConfigurationState(
+        _ControlledAdminApi(),
+        PluginItem.fromJson({
+          'id': 'configured@2.0.5',
+          'name': 'Configured',
+          'config_schema': {
+            'properties': {
+              'secret': {'type': 'string', 'x-encrypted': true},
+              'count': {'type': 'integer', 'default': 9},
+              'enabled': {'type': 'boolean', 'default': true},
+              'choice': {
+                'type': 'integer',
+                'enum': [1, 2]
+              },
+              'list': {'type': 'array'},
+              'options': {'type': 'object'},
+            }
+          },
+        }));
+    addTearDown(state.dispose);
+    state.config = {
+      'secret': PluginConfigurationState.secretPlaceholder,
+      'choice': '2',
+      'count': null,
+      'kept': 'original'
+    };
+    expect(state.valueFor('count', state.properties['count']!), isNull);
+    final values = state.readForm({
+      'secret': '',
+      'count': '12',
+      'list': '["one"]',
+      'options': '{"key":true}'
+    });
+    expect(values, {
+      'secret': PluginConfigurationState.secretPlaceholder,
+      'count': 12,
+      'enabled': true,
+      'choice': 2,
+      'list': ['one'],
+      'options': {'key': true},
+      'kept': 'original'
+    });
+    expect(pluginEditorText(values['secret'], state.properties['secret']!), '');
+    expect(() => state.readForm({'count': 'bad'}), throwsFormatException);
+    expect(() => state.readForm({'count': '12', 'list': '{}'}),
+        throwsFormatException);
+  });
+
+  test(
+      'closing plugin configuration cancels loading and ignores a late response',
+      () async {
+    final api = _ControlledAdminApi();
+    final state = PluginConfigurationState(
+        api, PluginItem.fromJson({'id': 'config@2', 'name': 'Config'}));
+    final loading = state.load();
+    expect(api.requests.single.path, '/api/v1/plugins/config%402/config');
+    state.dispose();
+    expect(api.requests.single.token!.isCancelled, isTrue);
+    api.requests.single.response.complete(_adminResponse({
+      'config': {'late': 'value'}
+    }));
+    await loading;
+    expect(state.config, isEmpty);
+  });
+  test(
+      'plugin installation resolves shared transitive dependencies and rejects cycles',
+      () {
+    final state = PluginState(_ControlledAdminApi());
+    addTearDown(state.dispose);
+    PluginItem item(String id, List<String> dependencies) =>
+        PluginItem.fromJson({
+          'id': id,
+          'name': id,
+          'version': '1.0.0',
+          'dependencies': dependencies,
+        });
+    final shared = item('shared', []);
+    final a = item('a', ['shared']);
+    final b = item('b', ['shared']);
+    final target = item('target', ['a', 'b']);
+    state.store = [shared, a, b, target];
+    expect(state.installationPlan(target).map((item) => item.id),
+        ['shared', 'a', 'b', 'target']);
+    state.installed = [shared];
+    expect(state.installationPlan(target).map((item) => item.id),
+        ['a', 'b', 'target']);
+    state.store = [
+      item('a', ['b']),
+      item('b', ['a'])
+    ];
+    expect(() => state.installationPlan(target), throwsStateError);
+    state.store = [];
+    expect(() => state.installationPlan(target), throwsStateError);
+  });
+
+  test('plugin requests cancel replacement and ignore late catalogue responses',
+      () async {
+    final api = _ControlledAdminApi();
+    final state = PluginState(api);
+    addTearDown(state.dispose);
+    final first = state.loadInstalled();
+    final second = state.loadInstalled();
+    expect(api.requests.first.token!.isCancelled, isTrue);
+    api.requests.last.response.complete(_adminResponse([
+      {'id': 'current', 'name': 'Current'}
+    ]));
+    await second;
+    api.requests.first.response.complete(_adminResponse([
+      {'id': 'stale', 'name': 'Stale'}
+    ]));
+    await first;
+    expect(state.installed.single.id, 'current');
+  });
+
+  test(
+      'unknown plugin confirmation retries with digest and stops on page disposal',
+      () async {
+    final api = _ControlledAdminApi()..requireConfirmation = true;
+    final state = PluginState(api);
+    final result =
+        await state.installStore('unknown', 'Unknown', (confirmation) async {
+      expect(confirmation.digest, _ControlledAdminApi.digest);
+      return true;
+    });
+    expect(result, isTrue);
+    expect(api.digests, [null, _ControlledAdminApi.digest]);
+    api.digests.clear();
+    final decision = Completer<bool>();
+    final waiting =
+        state.installStore('unknown', 'Unknown', (_) => decision.future);
+    await Future<void>.delayed(Duration.zero);
+    state.dispose();
+    decision.complete(true);
+    expect(await waiting, isFalse);
+    expect(api.digests, [null]);
+  });
+
+  test(
+      'log filters cancel previous requests, keep current results and export the same query',
+      () async {
+    final api = _ControlledAdminApi();
+    final state = LogState(api, pluginId: 'plugin@2.0.5');
+    addTearDown(state.dispose);
+    state.level = 'INFO';
+    final first = state.load();
+    state.level = 'ERROR';
+    state.source = 'runtime';
+    state.page = 2;
+    final second = state.load();
+    expect(api.requests.first.token!.isCancelled, isTrue);
+    expect(api.requests.last.path, '/api/v1/plugins/plugin%402.0.5/logs');
+    expect(api.requests.last.query,
+        {'level': 'ERROR', 'source': 'runtime', 'page': 2, 'page_size': 100});
+    api.requests.last.response.complete(_adminResponse({
+      'logs': [
+        {'message': 'current'}
+      ],
+      'total': 250
+    }));
+    await second;
+    api.requests.first.response.complete(_adminResponse({
+      'logs': [
+        {'message': 'stale'}
+      ]
+    }));
+    await first;
+    expect(state.logs.single.message, 'current');
+    expect(state.pageCount, 3);
+    final exported = state.export();
+    expect(api.requests.last.query, {'level': 'ERROR', 'source': 'runtime'});
+    api.requests.last.response.complete(_adminResponse('exported'));
+    expect(await exported, 'exported');
+  });
+
+  testWidgets(
+      'log refresh skips active requests and disposal cancels timers and late updates',
+      (tester) async {
+    final api = _ControlledAdminApi();
+    final state = LogState(api);
+    var notifications = 0;
+    state.addListener(() => notifications++);
+    state.start();
+    await tester.pump(const Duration(seconds: 9));
+    expect(api.requests, hasLength(1));
+    final beforeDispose = notifications;
+    state.dispose();
+    expect(api.requests.single.token!.isCancelled, isTrue);
+    api.requests.single.response.complete(_adminResponse({
+      'logs': [
+        {'message': 'late'}
+      ]
+    }));
+    await tester.pump(const Duration(seconds: 9));
+    expect(api.requests, hasLength(1));
+    expect(state.logs, isEmpty);
+    expect(notifications, beforeDispose);
+  });
 }

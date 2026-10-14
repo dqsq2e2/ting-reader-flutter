@@ -28,7 +28,8 @@ class _ReminderApi extends ApiClient {
   }
 
   @override
-  Future<Response<dynamic>> patch(String path, {Object? data}) async {
+  Future<Response<dynamic>> patch(String path,
+      {Object? data, CancelToken? cancelToken}) async {
     accountUpdate = Map<String, dynamic>.from(data as Map);
     return Response(
       requestOptions: RequestOptions(path: path),

@@ -423,7 +423,7 @@ class _BookActionPanelState extends State<_BookActionPanel> {
   Widget build(BuildContext context) {
     final playBackground = widget.themeColor ?? AppColors.primary600;
     final playForeground =
-        widget.themeColor != null && _isThemeLight(widget.themeColor!)
+        widget.themeColor != null && isBookThemeLight(widget.themeColor!)
             ? AppColors.slate600
             : Colors.white;
     final favoriteLabel = context.localeText(
@@ -572,7 +572,11 @@ class _BookActionPanelState extends State<_BookActionPanel> {
                             ConstrainedBox(
                               constraints:
                                   BoxConstraints(maxWidth: labelMaxWidth),
-                              child: _ScrollingButtonLabel(
+                              child: ScrollingText(
+                                gap: 32,
+                                millisecondsPerPixel: 40,
+                                minimumDuration: 4200,
+                                maximumDuration: 12000,
                                 text: widget.resumeLabel,
                                 style: const TextStyle(),
                               ),
@@ -596,102 +600,6 @@ class _BookActionPanelState extends State<_BookActionPanel> {
                 ],
               ),
             ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ScrollingButtonLabel extends StatefulWidget {
-  const _ScrollingButtonLabel({
-    required this.text,
-    required this.style,
-  });
-
-  final String text;
-  final TextStyle style;
-
-  @override
-  State<_ScrollingButtonLabel> createState() => _ScrollingButtonLabelState();
-}
-
-class _ScrollingButtonLabelState extends State<_ScrollingButtonLabel>
-    with SingleTickerProviderStateMixin {
-  static const _gap = 32.0;
-
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 5000),
-  );
-  String? _lastText;
-  double? _lastWidth;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final direction = Directionality.of(context);
-    final style = DefaultTextStyle.of(context).style.merge(widget.style);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxWidth = constraints.maxWidth;
-        final painter = TextPainter(
-          text: TextSpan(text: widget.text, style: style),
-          maxLines: 1,
-          textDirection: direction,
-        )..layout();
-        final textWidth = painter.width;
-        final overflowing = textWidth > maxWidth;
-
-        if (!overflowing || maxWidth <= 0) {
-          if (_controller.isAnimating) _controller.stop();
-          _lastText = widget.text;
-          _lastWidth = maxWidth;
-          return Text(
-            widget.text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: style,
-          );
-        }
-
-        final distance = textWidth + _gap;
-        if (_lastText != widget.text || _lastWidth != maxWidth) {
-          _lastText = widget.text;
-          _lastWidth = maxWidth;
-          _controller
-            ..duration = Duration(
-              milliseconds: (distance * 40).round().clamp(4200, 12000),
-            )
-            ..reset()
-            ..repeat();
-        } else if (!_controller.isAnimating) {
-          _controller.repeat();
-        }
-
-        return ClipRect(
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Transform.translate(
-                offset: Offset(-distance * _controller.value, 0),
-                child: child,
-              );
-            },
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(widget.text, maxLines: 1, style: style),
-                const SizedBox(width: _gap),
-                Text(widget.text, maxLines: 1, style: style),
-              ],
-            ),
           ),
         );
       },

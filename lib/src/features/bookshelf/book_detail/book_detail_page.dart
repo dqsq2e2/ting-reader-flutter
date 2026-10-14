@@ -1,112 +1,26 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/models/models.dart';
 import '../../../core/plugin_extensions/registry.dart';
 import '../../../core/plugin_extensions/types.dart';
+import '../../../core/state/books_state.dart';
 import '../../../core/state/download_state.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/utils/chapter_sort.dart';
 import '../../../core/utils/formatters.dart';
-import '../../../core/utils/urls.dart';
 import '../../../core/utils/locale.dart';
-import '../../../shared/cards/book_card.dart';
+import '../../../core/utils/urls.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
+import '../../../shared/common/media_widgets.dart';
 import '../../../shared/plugin_extensions/plugin_extension_host.dart';
-import '../book_delete_dialog.dart';
+import 'book_detail_editing.dart';
+import 'book_detail_scrape.dart';
+import 'chapter_manager_dialog.dart';
 
 part 'book_detail_components.dart';
 part 'book_detail_chapter_section.dart';
-part 'book_detail_editing.dart';
-part 'book_detail_scrape.dart';
-part 'book_detail_scrape_compare.dart';
-part 'book_detail_scrape_widgets.dart';
-part 'chapter_manager/state.dart';
-part 'chapter_manager/layout.dart';
-part 'chapter_manager/list.dart';
-part 'chapter_manager/controls.dart';
-part 'chapter_manager/edit.dart';
-
-typedef _ChapterGroupOrderEntry = Map<String, String>;
-
-String? _normalizeChapterGroupOrder(dynamic value) {
-  final text = value?.toString();
-  return text == 'asc' || text == 'desc' ? text : null;
-}
-
-List<_ChapterGroupOrderEntry> _readChapterGroupOrders(
-  Map<String, dynamic> settings,
-) {
-  final raw = settings['chapter_group_orders'];
-  if (raw is Iterable) {
-    return raw.expand<_ChapterGroupOrderEntry>((entry) {
-      final item = asMap(entry);
-      final bookId = item['book_id']?.toString() ?? '';
-      final order = _normalizeChapterGroupOrder(item['order']);
-      return bookId.isNotEmpty && order != null
-          ? [
-              {'book_id': bookId, 'order': order},
-            ]
-          : const [];
-    }).toList(growable: false);
-  }
-  final rawMap = asMap(raw);
-  if (rawMap.isNotEmpty) {
-    return rawMap.entries.expand<_ChapterGroupOrderEntry>((entry) {
-      final order = _normalizeChapterGroupOrder(entry.value);
-      return order != null
-          ? [
-              {'book_id': entry.key, 'order': order},
-            ]
-          : const [];
-    }).toList(growable: false);
-  }
-  return const [];
-}
-
-String? _findChapterGroupOrder(
-  List<_ChapterGroupOrderEntry> orders,
-  String bookId,
-) {
-  for (final entry in orders) {
-    if (entry['book_id'] == bookId) return entry['order'];
-  }
-  return null;
-}
-
-List<_ChapterGroupOrderEntry> _upsertChapterGroupOrder(
-  List<_ChapterGroupOrderEntry> orders,
-  String bookId,
-  String order,
-) {
-  var found = false;
-  final next = orders.map<_ChapterGroupOrderEntry>((entry) {
-    if (entry['book_id'] != bookId) return {...entry};
-    found = true;
-    return {'book_id': bookId, 'order': order};
-  }).toList();
-  if (!found) next.add({'book_id': bookId, 'order': order});
-  return next;
-}
-
-List<Map<String, String>> _serializeChapterGroupOrders(
-  List<_ChapterGroupOrderEntry> orders,
-) {
-  return orders
-      .map((entry) => {
-            'book_id': entry['book_id'] ?? '',
-            'order': entry['order'] ?? 'asc',
-          })
-      .where((entry) => entry['book_id']!.isNotEmpty)
-      .toList(growable: false);
-}
 
 class BookDetailPage extends StatefulWidget {
   const BookDetailPage({
@@ -127,22 +41,28 @@ class BookDetailPage extends StatefulWidget {
 class _BookDetailPageState extends State<BookDetailPage> {
   static const _chaptersPerGroup = 100;
 
-  bool _loading = true;
-  bool _initialLoadStarted = false;
-  bool _chapterPageLoading = false;
-  Book? _book;
-  List<Chapter> _chapters = [];
-  List<Chapter>? _allChaptersCache;
-  ProgressItem? _bookProgress;
-  int _chapterTotal = 0;
-  int _mainChapterTotal = 0;
-  int _extraChapterTotal = 0;
-  bool _favorite = false;
-  String _activeTab = 'main';
-  int _groupIndex = 0;
-  bool _chapterAscending = true;
-  bool _chapterGroupsDescending = false;
-  List<_ChapterGroupOrderEntry> _chapterGroupOrders = const [];
+  BookDetailState? _detail;
+  bool get _loading => _detail?.loading ?? true;
+  bool get _chapterPageLoading => _detail?.pageLoading ?? false;
+  Book? get _book => _detail?.book;
+  List<Chapter> get _chapters => _detail?.chapters ?? const [];
+  ProgressItem? get _bookProgress => _detail?.progress;
+  int get _chapterTotal => _detail?.total ?? 0;
+  int get _mainChapterTotal => _detail?.mainTotal ?? 0;
+  int get _extraChapterTotal => _detail?.extraTotal ?? 0;
+  bool get _favorite => _book?.isFavorite ?? false;
+  String get _activeTab => _detail?.tab ?? 'main';
+  set _activeTab(String value) {
+    _detail?.tab = value;
+  }
+
+  int get _groupIndex => _detail?.group ?? 0;
+  bool get _chapterAscending => _detail?.ascending ?? true;
+  set _chapterAscending(bool value) {
+    _detail?.ascending = value;
+  }
+
+  bool get _chapterGroupsDescending => _detail?.groupsDescending ?? false;
   bool _tagsExpanded = false;
   CoverShapePreference _coverShape = CoverShapePreference.square;
   final _chapterSectionKey = GlobalKey();
@@ -151,209 +71,95 @@ class _BookDetailPageState extends State<BookDetailPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialLoadStarted) {
-      _initialLoadStarted = true;
-      _load();
-    }
+    if (_detail == null) _bindDetail();
+  }
+
+  void _bindDetail() {
+    _detail = BookDetailState(AppScope.appOf(context).api, widget.bookId)
+      ..addListener(_detailChanged);
+    _load();
+  }
+
+  void _detailChanged() {
+    if (!mounted) return;
+    setState(() {
+      _coverShape = _detail?.settings['bookshelf_cover_shape'] == 'rect'
+          ? CoverShapePreference.rect
+          : CoverShapePreference.square;
+      final visible = _chapters.map((chapter) => chapter.id).toSet();
+      _chapterRowKeys.removeWhere((id, _) => !visible.contains(id));
+    });
   }
 
   @override
   void didUpdateWidget(covariant BookDetailPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.bookId != widget.bookId ||
-        oldWidget.initialChapterId != widget.initialChapterId) {
+    if (oldWidget.bookId != widget.bookId) {
+      _detail?.removeListener(_detailChanged);
+      _detail?.dispose();
+      _chapterRowKeys.clear();
+      _bindDetail();
+    } else if (oldWidget.initialChapterId != widget.initialChapterId) {
       _load();
     }
   }
 
+  @override
+  void dispose() {
+    _detail?.removeListener(_detailChanged);
+    _detail?.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final appState = AppScope.appOf(context);
-    try {
-      final results = await Future.wait<dynamic>([
-        appState.api.get('/api/books/${widget.bookId}'),
-        appState.api
-            .get('/api/progress/${widget.bookId}')
-            .then<ProgressItem?>(
-                (res) => ProgressItem.fromJson(asMap(res.data)))
-            .catchError((_) => null),
-        appState.api.get('/api/settings'),
-      ]);
-      final bookResponse = results[0] as Response<dynamic>;
-      final progress = results[1] as ProgressItem?;
-      final settingsResponse = results[2] as Response<dynamic>;
-      final book = Book.fromJson(asMap(bookResponse.data));
-      final defaultGroupDescending = book.libraryType == 'rss';
-      final settings = asMap(asMap(settingsResponse.data)['settings_json']);
-      final groupOrders = _readChapterGroupOrders(settings);
-      final effectiveGroupOrder =
-          _findChapterGroupOrder(groupOrders, book.id) ??
-              (defaultGroupDescending ? 'desc' : 'asc');
-      setState(() {
-        _book = book;
-        _chapters = [];
-        _allChaptersCache = null;
-        _bookProgress = progress;
-        _chapterTotal = 0;
-        _mainChapterTotal = 0;
-        _extraChapterTotal = 0;
-        _chapterRowKeys.clear();
-        _favorite = book.isFavorite;
-        _activeTab = 'main';
-        _chapterAscending = effectiveGroupOrder == 'asc';
-        _chapterGroupsDescending = effectiveGroupOrder == 'desc';
-        _chapterGroupOrders = groupOrders;
-        _tagsExpanded = false;
-        _coverShape = settings['bookshelf_cover_shape'] == 'rect'
-            ? CoverShapePreference.rect
-            : CoverShapePreference.square;
-        _groupIndex = 0;
-      });
-      await _loadChapterPage(
-        targetChapterId: widget.initialChapterId,
-        scrollToTarget: widget.initialChapterId != null,
-        preferLastGroup:
-            effectiveGroupOrder == 'desc' && widget.initialChapterId == null,
-      );
-    } finally {
-      if (mounted) setState(() => _loading = false);
+    _tagsExpanded = false;
+    final detail = _detail;
+    await detail?.load(initialChapter: widget.initialChapterId);
+    if (mounted &&
+        identical(detail, _detail) &&
+        widget.initialChapterId != null) {
+      _ensureChapterVisible(widget.initialChapterId!);
     }
   }
 
   int get _activeTotal =>
       _activeTab == 'extra' ? _extraChapterTotal : _mainChapterTotal;
-
   int get _groupCount =>
       _activeTotal <= 0 ? 0 : ((_activeTotal - 1) ~/ _chaptersPerGroup) + 1;
 
-  int _lastGroupIndexFor(String tab) {
-    final total = tab == 'extra' ? _extraChapterTotal : _mainChapterTotal;
-    return total <= 0 ? 0 : ((total - 1) ~/ _chaptersPerGroup);
-  }
-
-  Future<ChaptersPage?> _loadChapterPage({
-    String? tab,
-    int? groupIndex,
-    String? targetChapterId,
-    bool scrollToTarget = false,
-    bool preferLastGroup = false,
-  }) async {
-    final book = _book;
-    if (book == null) return null;
-    final requestedTab = tab ?? _activeTab;
-    final requestedGroup = math.max(groupIndex ?? _groupIndex, 0);
-    if (mounted) setState(() => _chapterPageLoading = true);
-    try {
-      final params = <String, dynamic>{
-        'limit': _chaptersPerGroup,
-        'offset': requestedGroup * _chaptersPerGroup,
-        // Keep server pagination in canonical order; the UI toggles only the
-        // visible group so group boundaries never jump between 1-100, 101-200...
-        'order': 'asc',
-      };
-      if (!(targetChapterId != null && tab == null)) {
-        params['chapter_type'] = requestedTab;
-      }
-      if (targetChapterId != null) {
-        params['target_chapter_id'] = targetChapterId;
-      }
-
-      final res = await AppScope.appOf(context).api.get(
-            '/api/books/${book.id}/chapters',
-            params: params,
-          );
-      final page = ChaptersPage.fromJson(asMap(res.data));
-      final resolvedTab = page.chapterType == 'extra' ? 'extra' : 'main';
-      final resolvedGroup = page.offset ~/ _chaptersPerGroup;
-      final filteredTotal =
-          resolvedTab == 'extra' ? page.extraTotal : page.mainTotal;
-      final lastGroup =
-          filteredTotal <= 0 ? 0 : ((filteredTotal - 1) ~/ _chaptersPerGroup);
-      if (preferLastGroup &&
-          targetChapterId == null &&
-          requestedGroup != lastGroup) {
-        if (mounted) {
-          setState(() {
-            _activeTab = resolvedTab;
-            _groupIndex = lastGroup;
-            _chapterTotal = page.total;
-            _mainChapterTotal = page.mainTotal;
-            _extraChapterTotal = page.extraTotal;
-            _chapters = [];
-            _chapterRowKeys.clear();
-          });
-        }
-        return await _loadChapterPage(tab: resolvedTab, groupIndex: lastGroup);
-      }
-      final visibleIds = page.chapters.map((chapter) => chapter.id).toSet();
-      if (!mounted) return page;
-      setState(() {
-        _activeTab = resolvedTab;
-        _groupIndex = resolvedGroup;
-        _chapters = page.chapters;
-        _chapterTotal = page.total;
-        _mainChapterTotal = page.mainTotal;
-        _extraChapterTotal = page.extraTotal;
-        _chapterRowKeys.removeWhere((id, _) => !visibleIds.contains(id));
-      });
-      if (targetChapterId != null && scrollToTarget) {
-        _ensureChapterVisible(targetChapterId);
-      }
-      return page;
-    } finally {
-      if (mounted) setState(() => _chapterPageLoading = false);
+  Future<ChaptersPage?> _loadChapterPage(
+      {String? tab,
+      int? groupIndex,
+      String? targetChapterId,
+      bool scrollToTarget = false,
+      bool preferLastGroup = false}) async {
+    final detail = _detail;
+    final page = await detail?.loadPage(
+        requestedTab: tab,
+        requestedGroup: groupIndex,
+        target: targetChapterId,
+        preferLast: preferLastGroup);
+    if (mounted &&
+        identical(detail, _detail) &&
+        page != null &&
+        scrollToTarget &&
+        targetChapterId != null) {
+      _ensureChapterVisible(targetChapterId);
     }
+    return page;
   }
 
   Future<List<Chapter>> _fetchAllChapters({bool force = false}) async {
-    if (!force && _allChaptersCache != null) return _allChaptersCache!;
-    final book = _book;
-    if (book == null) return const [];
-    final res = await AppScope.appOf(context).api.get(
-          '/api/books/${book.id}/chapters',
-        );
-    final chapters = sortChaptersForPlayback(
-      asMapList(res.data).map(Chapter.fromJson),
-    );
-    _allChaptersCache = chapters;
-    return chapters;
+    final detail = _detail;
+    if (force) detail?.catalogue.invalidate();
+    final chapters = await detail?.catalogue.all();
+    return identical(detail, _detail) ? chapters ?? const [] : const [];
   }
 
-  Future<Chapter?> _resolveResumeChapter() async {
-    final current = AppScope.playerOf(context).currentChapter;
-    if (current?.bookId == _book?.id) return current;
-    final initialChapterId = widget.initialChapterId;
-    if (initialChapterId != null) {
-      final local =
-          _chapters.where((chapter) => chapter.id == initialChapterId);
-      if (local.isNotEmpty) return local.first;
-      final page = await _loadChapterPage(
-        targetChapterId: initialChapterId,
-        scrollToTarget: false,
-      );
-      if (page != null) {
-        final match =
-            page.chapters.where((chapter) => chapter.id == initialChapterId);
-        if (match.isNotEmpty) return match.first;
-      }
-    }
-    final progressChapterId = _bookProgress?.chapterId;
-    if (progressChapterId != null) {
-      final local =
-          _chapters.where((chapter) => chapter.id == progressChapterId);
-      if (local.isNotEmpty) return local.first;
-      final page = await _loadChapterPage(
-        targetChapterId: progressChapterId,
-        scrollToTarget: false,
-      );
-      if (page != null) {
-        final match =
-            page.chapters.where((chapter) => chapter.id == progressChapterId);
-        if (match.isNotEmpty) return match.first;
-      }
-    }
-    return null;
-  }
+  Future<Chapter?> _resolveResumeChapter() =>
+      _detail?.resolveResume(
+          widget.initialChapterId, AppScope.playerOf(context).currentChapter) ??
+      Future.value(null);
 
   Chapter? get _resumeChapter {
     final book = _book;
@@ -398,47 +204,45 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _toggleFavorite() async {
-    final book = _book;
-    if (book == null) return;
-    final appState = AppScope.appOf(context);
-    if (_favorite) {
-      await appState.api.delete('/api/favorites/${book.id}');
-    } else {
-      await appState.api.post('/api/favorites/${book.id}');
-    }
-    setState(() => _favorite = !_favorite);
+    await _detail?.toggleFavorite();
   }
 
   Future<void> _playResume() async {
+    final detail = _detail;
     final book = _book;
     if (book == null) return;
     final player = AppScope.playerOf(context);
     final current = player.currentChapter;
     if (current?.bookId == book.id) {
       await _locateChapter(current!, loadPage: true);
+      if (!mounted || !identical(detail, _detail)) return;
       if (!player.isPlaying) {
         await player.togglePlay();
       }
       return;
     }
     final chapter = await _resolveResumeChapter();
+    if (!mounted || !identical(detail, _detail)) return;
     if (chapter == null) {
       if (_chapters.isEmpty) {
         await _loadChapterPage(tab: 'main', groupIndex: 0);
       }
+      if (!mounted || !identical(detail, _detail)) return;
       if (_chapters.isEmpty) return;
       await _playChapter(_chapters.first);
       return;
     }
     await _locateChapter(chapter, loadPage: true);
+    if (!mounted || !identical(detail, _detail)) return;
     await _playChapter(chapter);
   }
 
   Future<void> _playChapter(Chapter chapter) async {
+    final detail = _detail;
     final book = _book;
-    if (book == null) return;
+    if (book == null || chapter.bookId != book.id) return;
     final allChapters = await _fetchAllChapters();
-    if (!mounted) return;
+    if (!mounted || !identical(detail, _detail)) return;
     await AppScope.playerOf(context).playChapter(
       book,
       allChapters,
@@ -494,36 +298,13 @@ class _BookDetailPageState extends State<BookDetailPage> {
     });
   }
 
-  Future<void> _writeMetadata() async {
-    final book = _book;
-    if (book == null) return;
-    try {
-      await AppScope.appOf(context)
-          .api
-          .post('/api/books/${book.id}/write-metadata');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.bookDetailWriteMetadataStarted)),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            context.l10n.bookDetailWriteMetadataFailed(error.toString()),
-          ),
-        ),
-      );
-    }
-  }
-
   Future<void> _showScrapeDialog() async {
     final book = _book;
     if (book == null) return;
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _ScrapeDiffDialog(bookId: book.id),
+      builder: (context) => ScrapeDiffDialog(bookId: book.id),
     );
     if (changed == true) {
       await _load();
@@ -531,20 +312,21 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _showChapterManager() async {
+    final detail = _detail;
     final book = _book;
     if (book == null) return;
     final chapters = await _fetchAllChapters();
-    if (!mounted) return;
+    if (!mounted || !identical(detail, _detail)) return;
     final changed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => _ChapterManagerDialog(
+      builder: (context) => ChapterManagerDialog(
         book: book,
         chapters: chapters,
       ),
     );
-    if (changed == true) {
-      _allChaptersCache = null;
+    if (mounted && identical(detail, _detail) && changed == true) {
+      _detail?.catalogue.invalidate();
       await _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
     }
   }
@@ -552,6 +334,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
+    if (_detail?.error != null) {
+      return PageListView(children: [
+        AppBackButton(onPressed: widget.onBack),
+        LoadErrorView(onRetry: _load),
+      ]);
+    }
     final book = _book;
     if (book == null) {
       return PageListView(
@@ -585,7 +373,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
             : resume.progressPosition != null
                 ? context.l10n.bookDetailContinuePlaying(resume.title)
                 : context.l10n.bookDetailPlayNow;
-    final themeColor = _effectiveThemeColor(book.themeColor);
+    final themeColor = effectiveBookThemeColor(book.themeColor);
 
     final page = PageListView(
       onRefresh: _load,
@@ -770,8 +558,9 @@ class _BookDetailPageState extends State<BookDetailPage> {
                     _loadChapterPage(tab: _activeTab, groupIndex: index),
                 onTabChanged: (tab) => _loadChapterPage(
                   tab: tab,
-                  groupIndex:
-                      _chapterGroupsDescending ? _lastGroupIndexFor(tab) : 0,
+                  groupIndex: _chapterGroupsDescending
+                      ? _detail?.lastGroup(tab) ?? 0
+                      : 0,
                 ),
                 onManage: _showChapterManager,
               ),
@@ -790,958 +579,18 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _showEditDialog() async {
-    final book = _book;
-    if (book == null) return;
-    final title = TextEditingController(text: book.title);
-    final author = TextEditingController(text: book.author ?? '');
-    final narrator = TextEditingController(text: book.narrator ?? '');
-    final tags = TextEditingController(text: book.tags ?? '');
-    final genre = TextEditingController(text: book.genre ?? '');
-    final year = TextEditingController(text: book.year?.toString() ?? '');
-    final cover = TextEditingController(text: book.coverUrl ?? '');
-    final skipIntro = TextEditingController(text: book.skipIntro.toString());
-    final skipOutro = TextEditingController(text: book.skipOutro.toString());
-    final chapterRegex = TextEditingController(text: book.chapterRegex ?? '');
-    final description = TextEditingController(text: book.description ?? '');
-    final genFilename = TextEditingController();
-    final genNum = TextEditingController();
-    final genTitle = TextEditingController();
-    var selectedGroupOrder = _chapterGroupsDescending ? 'desc' : 'asc';
-    var metadataLocked = book.manualCorrected;
-    var metadataLockTouched = false;
-    PlatformFile? selectedCover;
-
-    final editorRoute = DialogRoute<_EditBookDialogResult>(
-      context: context,
-      builder: (context) {
-        var saving = false;
-        var deleting = false;
-        var generating = false;
-        var showRegexGenerator = false;
-        var pickingCover = false;
-        Map<String, dynamic>? regexResult;
-        String? dialogError;
-
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            Future<void> save() async {
-              if (saving || pickingCover) return;
-              setDialogState(() {
-                saving = true;
-                dialogError = null;
-              });
-              try {
-                final appState = AppScope.appOf(dialogContext);
-                final payload = {
-                  'title': title.text.trim(),
-                  'author': author.text.trim(),
-                  'narrator': narrator.text.trim(),
-                  'tags': tags.text.trim(),
-                  'genre': genre.text.trim(),
-                  'year': int.tryParse(year.text.trim()),
-                  'cover_url': cover.text.trim(),
-                  'skip_intro': int.tryParse(skipIntro.text.trim()) ?? 0,
-                  'skip_outro': int.tryParse(skipOutro.text.trim()) ?? 0,
-                  'chapter_regex': chapterRegex.text.trim(),
-                  'description': description.text.trim(),
-                  'manual_corrected':
-                      metadataLockTouched ? metadataLocked : true,
-                };
-                final Response<dynamic> res;
-                if (selectedCover != null) {
-                  final file = selectedCover!;
-                  res = await appState.api.post(
-                    '/api/books/${book.id}/cover',
-                    data: FormData.fromMap({
-                      'file': MultipartFile.fromBytes(
-                        file.bytes!,
-                        filename: file.name,
-                      ),
-                      'metadata': jsonEncode(payload),
-                    }),
-                  );
-                  invalidateBookCover(appState, book.id);
-                } else {
-                  res = await appState.api.patch(
-                    '/api/books/${book.id}',
-                    data: payload,
-                  );
-                }
-                final shouldSaveGroupOrder =
-                    _findChapterGroupOrder(_chapterGroupOrders, book.id) !=
-                        selectedGroupOrder;
-                final groupOrderChanged = selectedGroupOrder !=
-                    (_chapterGroupsDescending ? 'desc' : 'asc');
-                if (shouldSaveGroupOrder) {
-                  final nextOrders = _upsertChapterGroupOrder(
-                    _chapterGroupOrders,
-                    book.id,
-                    selectedGroupOrder,
-                  );
-                  await appState.updateSettings({
-                    'chapter_group_orders':
-                        _serializeChapterGroupOrders(nextOrders),
-                  });
-                  if (mounted) {
-                    setState(() => _chapterGroupOrders = nextOrders);
-                  }
-                }
-                if (groupOrderChanged) {
-                  if (mounted) {
-                    final nextDescending = selectedGroupOrder == 'desc';
-                    final nextGroup =
-                        nextDescending ? _lastGroupIndexFor(_activeTab) : 0;
-                    setState(() {
-                      _chapterGroupsDescending = nextDescending;
-                      _chapterAscending = !nextDescending;
-                      _groupIndex = nextGroup;
-                    });
-                  }
-                }
-                if (dialogContext.mounted) {
-                  Navigator.pop(
-                    dialogContext,
-                    _EditBookDialogResult.saved(
-                      Book.fromJson(asMap(res.data)),
-                      reloadGroup: groupOrderChanged,
-                    ),
-                  );
-                }
-              } catch (error) {
-                setDialogState(() => dialogError =
-                    context.l10n.bookDetailSaveFailed(error.toString()));
-              } finally {
-                if (dialogContext.mounted) {
-                  setDialogState(() => saving = false);
-                }
-              }
-            }
-
-            Future<void> pickCover() async {
-              if (pickingCover || saving) return;
-              setDialogState(() => pickingCover = true);
-              try {
-                final picked = await FilePicker.platform.pickFiles(
-                  type: FileType.custom,
-                  allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
-                  withData: kIsWeb,
-                );
-                if (!dialogContext.mounted || picked == null) return;
-                final file = picked.files.single;
-                if (file.size > 10 * 1024 * 1024) {
-                  setDialogState(() => dialogError = context.localeText(
-                        '请选择不超过 10 MB 的 JPG、PNG 或 WebP 图片',
-                        'Choose a JPG, PNG or WebP image up to 10 MB',
-                      ));
-                  return;
-                }
-                final bytes = file.bytes ??
-                    (file.path == null
-                        ? null
-                        : await File(file.path!).readAsBytes());
-                if (!dialogContext.mounted) return;
-                if (bytes == null ||
-                    bytes.isEmpty ||
-                    bytes.length > 10 * 1024 * 1024) {
-                  setDialogState(() => dialogError = context.localeText(
-                        '无法读取封面图片，或图片超过 10 MB',
-                        'The cover could not be read or exceeds 10 MB',
-                      ));
-                  return;
-                }
-                setDialogState(() {
-                  selectedCover = PlatformFile(
-                      name: file.name, size: bytes.length, bytes: bytes);
-                  dialogError = null;
-                });
-              } catch (error) {
-                if (dialogContext.mounted) {
-                  setDialogState(() => dialogError = context.localeText(
-                        '无法选择封面：$error',
-                        'Could not select a cover: $error',
-                      ));
-                }
-              } finally {
-                if (dialogContext.mounted) {
-                  setDialogState(() => pickingCover = false);
-                }
-              }
-            }
-
-            Future<void> deleteBook() async {
-              final api = AppScope.appOf(dialogContext).api;
-              final confirmation = await showDeleteBookConfirmationDialog(
-                dialogContext,
-                books: [book],
-              );
-              if (!dialogContext.mounted || confirmation == null || deleting) {
-                return;
-              }
-              setDialogState(() {
-                deleting = true;
-                dialogError = null;
-              });
-              try {
-                await api.delete(
-                  '/api/books/${book.id}',
-                  params: {'delete_files': confirmation.deleteSourceFiles},
-                );
-                if (dialogContext.mounted) {
-                  Navigator.pop(
-                    dialogContext,
-                    const _EditBookDialogResult.deleted(),
-                  );
-                }
-              } catch (error) {
-                setDialogState(() => dialogError =
-                    context.l10n.bookDetailDeleteFailed(error.toString()));
-              } finally {
-                if (dialogContext.mounted) {
-                  setDialogState(() => deleting = false);
-                }
-              }
-            }
-
-            Future<void> generateRegex() async {
-              if (genFilename.text.trim().isEmpty ||
-                  genNum.text.trim().isEmpty ||
-                  genTitle.text.trim().isEmpty ||
-                  generating) {
-                return;
-              }
-              setDialogState(() {
-                generating = true;
-                dialogError = null;
-              });
-              try {
-                final res = await AppScope.appOf(dialogContext).api.post(
-                  '/api/tools/regex/generate',
-                  data: {
-                    'filename': genFilename.text.trim(),
-                    'chapter_number': genNum.text.trim(),
-                    'chapter_title': genTitle.text.trim(),
-                  },
-                );
-                setDialogState(() => regexResult = asMap(res.data));
-              } catch (error) {
-                setDialogState(() => dialogError = context.localeText(
-                    '生成失败：$error', 'Generation failed: $error'));
-              } finally {
-                if (dialogContext.mounted) {
-                  setDialogState(() => generating = false);
-                }
-              }
-            }
-
-            final compact = MediaQuery.sizeOf(dialogContext).width < 700;
-            final disabled = saving || deleting || pickingCover;
-
-            Widget dialogBody() {
-              if (showRegexGenerator) {
-                final capturedIndex =
-                    regexResult?['captured_index']?.toString();
-                final capturedTitle =
-                    regexResult?['captured_title']?.toString();
-                final generatedRegex = regexResult?['regex']?.toString();
-                return Padding(
-                  padding: EdgeInsets.all(compact ? 20 : 30),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.auto_fix_high_rounded,
-                              color: AppColors.primary600),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              context.l10n.bookDetailRegexGeneratorTitle,
-                              style: const TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => setDialogState(() {
-                              showRegexGenerator = false;
-                              regexResult = null;
-                            }),
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      _EditMetadataField(
-                        controller: genFilename,
-                        label: context.l10n.bookDetailSampleFilenameLabel,
-                        hint: context.l10n.bookDetailSampleFilenameHint,
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _EditMetadataField(
-                              controller: genNum,
-                              label:
-                                  context.l10n.bookDetailExtractChapterNumber,
-                              hint: context
-                                  .l10n.bookDetailExtractChapterNumberHint,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _EditMetadataField(
-                              controller: genTitle,
-                              label: context.l10n.bookDetailExtractChapterTitle,
-                              hint: context
-                                  .l10n.bookDetailExtractChapterTitleHint,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-                      ElevatedButton(
-                        onPressed: generating ? null : generateRegex,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary600,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(
-                          generating
-                              ? context.l10n.bookDetailGenerating
-                              : context.l10n.bookDetailGenerateRule,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      if (generatedRegex != null) ...[
-                        const SizedBox(height: 18),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: dialogContext.isDark
-                                ? AppColors.slate800.withValues(alpha: 0.5)
-                                : AppColors.slate50,
-                            borderRadius: BorderRadius.circular(14),
-                            border:
-                                Border.all(color: dialogContext.faintBorder),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              _EditFieldLabel(
-                                  context.l10n.bookDetailGeneratedRegex),
-                              const SizedBox(height: 7),
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: dialogContext.cardColor,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color: dialogContext.faintBorder),
-                                ),
-                                child: Text(
-                                  generatedRegex,
-                                  style: const TextStyle(
-                                    color: AppColors.primary600,
-                                    fontFamily: 'monospace',
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _RegexMatchPreview(
-                                      label:
-                                          context.l10n.bookDetailExtractIndex,
-                                      value: capturedIndex ??
-                                          context.l10n.bookDetailNoMatch,
-                                      matched: capturedIndex == genNum.text,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _RegexMatchPreview(
-                                      label:
-                                          context.l10n.bookDetailExtractTitle,
-                                      value: capturedTitle ??
-                                          context.l10n.bookDetailNoMatch,
-                                      matched: capturedTitle == genTitle.text,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              OutlinedButton(
-                                onPressed: () {
-                                  chapterRegex.text = generatedRegex;
-                                  setDialogState(() {
-                                    showRegexGenerator = false;
-                                    regexResult = null;
-                                  });
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary600,
-                                  side: const BorderSide(
-                                      color: AppColors.primary600, width: 2),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  textStyle: const TextStyle(
-                                      fontWeight: FontWeight.w700),
-                                ),
-                                child: Text(context.l10n.bookDetailUseThisRule),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }
-
-              return Padding(
-                padding: EdgeInsets.all(compact ? 20 : 30),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final twoColumns = constraints.maxWidth >= 620;
-                    final leftColumn = Column(
-                      children: [
-                        _EditMetadataField(
-                            controller: title,
-                            label: context.l10n.bookDetailTitleField),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                            controller: author,
-                            label: context.l10n.bookDetailAuthorField),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                            controller: narrator,
-                            label: context.l10n.bookDetailNarratorField),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                            controller: tags,
-                            label: context.l10n.bookDetailTagsField),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                            controller: genre,
-                            label: context.l10n.bookDetailGenreField),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                          controller: year,
-                          label: context.l10n.bookDetailYearField,
-                          hint: context.l10n.bookDetailYearHint,
-                          number: true,
-                        ),
-                        const SizedBox(height: 14),
-                        _EditMetadataField(
-                          controller: chapterRegex,
-                          label: context.l10n.bookDetailChapterRegexRule,
-                          mono: true,
-                          hint: r'^...(\d+)...(.+)$',
-                          helper: context.l10n.bookDetailChapterRegexHelp,
-                          trailing: TextButton.icon(
-                            onPressed: disabled
-                                ? null
-                                : () => setDialogState(
-                                      () => showRegexGenerator = true,
-                                    ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.primary600,
-                              padding: EdgeInsets.zero,
-                              minimumSize: const Size(0, 24),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            icon: const Icon(Icons.auto_fix_high_rounded,
-                                size: 14),
-                            label: Text(
-                              context.l10n.bookDetailAutoGenerate,
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                    final rightColumn = Column(
-                      children: [
-                        _EditMetadataField(
-                          controller: cover,
-                          label: context.l10n.bookDetailCoverUrlField,
-                          enabled: !saving,
-                          onChanged: (_) {
-                            if (selectedCover != null) {
-                              setDialogState(() => selectedCover = null);
-                            }
-                          },
-                          trailing: TextButton.icon(
-                            onPressed:
-                                disabled || pickingCover ? null : pickCover,
-                            style: TextButton.styleFrom(
-                              foregroundColor: AppColors.primary600,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              minimumSize: const Size(0, 24),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            icon: const Icon(Icons.upload_rounded, size: 16),
-                            label: Text(
-                              context.localeText('上传', 'Upload'),
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ),
-                        if (selectedCover != null) ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: dialogContext.isDark
-                                  ? AppColors.slate800
-                                  : AppColors.slate50,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              children: [
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.memory(
-                                    selectedCover!.bytes!,
-                                    width: 64,
-                                    height: 64,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: 192,
-                                    errorBuilder: (_, __, ___) =>
-                                        const SizedBox(
-                                      width: 64,
-                                      height: 64,
-                                      child: Icon(Icons.broken_image_outlined),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(selectedCover!.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600)),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                          context.localeText('保存后应用新封面',
-                                              'The new cover is applied when saved'),
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: dialogContext.mutedText)),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  tooltip: context.localeText(
-                                      '取消所选封面', 'Remove selected cover'),
-                                  onPressed: saving
-                                      ? null
-                                      : () => setDialogState(
-                                          () => selectedCover = null),
-                                  icon:
-                                      const Icon(Icons.close_rounded, size: 18),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 14),
-                        _ReadOnlyMetadataField(
-                          label: context.localeText('书籍位置', 'Book Location'),
-                          value: book.path ?? '',
-                          mono: true,
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _EditMetadataField(
-                                controller: skipIntro,
-                                label: context.l10n.bookDetailSkipIntroField,
-                                number: true,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _EditMetadataField(
-                                controller: skipOutro,
-                                label: context.l10n.bookDetailSkipOutroField,
-                                number: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        _ChapterGroupOrderSelector(
-                          value: selectedGroupOrder,
-                          onChanged: disabled
-                              ? null
-                              : (value) => setDialogState(
-                                    () => selectedGroupOrder = value,
-                                  ),
-                        ),
-                      ],
-                    );
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          context.l10n.bookDetailEditMetadataTitle,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _MetadataLockControl(
-                          value: metadataLocked,
-                          onChanged: disabled
-                              ? null
-                              : (value) => setDialogState(() {
-                                    metadataLocked = value;
-                                    metadataLockTouched = true;
-                                  }),
-                        ),
-                        const SizedBox(height: 22),
-                        if (twoColumns)
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(child: leftColumn),
-                              const SizedBox(width: 18),
-                              Expanded(child: rightColumn),
-                            ],
-                          )
-                        else ...[
-                          leftColumn,
-                          const SizedBox(height: 14),
-                          rightColumn,
-                        ],
-                        const SizedBox(height: 18),
-                        _EditMetadataField(
-                          controller: description,
-                          label: context.l10n.bookDetailDescriptionField,
-                          minLines: 4,
-                          maxLines: 6,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              );
-            }
-
-            Widget footer() {
-              final textStyle = TextStyle(
-                fontSize: compact ? 13 : 14,
-                fontWeight: FontWeight.w700,
-              );
-              final deleteButton = TextButton.icon(
-                onPressed: disabled ? null : deleteBook,
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xffef4444),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 10 : 14,
-                    vertical: compact ? 9 : 12,
-                  ),
-                ),
-                icon: deleting
-                    ? const SizedBox(
-                        width: 17,
-                        height: 17,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Icon(Icons.delete_outline_rounded,
-                        size: compact ? 17 : 19),
-                label: Text(context.l10n.commonDelete, style: textStyle),
-              );
-              final writeButton = TextButton.icon(
-                onPressed: disabled ? null : _writeMetadata,
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.primary600,
-                  backgroundColor: AppColors.primary50,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 11 : 18,
-                    vertical: compact ? 9 : 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                ),
-                icon: Icon(Icons.edit_document, size: compact ? 17 : 19),
-                label: Text(context.l10n.bookDetailWriteFile, style: textStyle),
-              );
-              final cancelButton = TextButton(
-                onPressed: disabled ? null : () => Navigator.pop(dialogContext),
-                style: TextButton.styleFrom(
-                  foregroundColor: dialogContext.mutedText,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 11 : 18,
-                    vertical: compact ? 9 : 13,
-                  ),
-                ),
-                child: Text(context.l10n.commonCancel, style: textStyle),
-              );
-              final saveButton = ElevatedButton.icon(
-                onPressed: disabled ? null : save,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary600,
-                  foregroundColor: Colors.white,
-                  elevation: 10,
-                  shadowColor: AppColors.primary500.withValues(alpha: 0.28),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 14 : 22,
-                    vertical: compact ? 10 : 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                ),
-                icon: saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Icon(Icons.save_outlined, size: compact ? 17 : 19),
-                label: Text(
-                  saving
-                      ? context.l10n.commonSaving
-                      : (compact
-                          ? context.l10n.commonSave
-                          : context.l10n.bookDetailSaveChanges),
-                  style: textStyle,
-                ),
-              );
-              final actions = Wrap(
-                spacing: compact ? 8 : 10,
-                runSpacing: 8,
-                alignment: WrapAlignment.end,
-                children: compact
-                    ? [
-                        deleteButton,
-                        if (book.libraryType == 'local' ||
-                            book.canWriteMetadataFiles)
-                          writeButton,
-                        cancelButton,
-                        saveButton,
-                      ]
-                    : [
-                        if (book.libraryType == 'local' ||
-                            book.canWriteMetadataFiles)
-                          writeButton,
-                        cancelButton,
-                        saveButton,
-                      ],
-              );
-              if (compact) {
-                return Align(alignment: Alignment.centerRight, child: actions);
-              }
-              return Row(
-                children: [
-                  deleteButton,
-                  const Spacer(),
-                  actions,
-                ],
-              );
-            }
-
-            return PopScope(
-              canPop: !disabled,
-              child: Dialog(
-                insetPadding: EdgeInsets.all(compact ? 8 : 22),
-                backgroundColor: Colors.transparent,
-                elevation: 0,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: 900,
-                    maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.9,
-                  ),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: dialogContext.cardColor,
-                      borderRadius: BorderRadius.circular(26),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(
-                              alpha: dialogContext.isDark ? 0.5 : 0.2),
-                          blurRadius: 34,
-                          offset: const Offset(0, 20),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: SingleChildScrollView(child: dialogBody()),
-                        ),
-                        if (dialogError != null)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
-                            child: Text(
-                              dialogError!,
-                              style: const TextStyle(
-                                color: Color(0xffef4444),
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        Container(
-                          padding: EdgeInsets.fromLTRB(
-                            compact ? 18 : 30,
-                            14,
-                            compact ? 18 : 30,
-                            compact ? 18 : 24,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              top: BorderSide(color: dialogContext.faintBorder),
-                            ),
-                          ),
-                          child: footer(),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    final result = await Navigator.of(context).push(editorRoute);
-    // The pop result arrives before the closing animation removes the fields.
-    await editorRoute.completed;
-    for (final controller in [
-      title,
-      author,
-      narrator,
-      tags,
-      genre,
-      year,
-      cover,
-      skipIntro,
-      skipOutro,
-      chapterRegex,
-      description,
-      genFilename,
-      genNum,
-      genTitle,
-    ]) {
-      controller.dispose();
-    }
-
-    if (!mounted) return;
+    final detail = _detail;
+    if (detail == null) return;
+    final result = await showBookEditorDialog(context, detail);
+    if (!mounted || !identical(detail, _detail)) return;
     if (result?.deleted == true) {
       widget.onBack();
       return;
     }
-
     final saved = result?.book;
     if (saved != null) {
-      setState(() {
-        _book = _book!.copyWith(
-          title: saved.title,
-          author: saved.author,
-          narrator: saved.narrator,
-          description: saved.description,
-          coverUrl: saved.coverUrl,
-          themeColor: saved.themeColor,
-          manualCorrected: saved.manualCorrected,
-          tags: saved.tags,
-          genre: saved.genre,
-          year: saved.year,
-          skipIntro: saved.skipIntro,
-          skipOutro: saved.skipOutro,
-          chapterRegex: saved.chapterRegex,
-        );
-      });
-      if (mounted) {
-        AppScope.playerOf(context).updateBookMetadata(_book!);
-      }
-      if (result?.reloadGroup == true) {
-        await _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
-      }
+      AppScope.playerOf(context).updateBookMetadata(saved);
+      await _loadChapterPage(tab: _activeTab, groupIndex: _groupIndex);
     }
   }
 }
-
-Color? _effectiveThemeColor(String? raw) {
-  final color = _parseThemeColor(raw);
-  if (color == null) return null;
-  return _themeLuminance(color) > 0.9 ? null : color;
-}
-
-Color? _parseThemeColor(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return null;
-  final value = raw.trim();
-  if (value.startsWith('#')) {
-    var hex = value.substring(1);
-    if (hex.length == 3) {
-      hex = hex.split('').map((char) => '$char$char').join();
-    }
-    if (hex.length == 6) {
-      final rgb = int.tryParse(hex, radix: 16);
-      if (rgb != null) return Color(0xff000000 | rgb);
-    }
-  }
-  final match = RegExp(r'rgba?\(([^)]+)\)').firstMatch(value);
-  if (match != null) {
-    final parts = match
-        .group(1)!
-        .split(',')
-        .map((part) => part.trim())
-        .toList(growable: false);
-    if (parts.length >= 3) {
-      int? channel(String text) {
-        final parsed = double.tryParse(text);
-        if (parsed == null) return null;
-        return parsed.round().clamp(0, 255);
-      }
-
-      final r = channel(parts[0]);
-      final g = channel(parts[1]);
-      final b = channel(parts[2]);
-      if (r != null && g != null && b != null) {
-        return Color.fromARGB(255, r, g, b);
-      }
-    }
-  }
-  return null;
-}
-
-double _themeLuminance(Color color) {
-  return 0.299 * color.r + 0.587 * color.g + 0.114 * color.b;
-}
-
-bool _isThemeLight(Color color) => _themeLuminance(color) > 0.65;

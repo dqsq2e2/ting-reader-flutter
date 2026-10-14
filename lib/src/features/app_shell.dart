@@ -20,7 +20,7 @@ import 'mine/bookmarks_page.dart';
 import 'mine/personalization/personalization_page.dart';
 import 'playlists/playlists_page.dart';
 import '../core/models/models.dart';
-import '../core/plugin_extensions/registry.dart';
+import '../core/state/navigation_state.dart';
 import '../core/plugin_extensions/types.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/locale.dart';
@@ -29,67 +29,9 @@ import '../shared/common/common_widgets.dart';
 import '../shared/plugin_extensions/plugin_extension_host.dart';
 import 'player/mini_player.dart';
 
-enum AppDestination {
-  home,
-  bookshelf,
-  search,
-  favorites,
-  mine,
-  history,
-  bookmarks,
-  playlists,
-  personalization,
-  fnConnect,
-  notifications,
-  statistics,
-  downloads,
-  about,
-  libraries,
-  plugins,
-  logs,
-  users,
-  pluginLogs,
-  pluginPage,
-}
-
 const _expandedSidebarWidth = 288.0;
 const _collapsedSidebarWidth = 80.0;
 const _desktopSidebarContentGap = 20.0;
-
-bool _isMineDestination(AppDestination destination) {
-  return switch (destination) {
-    AppDestination.mine ||
-    AppDestination.history ||
-    AppDestination.bookmarks ||
-    AppDestination.favorites ||
-    AppDestination.personalization ||
-    AppDestination.fnConnect ||
-    AppDestination.notifications ||
-    AppDestination.statistics ||
-    AppDestination.downloads ||
-    AppDestination.about =>
-      true,
-    _ => false,
-  };
-}
-
-bool _hidesMiniPlayer(AppDestination destination) {
-  return switch (destination) {
-    AppDestination.personalization ||
-    AppDestination.fnConnect ||
-    AppDestination.notifications ||
-    AppDestination.statistics ||
-    AppDestination.about ||
-    AppDestination.libraries ||
-    AppDestination.plugins ||
-    AppDestination.logs ||
-    AppDestination.users ||
-    AppDestination.pluginLogs ||
-    AppDestination.pluginPage =>
-      true,
-    _ => false,
-  };
-}
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -99,37 +41,26 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  AppDestination _destination = AppDestination.home;
-  String? _bookId;
-  String? _bookInitialChapterId;
-  String? _seriesId;
-  String? _playlistId;
-  AppDestination _searchOrigin = AppDestination.bookshelf;
+  late final ShellNavigation _navigation;
+  AppDestination get _destination => _navigation.destination;
+  AppDestination get _searchOrigin => _navigation.searchOrigin;
+  String? get _bookId => _navigation.bookId;
+  String? get _bookInitialChapterId => _navigation.chapterId;
+  String? get _seriesId => _navigation.seriesId;
+  String? get _playlistId => _navigation.playlistId;
+  String? get _aboutBackendVersion => _navigation.aboutBackendVersion;
+  ClientExtensionDescriptor? get _activePluginPage =>
+      _navigation.activePluginPage;
+  PluginItem? get _activePluginLogs => _navigation.activePluginLogs;
   bool _mobileAdminDrawerOpen = false;
-  String? _aboutBackendVersion;
-  ClientExtensionRegistrySnapshot _pluginRegistry =
-      ClientExtensionRegistrySnapshot.empty;
-  ClientExtensionDescriptor? _activePluginPage;
-  PluginItem? _activePluginLogs;
-  String? _loadedPluginToken;
-  int? _loadedPluginRevision;
-  bool _loadingPluginExtensions = false;
-  bool _reloadPluginExtensions = false;
-  String? _initialPluginId;
-  String? _initialPluginCapabilityId;
+  ClientExtensionRegistrySnapshot get _pluginRegistry =>
+      AppScope.appOf(context).clientExtensions.snapshot;
   String? _defaultCredentialsReminderIdentity;
 
   @override
   void initState() {
     super.initState();
-    final params = Uri.base.queryParameters;
-    _destination = _destinationFromQuery(params['page']);
-    _bookId = params['book'];
-    _bookInitialChapterId = params['chapter'];
-    _seriesId = params['series'];
-    _playlistId = params['playlist'];
-    _initialPluginId = params['plugin'];
-    _initialPluginCapabilityId = params['capability'];
+    _navigation = ShellNavigation.fromQuery(Uri.base.queryParameters);
   }
 
   @override
@@ -137,71 +68,18 @@ class _AppShellState extends State<AppShell> {
     super.didChangeDependencies();
     final appState = AppScope.appOf(context);
     _remindDefaultAdminCredentials();
-    final revision = appState.pluginExtensionRevision;
-    final cached = appState.pluginCapabilities.cachedClientExtensions;
-    if (cached != null) {
-      _pluginRegistry = buildClientExtensionRegistry(cached);
-      _restoreInitialPluginPage();
-    }
+    appState.ensureClientExtensions();
     if (appState.offlineMode || appState.token == null) {
-      _loadedPluginToken = null;
-      _loadedPluginRevision = null;
-      _pluginRegistry = ClientExtensionRegistrySnapshot.empty;
-      _activePluginPage = null;
-      _activePluginLogs = null;
+      _navigation.activePluginPage = null;
+      _navigation.activePluginLogs = null;
       return;
     }
-    if (_loadedPluginToken == appState.token &&
-        _loadedPluginRevision == revision) {
-      return;
+    final active = _activePluginPage;
+    if (active != null && !appState.clientExtensions.loading) {
+      _navigation.activePluginPage =
+          _sidebarPluginPages.where((item) => item.id == active.id).firstOrNull;
     }
-    _loadedPluginToken = appState.token;
-    _loadedPluginRevision = revision;
-    _loadPluginExtensions();
-  }
-
-  AppDestination _destinationFromQuery(String? page) {
-    switch (page) {
-      case 'bookshelf':
-        return AppDestination.bookshelf;
-      case 'search':
-        return AppDestination.search;
-      case 'favorites':
-        return AppDestination.favorites;
-      case 'mine':
-        return AppDestination.mine;
-      case 'history':
-        return AppDestination.history;
-      case 'bookmarks':
-        return AppDestination.bookmarks;
-      case 'playlists':
-        return AppDestination.playlists;
-      case 'personalization':
-      case 'settings':
-        return AppDestination.personalization;
-      case 'fn-connect':
-        return AppDestination.fnConnect;
-      case 'notifications':
-        return AppDestination.notifications;
-      case 'statistics':
-        return AppDestination.statistics;
-      case 'downloads':
-        return AppDestination.downloads;
-      case 'about':
-        return AppDestination.about;
-      case 'libraries':
-        return AppDestination.libraries;
-      case 'plugins':
-        return AppDestination.plugins;
-      case 'logs':
-        return AppDestination.logs;
-      case 'users':
-        return AppDestination.users;
-      case 'plugin-page':
-        return AppDestination.pluginPage;
-      default:
-        return AppDestination.home;
-    }
+    _restoreInitialPluginPage();
   }
 
   void _remindDefaultAdminCredentials() {
@@ -265,114 +143,36 @@ class _AppShellState extends State<AppShell> {
         _activePluginPage != null) {
       return;
     }
-    final pluginId = _initialPluginId;
-    final capabilityId = _initialPluginCapabilityId;
+    final pluginId = _navigation.initialPluginId;
+    final capabilityId = _navigation.initialCapabilityId;
     if (pluginId == null || capabilityId == null) return;
     for (final extension in _sidebarPluginPages) {
       if (extension.pluginId == pluginId &&
           extension.capability.id == capabilityId) {
-        _activePluginPage = extension;
+        _navigation.activePluginPage = extension;
         return;
       }
     }
   }
 
-  Future<void> _loadPluginExtensions() async {
-    if (_loadingPluginExtensions) {
-      _reloadPluginExtensions = true;
-      return;
-    }
-    _loadingPluginExtensions = true;
-    try {
-      final registrations = await AppScope.appOf(context)
-          .pluginCapabilities
-          .listClientExtensions();
-      if (!mounted) return;
-      final registry = buildClientExtensionRegistry(registrations);
-      final activeId = _activePluginPage?.id;
-      setState(() {
-        _pluginRegistry = registry;
-        if (activeId != null) {
-          _activePluginPage = _sidebarPluginPages
-              .where((extension) => extension.id == activeId)
-              .firstOrNull;
-        }
-        _restoreInitialPluginPage();
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _pluginRegistry = ClientExtensionRegistrySnapshot.empty;
-        _activePluginPage = null;
-      });
-    } finally {
-      _loadingPluginExtensions = false;
-      if (_reloadPluginExtensions && mounted) {
-        _reloadPluginExtensions = false;
-        _loadPluginExtensions();
-      }
-    }
-  }
-
-  void _go(AppDestination destination) {
-    if (_hidesMiniPlayer(destination)) {
+  void _navigate(VoidCallback change) {
+    setState(() {
+      _mobileAdminDrawerOpen = false;
+      change();
+    });
+    if (hidesMiniPlayer(_navigation.navDestination)) {
       AppScope.playerOf(context).setExpanded(false);
     }
-    setState(() {
-      _mobileAdminDrawerOpen = false;
-      _destination = destination;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-      _aboutBackendVersion = null;
-      _activePluginPage = null;
-      _activePluginLogs = null;
-    });
   }
 
-  void _openPluginLogs(PluginItem plugin) {
-    AppScope.playerOf(context).setExpanded(false);
-    setState(() {
-      _mobileAdminDrawerOpen = false;
-      _destination = AppDestination.pluginLogs;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-      _aboutBackendVersion = null;
-      _activePluginPage = null;
-      _activePluginLogs = plugin;
-    });
-  }
-
-  void _openPluginPage(ClientExtensionDescriptor extension) {
-    AppScope.playerOf(context).setExpanded(false);
-    setState(() {
-      _mobileAdminDrawerOpen = false;
-      _destination = AppDestination.pluginPage;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-      _aboutBackendVersion = null;
-      _activePluginPage = extension;
-      _activePluginLogs = null;
-    });
-  }
-
-  void _openAbout(String? backendVersion) {
-    setState(() {
-      _mobileAdminDrawerOpen = false;
-      _destination = AppDestination.about;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-      _aboutBackendVersion = backendVersion;
-      _activePluginPage = null;
-    });
-  }
+  void _go(AppDestination destination) =>
+      _navigate(() => _navigation.go(destination));
+  void _openPluginLogs(PluginItem plugin) =>
+      _navigate(() => _navigation.openPluginLogs(plugin));
+  void _openPluginPage(ClientExtensionDescriptor extension) =>
+      _navigate(() => _navigation.openPluginPage(extension));
+  void _openAbout(String? version) =>
+      _navigate(() => _navigation.openAbout(version));
 
   void _openMobileAdminDrawer() {
     setState(() => _mobileAdminDrawerOpen = true);
@@ -384,59 +184,16 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
-  void _openBook(String id) {
-    setState(() {
-      _bookId = id;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-      _activePluginPage = null;
-    });
-  }
-
-  void _openBookAtChapter(String id, String? chapterId) {
-    setState(() {
-      _bookId = id;
-      _bookInitialChapterId = chapterId;
-      _seriesId = null;
-      _playlistId = null;
-      _activePluginPage = null;
-    });
-  }
-
-  void _openSeries(String id) {
-    setState(() {
-      _seriesId = id;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _playlistId = null;
-      _activePluginPage = null;
-    });
-  }
-
-  void _openPlaylist(String id) {
-    setState(() {
-      _playlistId = id;
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _activePluginPage = null;
-    });
-  }
-
-  void _openSearch(AppDestination origin) {
-    _searchOrigin = origin;
-    _go(AppDestination.search);
-  }
-
-  void _backFromDetail() {
-    setState(() {
-      _bookId = null;
-      _bookInitialChapterId = null;
-      _seriesId = null;
-      _playlistId = null;
-    });
-  }
+  void _openBook(String id) => _openBookAtChapter(id, null);
+  void _openBookAtChapter(String id, String? chapterId) => _navigate(() =>
+      _navigation.openDetail(DetailDestination.book, id, chapter: chapterId));
+  void _openSeries(String id) =>
+      _navigate(() => _navigation.openDetail(DetailDestination.series, id));
+  void _openPlaylist(String id) =>
+      _navigate(() => _navigation.openDetail(DetailDestination.playlist, id));
+  void _openSearch(AppDestination origin) =>
+      _navigate(() => _navigation.openSearch(origin));
+  void _backFromDetail() => setState(_navigation.closeDetail);
 
   bool _handleSystemBack() {
     final player = AppScope.playerOf(context);
@@ -448,43 +205,16 @@ class _AppShellState extends State<AppShell> {
       _closeMobileAdminDrawer();
       return true;
     }
-    if (_bookId != null || _seriesId != null || _playlistId != null) {
+    if (_navigation.hasDetail) {
       _backFromDetail();
       return true;
     }
-    final destination = _backDestinationFor(_destination);
+    final destination = _navigation.backDestination;
     if (destination != null) {
       _go(destination);
       return true;
     }
     return false;
-  }
-
-  AppDestination? _backDestinationFor(AppDestination destination) {
-    return switch (destination) {
-      AppDestination.home => null,
-      AppDestination.bookshelf ||
-      AppDestination.playlists ||
-      AppDestination.mine ||
-      AppDestination.libraries ||
-      AppDestination.plugins ||
-      AppDestination.logs ||
-      AppDestination.users =>
-        AppDestination.home,
-      AppDestination.pluginLogs => AppDestination.plugins,
-      AppDestination.pluginPage => AppDestination.home,
-      AppDestination.downloads => AppDestination.mine,
-      AppDestination.search => _searchOrigin,
-      AppDestination.favorites ||
-      AppDestination.history ||
-      AppDestination.bookmarks ||
-      AppDestination.personalization ||
-      AppDestination.fnConnect ||
-      AppDestination.notifications ||
-      AppDestination.statistics ||
-      AppDestination.about =>
-        AppDestination.mine,
-    };
   }
 
   @override
@@ -513,13 +243,7 @@ class _AppShellState extends State<AppShell> {
             builder: (context, constraints) {
               final desktop = constraints.maxWidth >= 1280;
               final sidebarCollapsed = appState.sidebarCollapsed;
-              final navDestination = _bookId != null || _seriesId != null
-                  ? AppDestination.bookshelf
-                  : _playlistId != null
-                      ? AppDestination.playlists
-                      : _destination == AppDestination.pluginLogs
-                          ? AppDestination.plugins
-                          : _destination;
+              final navDestination = _navigation.navDestination;
               return AnimatedBuilder(
                 animation: AppScope.playerOf(context),
                 builder: (context, _) {
@@ -528,7 +252,7 @@ class _AppShellState extends State<AppShell> {
                   final collapsedMini = player.isMiniCollapsed;
                   final showMiniPlayer = player.hasChapter &&
                       !player.isExpanded &&
-                      !_hidesMiniPlayer(navDestination);
+                      !hidesMiniPlayer(navDestination);
                   final pluginExtensionBottom = showMiniPlayer
                       ? (desktop ? 128.0 : 150.0 + bottomInset)
                       : (desktop ? 24.0 : 84.0 + bottomInset);
@@ -861,7 +585,7 @@ class _DesktopSidebar extends StatelessWidget {
                           _NavTile(
                             icon: Icons.person_rounded,
                             label: l10n.navMine,
-                            selected: _isMineDestination(current),
+                            selected: isMineDestination(current),
                             collapsed: collapsed,
                             onTap: () => go(AppDestination.mine),
                           ),
@@ -1758,7 +1482,7 @@ class _BottomNav extends StatelessWidget {
               _BottomItem(
                 icon: Icons.person_rounded,
                 label: l10n.navMine,
-                selected: _isMineDestination(current),
+                selected: isMineDestination(current),
                 onTap: () => go(AppDestination.mine),
               ),
           ],

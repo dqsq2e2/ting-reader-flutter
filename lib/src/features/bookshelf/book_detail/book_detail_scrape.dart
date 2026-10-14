@@ -1,203 +1,17 @@
-part of 'book_detail_page.dart';
+import 'package:flutter/material.dart';
 
-class _ScrapeSource {
-  const _ScrapeSource({
-    required this.id,
-    required this.name,
-    required this.enabled,
-    required this.autoScrape,
-    required this.searchFields,
-    required this.resultFields,
-    required this.resultFieldLabels,
-  });
+import '../../../core/models/models.dart';
+import '../../../core/state/scrape_state.dart';
+import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/locale.dart';
+import '../../../core/utils/urls.dart';
+import '../../../shared/app_scope.dart';
+import '../../../shared/cards/book_card.dart';
+import '../../../shared/common/common_widgets.dart';
+import '../../../shared/common/media_widgets.dart';
 
-  final String id;
-  final String name;
-  final bool enabled;
-  final bool autoScrape;
-  final List<_ScrapeSearchField> searchFields;
-  final List<String> resultFields;
-  final Map<String, _LocalizedPluginText> resultFieldLabels;
-
-  factory _ScrapeSource.fromJson(Map<String, dynamic> json) {
-    final fields = asMapList(json['search_fields'])
-        .map(_ScrapeSearchField.fromJson)
-        .toList();
-    final rawResultFields = json['result_fields'];
-    final resultFields = _scrapeStringList(rawResultFields)
-        .map(_normalizeScrapeFieldKey)
-        .where(_scrapeFieldDefinitions.containsKey)
-        .toSet()
-        .toList();
-    return _ScrapeSource(
-      id: json['id']?.toString() ?? '',
-      name: json['name']?.toString() ?? 'Plugin',
-      enabled: json['enabled'] == true,
-      autoScrape: json['auto_scrape'] == true,
-      searchFields: fields.isEmpty ? _defaultScrapeSearchFields : fields,
-      resultFields: resultFields.isEmpty ? _scrapeFieldOrder : resultFields,
-      resultFieldLabels: _localizedPluginTextMap(json['result_field_labels']),
-    );
-  }
-}
-
-class _LocalizedPluginText {
-  const _LocalizedPluginText({this.zh, this.en});
-
-  final String? zh;
-  final String? en;
-
-  factory _LocalizedPluginText.fromJson(Map<String, dynamic> json) {
-    return _LocalizedPluginText(
-      zh: _firstLocalizedString(
-        json,
-        const ['zh', 'zhCN', 'zh-CN', 'zhHans', 'zh-Hans'],
-      ),
-      en: _firstLocalizedString(
-        json,
-        const ['en', 'enUS', 'en-US'],
-      ),
-    );
-  }
-
-  static _LocalizedPluginText? fromAny(Object? value) {
-    if (value is Map) {
-      final map = value.map((key, value) => MapEntry(key.toString(), value));
-      final text = _LocalizedPluginText.fromJson(map);
-      if ((text.zh ?? '').trim().isNotEmpty ||
-          (text.en ?? '').trim().isNotEmpty) {
-        return text;
-      }
-    }
-    return null;
-  }
-
-  String resolve(BuildContext context) {
-    final preferred = context.isEnglishLocale ? en : zh;
-    final fallback = context.isEnglishLocale ? zh : en;
-    return (preferred?.trim().isNotEmpty == true
-            ? preferred
-            : fallback?.trim().isNotEmpty == true
-                ? fallback
-                : null) ??
-        '';
-  }
-
-  String get fallback {
-    if (zh?.trim().isNotEmpty == true) return zh!.trim();
-    if (en?.trim().isNotEmpty == true) return en!.trim();
-    return '';
-  }
-}
-
-class _ScrapeSearchField {
-  const _ScrapeSearchField({
-    required this.key,
-    required this.label,
-    required this.required,
-    required this.defaultFrom,
-    this.labelI18n,
-    this.placeholder,
-    this.placeholderI18n,
-  });
-
-  final String key;
-  final String label;
-  final bool required;
-  final String defaultFrom;
-  final _LocalizedPluginText? labelI18n;
-  final String? placeholder;
-  final _LocalizedPluginText? placeholderI18n;
-
-  factory _ScrapeSearchField.fromJson(Map<String, dynamic> json) {
-    final rawLabel = json['label'];
-    final labelI18n = _LocalizedPluginText.fromAny(
-      json['label_i18n'] ?? (rawLabel is Map ? rawLabel : null),
-    );
-    final rawPlaceholder = json['placeholder'];
-    return _ScrapeSearchField(
-      key: json['key']?.toString() ?? 'title',
-      label: rawLabel is String
-          ? rawLabel
-          : labelI18n?.fallback ?? _scrapeFieldLabel(json['key']),
-      labelI18n: labelI18n,
-      required: json['required'] == true,
-      defaultFrom: (json['default_from'] ?? json['key'] ?? '').toString(),
-      placeholder: rawPlaceholder is String ? rawPlaceholder : null,
-      placeholderI18n: _LocalizedPluginText.fromAny(
-        json['placeholder_i18n'] ??
-            (rawPlaceholder is Map ? rawPlaceholder : null),
-      ),
-    );
-  }
-}
-
-class _ScrapeResult {
-  const _ScrapeResult({
-    required this.item,
-    required this.source,
-    required this.index,
-  });
-
-  final Map<String, dynamic> item;
-  final _ScrapeSource source;
-  final int index;
-
-  String get key => '${source.id}:${item['id'] ?? 'result'}:$index';
-  String get externalId => item['id']?.toString() ?? 'result-${index + 1}';
-  String get title => _formatScrapeValue(_scrapeItemValue(item, 'title'));
-  String get subtitle {
-    final author = _formatScrapeValue(_scrapeItemValue(item, 'author'), '');
-    final narrator = _formatScrapeValue(_scrapeItemValue(item, 'narrator'), '');
-    return [author, narrator].where((value) => value.isNotEmpty).join(' / ');
-  }
-}
-
-class _SelectedScrapeField {
-  _SelectedScrapeField({
-    required this.key,
-    required this.label,
-    required this.value,
-    required this.sourceId,
-    required this.sourceName,
-    required this.resultId,
-    required this.resultKey,
-    required this.resultTitle,
-  });
-
-  final String key;
-  final String label;
-  Object value;
-  final String sourceId;
-  final String sourceName;
-  final String resultId;
-  final String resultKey;
-  final String resultTitle;
-}
-
-const _defaultScrapeSearchFields = [
-  _ScrapeSearchField(
-    key: 'title',
-    label: 'Title',
-    labelI18n: _LocalizedPluginText(zh: '书名', en: 'Title'),
-    required: true,
-    defaultFrom: 'book.title',
-  ),
-  _ScrapeSearchField(
-    key: 'author',
-    label: 'Author',
-    labelI18n: _LocalizedPluginText(zh: '作者', en: 'Author'),
-    required: false,
-    defaultFrom: 'book.author',
-  ),
-  _ScrapeSearchField(
-    key: 'narrator',
-    label: 'Narrator',
-    labelI18n: _LocalizedPluginText(zh: '演播', en: 'Narrator'),
-    required: false,
-    defaultFrom: 'book.narrator',
-  ),
-];
+part 'book_detail_scrape_compare.dart';
+part 'book_detail_scrape_widgets.dart';
 
 const _scrapeFieldDefinitions = <String, ({String label, IconData icon})>{
   'title': (label: 'Title', icon: Icons.menu_book_rounded),
@@ -208,39 +22,10 @@ const _scrapeFieldDefinitions = <String, ({String label, IconData icon})>{
   'tags': (label: 'Tags', icon: Icons.local_offer_rounded),
   'genre': (label: 'Genre', icon: Icons.category_rounded),
   'year': (label: 'Year', icon: Icons.calendar_month_rounded),
-  'subtitle': (label: 'Subtitle', icon: Icons.subtitles_rounded),
-  'published_date': (label: 'Published', icon: Icons.event_rounded),
-  'publisher': (label: 'Publisher', icon: Icons.apartment_rounded),
-  'isbn': (label: 'ISBN', icon: Icons.tag_rounded),
-  'asin': (label: 'ASIN', icon: Icons.tag_rounded),
-  'language': (label: 'Language', icon: Icons.language_rounded),
-  'explicit': (label: 'Explicit', icon: Icons.verified_rounded),
-  'abridged': (label: 'Abridged', icon: Icons.verified_rounded),
-  'duration': (label: 'Duration', icon: Icons.timer_rounded),
 };
 
-const _scrapeFieldOrder = [
-  'title',
-  'author',
-  'narrator',
-  'cover_url',
-  'description',
-  'tags',
-  'genre',
-  'year',
-  'subtitle',
-  'published_date',
-  'publisher',
-  'isbn',
-  'asin',
-  'language',
-  'explicit',
-  'abridged',
-  'duration',
-];
-
 int _scrapeFieldSortIndex(String key) {
-  final index = _scrapeFieldOrder.indexOf(key);
+  final index = scrapeFieldOrder.indexOf(key);
   return index < 0 ? 999 : index;
 }
 
@@ -248,23 +33,8 @@ bool _scrapeFieldIsWide(String key) {
   return key == 'cover_url' || key == 'description' || key == 'tags';
 }
 
-String _normalizeScrapeFieldKey(String key) {
-  final normalized = key
-      .replaceAllMapped(
-          RegExp('[A-Z]'), (match) => '_${match.group(0)!.toLowerCase()}')
-      .toLowerCase();
-  if (normalized == 'intro') return 'description';
-  if (normalized == 'published_year') return 'year';
-  return normalized;
-}
-
-String _scrapeFieldLabel(Object? key) {
-  final normalized = _normalizeScrapeFieldKey(key?.toString() ?? '');
-  return _scrapeFieldDefinitions[normalized]?.label ?? (key?.toString() ?? '');
-}
-
 String _localizedScrapeFieldLabel(BuildContext context, String key) {
-  switch (_normalizeScrapeFieldKey(key)) {
+  switch (normalizeScrapeFieldKey(key)) {
     case 'title':
       return context.localeText('书名', 'Title');
     case 'author':
@@ -306,12 +76,14 @@ String _localizedScrapeFieldLabel(BuildContext context, String key) {
 
 String _localizedScrapeResultFieldLabel(
   BuildContext context,
-  _ScrapeSource source,
+  ScrapeSource source,
   String key,
 ) {
-  final normalized = _normalizeScrapeFieldKey(key);
-  final declared = source.resultFieldLabels[key]?.resolve(context) ??
-      source.resultFieldLabels[normalized]?.resolve(context);
+  final normalized = normalizeScrapeFieldKey(key);
+  final declared = source.resultFieldLabels[key]
+          ?.resolve(english: context.isEnglishLocale) ??
+      source.resultFieldLabels[normalized]
+          ?.resolve(english: context.isEnglishLocale);
   if (declared != null && declared.trim().isNotEmpty) {
     return declared.trim();
   }
@@ -320,13 +92,13 @@ String _localizedScrapeResultFieldLabel(
 
 String _localizedScrapeSearchFieldLabel(
   BuildContext context,
-  _ScrapeSearchField field,
+  ScrapeSearchField field,
 ) {
-  final declared = field.labelI18n?.resolve(context);
+  final declared = field.labelI18n?.resolve(english: context.isEnglishLocale);
   if (declared != null && declared.trim().isNotEmpty) {
     return declared.trim();
   }
-  final normalized = _normalizeScrapeFieldKey(field.key);
+  final normalized = normalizeScrapeFieldKey(field.key);
   if (_scrapeFieldDefinitions.containsKey(normalized)) {
     return _localizedScrapeFieldLabel(context, normalized);
   }
@@ -339,7 +111,7 @@ String _formatScrapeValueForLocale(
   String? emptyZh,
   String? emptyEn,
 ]) {
-  if (!_hasScrapeValue(value)) {
+  if (!hasScrapeValue(value)) {
     return context.localeText(emptyZh ?? '未返回', emptyEn ?? 'Not returned');
   }
   if (value is Iterable) {
@@ -351,26 +123,26 @@ String _formatScrapeValueForLocale(
   return value.toString();
 }
 
-String _scrapeResultTitleForLocale(BuildContext context, _ScrapeResult result) {
+String _scrapeResultTitleForLocale(BuildContext context, ScrapeResult result) {
   return _formatScrapeValueForLocale(
     context,
-    _scrapeItemValue(result.item, 'title'),
+    scrapeItemValue(result.item, 'title'),
   );
 }
 
 String _scrapeResultSubtitleForLocale(
   BuildContext context,
-  _ScrapeResult result,
+  ScrapeResult result,
 ) {
   final author = _formatScrapeValueForLocale(
     context,
-    _scrapeItemValue(result.item, 'author'),
+    scrapeItemValue(result.item, 'author'),
     '',
     '',
   );
   final narrator = _formatScrapeValueForLocale(
     context,
-    _scrapeItemValue(result.item, 'narrator'),
+    scrapeItemValue(result.item, 'narrator'),
     '',
     '',
   );
@@ -403,312 +175,54 @@ String _scrapeSummaryText(
   return '$pluginCount $plugins · $resultCount $results · $selectedCount $fields selected';
 }
 
-List<String> _scrapeStringList(Object? value) {
-  if (value is Iterable) return value.map((item) => item.toString()).toList();
-  if (value is String && value.trim().isNotEmpty) return [value.trim()];
-  return const [];
-}
-
-String? _firstLocalizedString(Map<String, dynamic> json, List<String> keys) {
-  for (final key in keys) {
-    final value = json[key];
-    if (value is String && value.trim().isNotEmpty) {
-      return value.trim();
-    }
-  }
-  return null;
-}
-
-Map<String, _LocalizedPluginText> _localizedPluginTextMap(Object? value) {
-  if (value is! Map) return const {};
-  final labels = <String, _LocalizedPluginText>{};
-  for (final entry in value.entries) {
-    final key = entry.key.toString().trim();
-    final label = _LocalizedPluginText.fromAny(entry.value);
-    if (key.isEmpty || label == null) continue;
-    labels[key] = label;
-    labels.putIfAbsent(_normalizeScrapeFieldKey(key), () => label);
-  }
-  return labels;
-}
-
-Object? _scrapeItemValue(Map<String, dynamic> item, String fieldKey) {
-  switch (fieldKey) {
-    case 'cover_url':
-      return item['cover_url'];
-    case 'description':
-      return item['description'] ?? item['intro'];
-    case 'year':
-      return item['published_year'] ?? item['year'];
-    case 'published_date':
-      return item['published_date'];
-    default:
-      return item[fieldKey];
-  }
-}
-
-bool _hasScrapeValue(Object? value) {
-  if (value == null) return false;
-  if (value is String) return value.trim().isNotEmpty;
-  if (value is Iterable) return value.isNotEmpty;
-  return true;
-}
-
-String _formatScrapeValue(Object? value, [String emptyLabel = 'Not returned']) {
-  if (!_hasScrapeValue(value)) return emptyLabel;
-  if (value is Iterable) {
-    return value.map((item) => item.toString()).join(' / ');
-  }
-  if (value is bool) return value ? 'Yes' : 'No';
-  return value.toString();
-}
-
-Object _scrapeValueForApi(Object value) {
-  if (value is Iterable && value is! String) {
-    return value.map((item) => item.toString()).toList();
-  }
-  return value;
-}
-
-String _scrapeValueForEditor(Object? value) {
-  if (!_hasScrapeValue(value)) return '';
-  if (value is Iterable && value is! String) {
-    return value.map((item) => item.toString()).join(', ');
-  }
-  return value.toString();
-}
-
-Object _scrapeEditorValueForField(String fieldKey, String value) {
-  if (fieldKey == 'tags') {
-    return value
-        .split(',')
-        .map((tag) => tag.trim())
-        .where((tag) => tag.isNotEmpty)
-        .toList();
-  }
-  if (fieldKey == 'explicit' || fieldKey == 'abridged') {
-    return value == 'true';
-  }
-  return value;
-}
-
-String _normalizeScrapeTitleForMatch(Object? value) {
-  if (!_hasScrapeValue(value) || (value is Iterable && value is! String)) {
-    return '';
-  }
-  return value.toString().toLowerCase().replaceAll(
-        RegExp(
-          r"""[\s\u3000"'`‘’“”.,，。:：;；!?！？、·•・《》<>〈〉【】\[\]（）(){}｛｝\-—–_/\\|+*=#￥$%^&~…]+""",
-        ),
-        '',
-      );
-}
-
-int _scrapeCommonPrefixLength(String a, String b) {
-  final maxLength = a.length < b.length ? a.length : b.length;
-  var length = 0;
-  while (length < maxLength && a[length] == b[length]) {
-    length++;
-  }
-  return length;
-}
-
-int _scrapeCharacterOverlap(String a, String b) {
-  final counts = <String, int>{};
-  for (var i = 0; i < a.length; i++) {
-    final char = a[i];
-    counts[char] = (counts[char] ?? 0) + 1;
-  }
-  var overlap = 0;
-  for (var i = 0; i < b.length; i++) {
-    final char = b[i];
-    final count = counts[char] ?? 0;
-    if (count <= 0) continue;
-    overlap++;
-    counts[char] = count - 1;
-  }
-  return overlap;
-}
-
-int _scrapeTitleMatchScore(Object? candidate, List<String> terms) {
-  final normalizedCandidate = _normalizeScrapeTitleForMatch(candidate);
-  if (normalizedCandidate.isEmpty) return 0;
-  var best = 0;
-  for (final term in terms) {
-    final normalizedTerm = _normalizeScrapeTitleForMatch(term);
-    if (normalizedTerm.isEmpty) continue;
-    if (normalizedCandidate == normalizedTerm) {
-      best = best < 100000 ? 100000 : best;
-      continue;
-    }
-    final minLength = normalizedCandidate.length < normalizedTerm.length
-        ? normalizedCandidate.length
-        : normalizedTerm.length;
-    final maxLength = normalizedCandidate.length > normalizedTerm.length
-        ? normalizedCandidate.length
-        : normalizedTerm.length;
-    final lengthRatio = minLength / maxLength;
-    final score = normalizedCandidate.contains(normalizedTerm) ||
-            normalizedTerm.contains(normalizedCandidate)
-        ? 80000 + (lengthRatio * 10000).round()
-        : ((2 *
-                        _scrapeCharacterOverlap(
-                          normalizedCandidate,
-                          normalizedTerm,
-                        ) /
-                        (normalizedCandidate.length + normalizedTerm.length)) *
-                    70000)
-                .round() +
-            (_scrapeCommonPrefixLength(normalizedCandidate, normalizedTerm) /
-                    maxLength *
-                    10000)
-                .round();
-    if (score > best) best = score;
-  }
-  return best;
-}
-
-String _scrapeErrorMessage(Object error) {
-  if (error is DioException) {
-    final data = error.response?.data;
-    final map = asMap(data);
-    final message = map['message']?.toString() ?? map['error']?.toString();
-    if (message != null && message.trim().isNotEmpty) {
-      return message.trim();
-    }
-    return error.message ?? error.toString();
-  }
-  return error.toString();
-}
-
-String _bookDefaultScrapeValue(Book book, _ScrapeSearchField field) {
-  final key = field.key;
-  final from = field.defaultFrom;
-  if (key == 'title' ||
-      key == 'query' ||
-      from == 'book.title' ||
-      from == 'title') {
-    return book.title;
-  }
-  if (key == 'author' || from == 'book.author' || from == 'author') {
-    return book.author ?? '';
-  }
-  if (key == 'narrator' || from == 'book.narrator' || from == 'narrator') {
-    return book.narrator ?? '';
-  }
-  return '';
-}
-
-Object? _bookScrapeFieldValue(Book book, String fieldKey) {
-  switch (fieldKey) {
-    case 'title':
-      return book.title;
-    case 'author':
-      return book.author;
-    case 'narrator':
-      return book.narrator;
-    case 'cover_url':
-      return book.coverUrl;
-    case 'description':
-      return book.description;
-    case 'tags':
-      return book.tags
-          ?.split(',')
-          .map((tag) => tag.trim())
-          .where((tag) => tag.isNotEmpty)
-          .toList();
-    case 'genre':
-      return book.genre;
-    case 'year':
-      return book.year;
-    default:
-      return null;
-  }
-}
-
-Object? _draftScrapeFieldValue(
-  Book book,
-  Map<String, _SelectedScrapeField> selectedFields,
-  String fieldKey,
-) {
-  return selectedFields[fieldKey]?.value ??
-      _bookScrapeFieldValue(book, fieldKey);
-}
-
-String? _sharedScrapeSearchKind(_ScrapeSearchField field) {
-  final from = field.defaultFrom;
-  if (field.key == 'title' || field.key == 'query' || from == 'book.title') {
-    return 'title';
-  }
-  if (field.key == 'author' || from == 'book.author') return 'author';
-  if (field.key == 'narrator' || from == 'book.narrator') return 'narrator';
-  return null;
-}
-
-Set<String> _configuredScrapeSourceIds(Map<String, dynamic>? config) {
-  if (config == null) return <String>{};
-  const keys = [
-    'default_sources',
-    'cover_sources',
-    'intro_sources',
-    'author_sources',
-    'narrator_sources',
-    'tags_sources',
-  ];
-  return {
-    for (final key in keys)
-      if (config[key] is Iterable)
-        for (final value in config[key] as Iterable)
-          if (value is String && value.trim().isNotEmpty) value.trim(),
-  };
-}
-
-Set<String> _defaultEnabledScrapeSourceIds(
-  List<_ScrapeSource> sources,
-  Map<String, dynamic>? config,
-) {
-  final configured = _configuredScrapeSourceIds(config);
-  if (configured.isEmpty) return <String>{};
-  return {
-    for (final source in sources)
-      if (source.autoScrape && configured.contains(source.id)) source.id,
-  };
-}
-
-class _ScrapeDiffDialog extends StatefulWidget {
-  const _ScrapeDiffDialog({required this.bookId});
+class ScrapeDiffDialog extends StatefulWidget {
+  const ScrapeDiffDialog({super.key, required this.bookId});
 
   final String bookId;
 
   @override
-  State<_ScrapeDiffDialog> createState() => _ScrapeDiffDialogState();
+  State<ScrapeDiffDialog> createState() => _ScrapeDiffDialogState();
 }
 
-class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
-  Book? _book;
-  List<_ScrapeSource> _sources = [];
-  final Set<String> _enabledSourceIds = {};
+class _ScrapeDiffDialogState extends State<ScrapeDiffDialog> {
+  ScrapeState? _session;
+  Book? get _book => _session?.book;
+  List<ScrapeSource> get _sources => _session?.sources ?? const [];
+  Set<String> get _enabledSourceIds => _session!.enabledSources;
   final Map<String, Map<String, TextEditingController>> _controllers = {};
-  List<_ScrapeResult> _results = [];
-  final Map<String, _SelectedScrapeField> _selectedFields = {};
+  List<ScrapeResult> get _results => _session?.results ?? const [];
+  Map<String, SelectedScrapeField> get _selectedFields =>
+      _session!.selectedFields;
   final Set<String> _expandedScrapeDescriptions = {};
   String? _activeSourceId;
   String _resultView = 'list';
   int? _selectedResultIndex;
   String _step = 'search';
-  bool _loading = true;
-  bool _searching = false;
-  bool _saving = false;
-  String? _error;
+  bool get _loading => _session?.loading ?? true;
+  bool get _searching => _session?.searching ?? false;
+  bool get _saving => _session?.saving ?? false;
+  String? get _error => _session?.error;
+  set _error(String? value) {
+    _session?.error = value;
+  }
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_session != null) return;
+    _session = ScrapeState(AppScope.appOf(context).api, widget.bookId)
+      ..addListener(_sessionChanged);
     _load();
+  }
+
+  void _sessionChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
+    _session?.removeListener(_sessionChanged);
+    _session?.dispose();
     for (final sourceControllers in _controllers.values) {
       for (final controller in sourceControllers.values) {
         controller.dispose();
@@ -718,60 +232,26 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
   }
 
   Future<void> _load() async {
-    final api = AppScope.appOf(context).api;
-    try {
-      final results = await Future.wait([
-        api.get('/api/books/${widget.bookId}'),
-        api.get('/api/scraper/sources'),
-        api.get('/api/libraries'),
-      ]);
-      final book = Book.fromJson(asMap(results[0].data));
-      final rawSources = asMapList(asMap(results[1].data)['sources']);
-      final sources = rawSources
-          .map(_ScrapeSource.fromJson)
-          .where((source) => source.enabled)
-          .toList();
-      final rawLibraryPayload = results[2].data;
-      final rawLibraries = rawLibraryPayload is List
-          ? asMapList(rawLibraryPayload)
-          : asMapList(asMap(rawLibraryPayload)['libraries']);
-      final libraries = rawLibraries.map(Library.fromJson).toList();
-      final library =
-          libraries.where((item) => item.id == book.libraryId).firstOrNull;
-      final defaultEnabledIds =
-          _defaultEnabledScrapeSourceIds(sources, library?.scraperConfig);
-      final firstSource = sources
-              .where((source) => defaultEnabledIds.contains(source.id))
-              .firstOrNull ??
-          (sources.isEmpty ? null : sources.first);
-      if (!mounted) return;
-      setState(() {
-        _book = book;
-        _sources = sources;
-        _activeSourceId = firstSource?.id;
-        _enabledSourceIds
-          ..clear()
-          ..addAll(defaultEnabledIds);
-        for (final source in sources) {
-          final fields = source.searchFields;
-          _controllers[source.id] = {
-            for (final field in fields)
-              field.key: TextEditingController(
-                text: _bookDefaultScrapeValue(book, field),
-              ),
-          };
-        }
-      });
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = context.localeText(
-          '加载刮削插件失败：$error', 'Failed to load scraper plugins: $error'));
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    await _session?.load();
+    final book = _book;
+    if (!mounted || book == null) return;
+    setState(() {
+      _activeSourceId = _sources
+              .where((source) => _enabledSourceIds.contains(source.id))
+              .firstOrNull
+              ?.id ??
+          _sources.firstOrNull?.id;
+      for (final source in _sources) {
+        _controllers[source.id] = {
+          for (final field in source.searchFields)
+            field.key:
+                TextEditingController(text: bookDefaultScrapeValue(book, field))
+        };
+      }
+    });
   }
 
-  _ScrapeSource? get _activeSource {
+  ScrapeSource? get _activeSource {
     final activeId = _activeSourceId;
     if (activeId == null) return _sources.isEmpty ? null : _sources.first;
     return _sources.where((source) => source.id == activeId).firstOrNull;
@@ -779,7 +259,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
 
   int get _selectedCount => _selectedFields.length;
   int get _filledSelectedCount => _selectedFields.values
-      .where((field) => _hasScrapeValue(field.value))
+      .where((field) => hasScrapeValue(field.value))
       .length;
 
   Future<void> _search() async {
@@ -806,87 +286,26 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
       }
     }
     setState(() {
-      _searching = true;
-      _error = null;
-      _results = [];
       _resultView = 'list';
       _selectedResultIndex = null;
       _expandedScrapeDescriptions.clear();
     });
-    final api = AppScope.appOf(context).api;
-    final rawResults = <({
-      Map<String, dynamic> item,
-      _ScrapeSource source,
-      int index,
-      int order
-    })>[];
-    final errors = <String>[];
-    var sourceOrder = 0;
-    for (final source
-        in _sources.where((s) => _enabledSourceIds.contains(s.id))) {
-      try {
-        final values = <String, String>{
+    final completed = await _session?.search({
+      for (final source in _sources)
+        source.id: {
           for (final entry in (_controllers[source.id] ?? {}).entries)
             entry.key: entry.value.text.trim(),
-        };
-        final res = await api.post(
-          '/api/scraper/search',
-          receiveTimeout: const Duration(minutes: 2),
-          data: {
-            'source': source.id,
-            'search_params': values,
-            'page': 1,
-            'page_size': 20,
-          },
-        );
-        final items = asMapList(asMap(res.data)['items']);
-        for (var i = 0; i < items.length; i++) {
-          rawResults.add(
-            (
-              item: items[i],
-              source: source,
-              index: i,
-              order: sourceOrder * 10000 + i
-            ),
-          );
         }
-      } catch (error) {
-        errors.add('${source.name}: ${_scrapeErrorMessage(error)}');
-      }
-      sourceOrder++;
-    }
-    final titleTerms = _scrapeTitleMatchTerms();
-    final sortedResults = [...rawResults]..sort((a, b) {
-        final scoreA = _scrapeTitleMatchScore(
-            _scrapeItemValue(a.item, 'title'), titleTerms);
-        final scoreB = _scrapeTitleMatchScore(
-            _scrapeItemValue(b.item, 'title'), titleTerms);
-        return scoreB.compareTo(scoreA) == 0
-            ? a.order.compareTo(b.order)
-            : scoreB.compareTo(scoreA);
-      });
-    final nextResults = [
-      for (var i = 0; i < sortedResults.length; i++)
-        _ScrapeResult(
-          item: sortedResults[i].item,
-          source: sortedResults[i].source,
-          index: i,
-        ),
-    ];
-    if (!mounted) return;
-    setState(() {
-      _results = nextResults;
-      _step = 'results';
-      _resultView = 'list';
-      _selectedResultIndex = null;
-      _expandedScrapeDescriptions.clear();
-      _error = errors.isEmpty ? null : errors.join('\n');
-      _searching = false;
     });
+    if (mounted && completed == true) {
+      setState(() {
+        _step = 'results';
+      });
+    }
   }
 
   void _clearScrapeResults() {
-    _results = [];
+    _session?.clearResults();
     _resultView = 'list';
     _selectedResultIndex = null;
     _expandedScrapeDescriptions.clear();
@@ -894,17 +313,17 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
   }
 
   void _handleSearchValueChanged(
-    _ScrapeSource source,
-    _ScrapeSearchField field,
+    ScrapeSource source,
+    ScrapeSearchField field,
     String value,
   ) {
-    final sharedKind = _sharedScrapeSearchKind(field);
+    final sharedKind = sharedScrapeSearchKind(field);
     setState(() {
       _clearScrapeResults();
       if (sharedKind == null) return;
       for (final targetSource in _sources) {
         for (final targetField in targetSource.searchFields) {
-          if (_sharedScrapeSearchKind(targetField) != sharedKind) continue;
+          if (sharedScrapeSearchKind(targetField) != sharedKind) continue;
           if (targetSource.id == source.id && targetField.key == field.key) {
             continue;
           }
@@ -936,112 +355,39 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
     });
   }
 
-  void _toggleField(_ScrapeResult result, String key) {
-    final value = _scrapeItemValue(result.item, key);
-    if (!_hasScrapeValue(value)) return;
-    setState(() {
-      if (_selectedFields[key]?.resultKey == result.key) {
-        return;
-      } else {
-        _selectedFields[key] = _SelectedScrapeField(
-          key: key,
-          label: _localizedScrapeResultFieldLabel(context, result.source, key),
-          value: value!,
-          sourceId: result.source.id,
-          sourceName: result.source.name,
-          resultId: result.externalId,
-          resultKey: result.key,
-          resultTitle: _formatScrapeValueForLocale(
-              context, _scrapeItemValue(result.item, 'title')),
-        );
-      }
-    });
+  void _toggleField(ScrapeResult result, String key) {
+    setState(() => _session?.select(
+        result,
+        key,
+        _localizedScrapeResultFieldLabel(context, result.source, key),
+        _formatScrapeValueForLocale(
+            context, scrapeItemValue(result.item, 'title'))));
   }
 
-  void _selectAll(_ScrapeResult result) {
+  void _selectAll(ScrapeResult result) {
     setState(() {
       for (final key in result.source.resultFields) {
-        final value = _scrapeItemValue(result.item, key);
-        if (!_hasScrapeValue(value)) continue;
-        _selectedFields[key] = _SelectedScrapeField(
-          key: key,
-          label: _localizedScrapeResultFieldLabel(context, result.source, key),
-          value: value!,
-          sourceId: result.source.id,
-          sourceName: result.source.name,
-          resultId: result.externalId,
-          resultKey: result.key,
-          resultTitle: _formatScrapeValueForLocale(
-              context, _scrapeItemValue(result.item, 'title')),
-        );
+        _session?.select(
+            result,
+            key,
+            _localizedScrapeResultFieldLabel(context, result.source, key),
+            _formatScrapeValueForLocale(
+                context, scrapeItemValue(result.item, 'title')));
       }
     });
   }
 
   void _updateSelectedField(String key, String value) {
-    setState(() {
-      final field = _selectedFields[key];
-      if (field == null) return;
-      field.value = _scrapeEditorValueForField(key, value);
-    });
-  }
-
-  List<String> _scrapeTitleMatchTerms() {
-    final terms = <String>[];
-    final seen = <String>{};
-    void add(Object? value) {
-      if (!_hasScrapeValue(value) || value is Iterable && value is! String) {
-        return;
-      }
-      for (final part in value.toString().split(RegExp(r'[|丨]'))) {
-        final trimmed = part.trim();
-        final normalized = _normalizeScrapeTitleForMatch(trimmed);
-        if (normalized.isEmpty || seen.contains(normalized)) continue;
-        seen.add(normalized);
-        terms.add(trimmed);
-      }
-    }
-
-    for (final source
-        in _sources.where((s) => _enabledSourceIds.contains(s.id))) {
-      final controllers = _controllers[source.id] ?? {};
-      for (final field in source.searchFields) {
-        if (_sharedScrapeSearchKind(field) == 'title') {
-          add(controllers[field.key]?.text);
-        }
-      }
-    }
-    add(_book?.title);
-    return terms;
+    setState(() => _session?.edit(
+        key,
+        value,
+        _localizedScrapeFieldLabel(context, key),
+        context.localeText('手动填写', 'Manual edit')));
   }
 
   Future<void> _apply() async {
-    if (_filledSelectedCount == 0 || _saving) return;
-    setState(() => _saving = true);
-    final fields = <String, dynamic>{
-      for (final entry in _selectedFields.entries)
-        if (_hasScrapeValue(entry.value.value))
-          entry.key: {
-            'value': _scrapeValueForApi(entry.value.value),
-            'source': entry.value.sourceId,
-            'external_id': entry.value.resultId,
-          },
-    };
-    try {
-      await AppScope.appOf(context).api.post(
-        '/api/books/${widget.bookId}/scrape-apply',
-        data: {
-          'fields': fields,
-          'apply_metadata': true,
-        },
-      );
-      if (mounted) Navigator.pop(context, true);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() =>
-          _error = context.localeText('应用失败：$error', 'Apply failed: $error'));
-    } finally {
-      if (mounted) setState(() => _saving = false);
+    if (await _session?.apply() == true && mounted) {
+      Navigator.pop(context, true);
     }
   }
 
@@ -1101,6 +447,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
                   step: _step,
                   selectedCount: _selectedCount,
                   resultsCount: _results.length,
+                  searching: _searching,
                   onStep: (step) => setState(() => _step = step),
                   onClose: _saving ? null : () => Navigator.pop(context, false),
                 ),
@@ -1322,8 +669,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
     );
   }
 
-  Widget _buildResultDetailStep(_ScrapeResult result) {
-    final cover = _scrapeItemValue(result.item, 'cover_url')?.toString() ?? '';
+  Widget _buildResultDetailStep(ScrapeResult result) {
+    final cover = scrapeItemValue(result.item, 'cover_url')?.toString() ?? '';
     final fields = [...result.source.resultFields]..sort(
         (a, b) => _scrapeFieldSortIndex(a).compareTo(_scrapeFieldSortIndex(b)));
     final book = _book!;
@@ -1486,7 +833,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
     );
   }
 
-  Widget _buildResultFieldTile(Book book, _ScrapeResult result, String key) {
+  Widget _buildResultFieldTile(Book book, ScrapeResult result, String key) {
     final selected = _selectedFields[key]?.resultKey == result.key &&
         _selectedFields[key]?.sourceId == result.source.id;
     final selectedFromOther = _selectedFields[key] != null && !selected;
@@ -1506,7 +853,7 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
 
   Widget _buildResultFieldLayout({
     required Book book,
-    required _ScrapeResult result,
+    required ScrapeResult result,
     required List<String> fields,
     required bool twoColumns,
   }) {
@@ -1563,47 +910,57 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
   }
 
   Widget _buildReviewStep() {
-    final selected = _selectedFields.values.toList()
-      ..sort((a, b) =>
-          _scrapeFieldSortIndex(a.key).compareTo(_scrapeFieldSortIndex(b.key)));
+    final book = _book;
+    if (book == null) return const SizedBox.shrink();
     return _ScrapeScrollArea(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ScrapeSummaryCard(
-            title: context.localeText('待应用字段', 'Fields to Apply'),
-            subtitle: _scrapeCountText(
-                context, selected.length, '个字段', 'field', 'fields'),
+            title: context.localeText('确认书籍信息', 'Review Book Information'),
+            subtitle: _scrapeCountText(context, _selectedCount, '个字段待保存',
+                'field to save', 'fields to save'),
             actionLabel: context.localeText('清空', 'Clear'),
             actionIcon: Icons.delete_outline_rounded,
-            onAction: selected.isEmpty
+            onAction: _selectedFields.isEmpty
                 ? null
                 : () => setState(() => _selectedFields.clear()),
           ),
-          const SizedBox(height: 14),
-          if (selected.isEmpty)
-            EmptyState(
-              icon: Icons.fact_check_outlined,
-              title: context.localeText('未选择字段', 'No Fields Selected'),
-              message: context.localeText('回到搜索结果，选择要应用到书籍的字段。',
-                  'Return to results and choose fields to apply.'),
-            )
-          else
-            Column(
-              children: [
-                for (final field in selected)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: _SelectedScrapeFieldCard(
-                      field: field,
-                      onChanged: (value) =>
-                          _updateSelectedField(field.key, value),
-                      onRemove: () =>
-                          setState(() => _selectedFields.remove(field.key)),
-                    ),
-                  ),
-              ],
+          const SizedBox(height: 10),
+          Text(
+            context.localeText(
+              '未修改的项保留当前值。未刮到的信息可以直接补填，编辑后会加入本次保存。',
+              'Unchanged fields keep their current values. Fill in missing information here to include it in this save.',
             ),
+            style: TextStyle(color: context.mutedText, fontSize: 13),
+          ),
+          const SizedBox(height: 14),
+          Column(
+            children: [
+              for (final key in scrapeFieldOrder)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _SelectedScrapeFieldCard(
+                    key: ValueKey('scrape-review-$key'),
+                    book: book,
+                    selected: _selectedFields.containsKey(key),
+                    field: _selectedFields[key] ??
+                        SelectedScrapeField(
+                          key: key,
+                          label: _localizedScrapeFieldLabel(context, key),
+                          value: bookScrapeFieldValue(book, key) ?? '',
+                          sourceId: '',
+                          sourceName: '',
+                          resultId: '',
+                          resultKey: '',
+                          resultTitle: '',
+                        ),
+                    onChanged: (value) => _updateSelectedField(key, value),
+                    onRemove: () => setState(() => _selectedFields.remove(key)),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -1661,9 +1018,8 @@ class _ScrapeDiffDialogState extends State<_ScrapeDiffDialog> {
             PrimaryButton(
               label: context.localeText('确认应用', 'Review & Apply'),
               icon: Icons.arrow_forward_rounded,
-              onPressed: _selectedFields.isEmpty
-                  ? null
-                  : () => setState(() => _step = 'review'),
+              onPressed:
+                  _searching ? null : () => setState(() => _step = 'review'),
             ),
           ] else ...[
             TextButton.icon(

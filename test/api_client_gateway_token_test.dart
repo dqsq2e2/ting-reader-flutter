@@ -7,6 +7,115 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/src/core/api/api_client.dart';
 
 void main() {
+  test('different uploads with the same filename and size are never merged',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final bodies = <String>[];
+    server.listen((request) async {
+      bodies.add(latin1.decode(await request
+          .fold<List<int>>([], (buffer, bytes) => buffer..addAll(bytes))));
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{}');
+      await request.response.close();
+    });
+    final client = ApiClient()
+      ..configure(
+          baseUrl: 'http://${server.address.address}:${server.port}',
+          token: 'token');
+    try {
+      FormData form(String text) => FormData.fromMap({
+            'file':
+                MultipartFile.fromBytes(utf8.encode(text), filename: 'same.txt')
+          });
+      final first = client.post('/api/upload', data: form('first'));
+      final second = client.post('/api/upload', data: form('other'));
+      expect(identical(first, second), isFalse);
+      await Future.wait([first, second]);
+      expect(bodies, hasLength(2));
+      expect(bodies.any((body) => body.contains('first')), isTrue);
+      expect(bodies.any((body) => body.contains('other')), isTrue);
+    } finally {
+      await server.close(force: true);
+    }
+  });
+  test('mutation sharing is scoped to the current authentication identity',
+      () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final received = StreamController<HttpRequest>.broadcast();
+    server.listen((request) async {
+      await request.drain<void>();
+      received.add(request);
+    });
+    final client = ApiClient()
+      ..configure(
+          baseUrl: 'http://${server.address.address}:${server.port}',
+          token: 'first');
+    try {
+      final firstReceived = received.stream.first;
+      final first = client.post('/api/mutation', data: {'same': true});
+      expect(
+          identical(client.post('/api/mutation', data: {'same': true}), first),
+          isTrue);
+      final firstRequest = await firstReceived;
+      client.configure(baseUrl: client.baseUrl, token: 'second');
+      final secondReceived = received.stream.first;
+      final second = client.post('/api/mutation', data: {'same': true});
+      final secondRequest =
+          await secondReceived.timeout(const Duration(seconds: 5));
+      for (final request in [firstRequest, secondRequest]) {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({
+          'identity': request.headers.value(HttpHeaders.authorizationHeader)
+        }));
+        await request.response.close();
+      }
+      expect((await first).data['identity'], 'Bearer first');
+      expect((await second).data['identity'], 'Bearer second');
+    } finally {
+      await server.close(force: true);
+      await received.close();
+    }
+  });
+
+  for (final method in ['put', 'delete']) {
+    test(
+        'cancelling one $method owner leaves the identical second request active',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final received = StreamController<HttpRequest>.broadcast();
+      server.listen((request) async {
+        await request.drain<void>();
+        received.add(request);
+      });
+      final client = ApiClient()
+        ..configure(
+            baseUrl: 'http://${server.address.address}:${server.port}',
+            token: 'token');
+      Future<Response<dynamic>> send(CancelToken token) => method == 'put'
+          ? client.put('/api/mutation', data: {}, cancelToken: token)
+          : client.delete('/api/mutation', cancelToken: token);
+      try {
+        final firstReceived = received.stream.first;
+        final firstToken = CancelToken();
+        final first = send(firstToken);
+        final assertion = expectLater(first, throwsA(isA<DioException>()));
+        await firstReceived;
+        final secondReceived = received.stream.first;
+        final second = send(CancelToken());
+        final secondRequest =
+            await secondReceived.timeout(const Duration(seconds: 5));
+        firstToken.cancel('First owner closed');
+        await assertion;
+        secondRequest.response.headers.contentType = ContentType.json;
+        secondRequest.response.write(jsonEncode({'saved': true}));
+        await secondRequest.response.close();
+        expect((await second).data, {'saved': true});
+      } finally {
+        await server.close(force: true);
+        await received.close();
+      }
+    });
+  }
   for (final useCancelToken in [false, true]) {
     test('replays multipart uploads after gateway renewal ($useCancelToken)',
         () async {

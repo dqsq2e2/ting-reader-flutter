@@ -5,19 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/l10n/app_localizations.dart';
 import 'package:ting_reader_flutter/src/core/api/api_client.dart';
+import 'package:ting_reader_flutter/src/core/auth/fn_connect_client.dart';
 import 'package:ting_reader_flutter/src/core/models/models.dart';
 import 'package:ting_reader_flutter/src/core/state/app_state.dart';
 import 'package:ting_reader_flutter/src/core/state/download_state.dart';
 import 'package:ting_reader_flutter/src/core/state/player_state.dart';
+import 'package:ting_reader_flutter/src/core/state/player/playback_sleep.dart';
+import 'package:ting_reader_flutter/src/core/state/navigation_state.dart';
 import 'package:ting_reader_flutter/src/features/bookshelf/bookshelf_page.dart';
 import 'package:ting_reader_flutter/src/features/bookshelf/series_detail/series_detail_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/bookmarks_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/history_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/mine_page.dart';
 import 'package:ting_reader_flutter/src/features/player/mini_player.dart';
+import 'package:ting_reader_flutter/src/features/login_page.dart';
 import 'package:ting_reader_flutter/src/shared/app_scope.dart';
 import 'package:ting_reader_flutter/src/shared/cards/book_card.dart';
 import 'package:ting_reader_flutter/src/shared/cards/bookshelf_list_tile.dart';
+import 'package:ting_reader_flutter/src/shared/common/media_widgets.dart';
 import 'package:ting_reader_flutter/src/shared/common/common_widgets.dart';
 import 'package:ting_reader_flutter/src/shared/filter/display_filter_menu.dart';
 
@@ -29,6 +34,7 @@ class _ReadingApi extends ApiClient {
   final pendingBookmarks = <String, Completer<Response<dynamic>>>{};
   bool includeOtherBook = false;
   int bookmarkCount = 1;
+  String bookmarkNote = 'Remember this';
   final seriesUpdates = <Map<String, dynamic>>[];
   final bookDeletes = <Map<String, dynamic>>[];
   String seriesLibraryType = 'local';
@@ -183,7 +189,7 @@ class _ReadingApi extends ApiClient {
                   bookId == 'book' ? 'Saved Chapter' : 'Other Chapter',
               'chapter_duration': 100,
               'position': 12.5,
-              'note': 'Remember this',
+              'note': bookmarkNote,
             },
           if (includeOtherBook)
             {
@@ -239,7 +245,8 @@ class _ReadingApi extends ApiClient {
   }
 
   @override
-  Future<Response<dynamic>> put(String path, {Object? data}) async {
+  Future<Response<dynamic>> put(String path,
+      {Object? data, CancelToken? cancelToken}) async {
     if (!path.startsWith('/api/v1/series/')) {
       throw StateError('Unexpected mutation: $path');
     }
@@ -251,7 +258,9 @@ class _ReadingApi extends ApiClient {
 
   @override
   Future<Response<dynamic>> delete(String path,
-      {Object? data, Map<String, dynamic>? params}) async {
+      {Object? data,
+      Map<String, dynamic>? params,
+      CancelToken? cancelToken}) async {
     if (!path.startsWith('/api/books/')) {
       throw StateError('Unexpected mutation: $path');
     }
@@ -266,6 +275,48 @@ class _ReadingApp extends AppState {
 
   @override
   _ReadingApi get api => _readingApi;
+}
+
+class _ControlledStatisticsApi extends _ReadingApi {
+  final requests =
+      <({CancelToken? token, Completer<Response<dynamic>> response})>[];
+  @override
+  Future<Response<dynamic>> get(String path,
+      {Map<String, dynamic>? params, CancelToken? cancelToken}) {
+    if (path != '/api/system/statistics') {
+      return super.get(path, params: params, cancelToken: cancelToken);
+    }
+    final response = Completer<Response<dynamic>>();
+    requests.add((token: cancelToken, response: response));
+    return response.future;
+  }
+}
+
+class _StatisticsApp extends _ReadingApp {
+  final _statisticsApi = _ControlledStatisticsApi();
+  @override
+  _ControlledStatisticsApi get api => _statisticsApi;
+}
+
+class _PromptApp extends _ReadingApp {
+  _PromptApp(this.twofa);
+  final bool twofa;
+  @override
+  Future<void> loginWithPrompts(
+    SavedServerProfile profile, {
+    SavedServerProfile? replaceProfile,
+    Map<String, dynamic> settingsPatch = const {},
+    Future<String?> Function(bool incorrect)? requestAccessCode,
+    Future<FnTwofaAnswer?> Function()? requestTwofa,
+    ValueChanged<FnConnectStage>? onStage,
+    CancelToken? cancelToken,
+  }) async {
+    if (twofa) {
+      await requestTwofa!();
+    } else {
+      await requestAccessCode!(false);
+    }
+  }
 }
 
 class _ReadingPlayer extends ChangeNotifier implements PlayerState {
@@ -340,6 +391,195 @@ Future<void> _pump(
 }
 
 void main() {
+  for (final twofa in [false, true]) {
+    testWidgets(
+        '${twofa ? "two-factor" : "access-code"} prompt releases its controller after dismissal',
+        (tester) async {
+      final app = _PromptApp(twofa);
+      final player = _ReadingPlayer();
+      addTearDown(app.dispose);
+      addTearDown(player.dispose);
+      app.savedServers = [
+        const SavedServerProfile(
+          serverUrl: 'https://server.test',
+          activeUrl: 'https://server.test',
+          username: 'user',
+          password: 'password',
+          label: 'Prompt server',
+        )
+      ];
+      await _pump(tester, app, player, const LoginPage());
+      await tester.tap(find.text('user'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      final controller =
+          tester.widget<TextField>(find.byType(TextField)).controller!;
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.tap(find.text('Cancel').last);
+      await tester.pumpAndSettle();
+      expect(() => controller.addListener(() {}), throwsFlutterError);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+      'statistics refresh cancels previous queries and ignores a response after disposal',
+      (tester) async {
+    final app = _StatisticsApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AdminStatisticsPage(),
+        settle: false);
+    app.api.requests.single.response
+        .complete(app.api._response('/api/system/statistics', {}));
+    await tester.pumpAndSettle();
+    final refresh =
+        tester.widget<PageListView>(find.byType(PageListView)).onRefresh!;
+    final old = refresh();
+    final current = refresh();
+    expect(app.api.requests[1].token!.isCancelled, isTrue);
+    app.api.requests[2].response
+        .complete(app.api._response('/api/system/statistics', {
+      'overview': {'total_libraries': 9, 'rss_libraries': 9}
+    }));
+    await current;
+    app.api.requests[1].response
+        .complete(app.api._response('/api/system/statistics', {
+      'overview': {'total_libraries': 2, 'rss_libraries': 2}
+    }));
+    await old;
+    await tester.pumpAndSettle();
+    expect(find.text('Local 0 · WebDAV 0 · RSS 9'), findsOneWidget);
+    final closing = refresh();
+    await tester.pumpWidget(const SizedBox());
+    expect(app.api.requests.last.token!.isCancelled, isTrue);
+    app.api.requests.last.response
+        .complete(app.api._response('/api/system/statistics', {}));
+    await closing;
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'statistics failures show retry and a successful retry restores the report',
+      (tester) async {
+    final app = _StatisticsApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AdminStatisticsPage(),
+        settle: false);
+    app.api.requests.single.response.completeError(StateError('offline'));
+    await tester.pumpAndSettle();
+    expect(find.byType(LoadErrorView), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    app.api.requests.last.response
+        .complete(app.api._response('/api/system/statistics', {}));
+    await tester.pumpAndSettle();
+    expect(find.byType(LoadErrorView), findsNothing);
+    expect(find.text('Statistics'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'sleep policies remain independent of views, pause minutes and replace each other',
+      (tester) async {
+    var playing = true;
+    var expirations = 0;
+    final sleep = PlaybackSleep(
+        isPlaying: () => playing,
+        onChanged: () {},
+        onExpire: () async {
+          expirations++;
+        });
+    sleep.minutes(1);
+    await tester.pump(const Duration(seconds: 20));
+    expect(sleep.seconds, 40);
+    playing = false;
+    await tester.pump(const Duration(seconds: 90));
+    expect(sleep.seconds, 40);
+    sleep.chapterCount(2, 'first');
+    expect(sleep.seconds, isNull);
+    expect(sleep.chapterChanged('first'), isFalse);
+    expect(sleep.chapterChanged('second'), isFalse);
+    expect(sleep.episodes, 1);
+    expect(sleep.chapterChanged('third'), isTrue);
+    expect(sleep.episodes, isNull);
+    playing = true;
+    sleep.chapterCount(2, 'third');
+    sleep.minutes(1);
+    expect(sleep.episodes, isNull);
+    await tester.pump(const Duration(seconds: 60));
+    expect(expirations, 1);
+    expect(sleep.seconds, isNull);
+    sleep.minutes(1);
+    sleep.dispose();
+    await tester.pump(const Duration(seconds: 90));
+    expect(expirations, 1);
+  });
+
+  test(
+      'shell navigation keeps detail routes exclusive and restores the correct parent',
+      () {
+    final navigation = ShellNavigation.fromQuery({
+      'page': 'mine',
+      'book': 'book',
+      'chapter': 'chapter',
+      'series': 'ignored-series',
+      'playlist': 'ignored-playlist',
+    });
+    expect(navigation.bookId, 'book');
+    expect(navigation.chapterId, 'chapter');
+    expect(navigation.seriesId, isNull);
+    expect(navigation.playlistId, isNull);
+    expect(navigation.navDestination, AppDestination.bookshelf);
+    navigation.closeDetail();
+    expect(navigation.destination, AppDestination.mine);
+    navigation.openSearch(AppDestination.playlists);
+    expect(navigation.backDestination, AppDestination.playlists);
+    navigation.openDetail(DetailDestination.series, 'series',
+        chapter: 'ignored');
+    expect(navigation.bookId, isNull);
+    expect(navigation.chapterId, isNull);
+    navigation.go(AppDestination.home);
+    expect(navigation.hasDetail, isFalse);
+    navigation.openPluginLogs(
+        PluginItem.fromJson({'id': 'plugin', 'name': 'Plugin'}));
+    expect(navigation.navDestination, AppDestination.plugins);
+    expect(navigation.backDestination, AppDestination.plugins);
+    navigation.openAbout('2.0.5');
+    expect(navigation.activePluginLogs, isNull);
+    expect(navigation.aboutBackendVersion, '2.0.5');
+    expect(hidesMiniPlayer(navigation.destination), isTrue);
+  });
+
+  testWidgets('shared scrolling text stays bounded and releases its ticker',
+      (tester) async {
+    Widget content(String text, {bool disableAnimations = false}) =>
+        MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData(disableAnimations: disableAnimations),
+            child: Center(
+                child: SizedBox(
+                    width: 100,
+                    height: 40,
+                    child: ScrollingText(
+                        text: text, style: const TextStyle(fontSize: 16)))),
+          ),
+        );
+    await tester.pumpWidget(content('A very long chapter title that scrolls'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(content('A very long chapter title that scrolls',
+        disableAnimations: true));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(content('Short'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
   const book = Book(id: 'book', libraryId: 'lib', title: 'Book');
   const chapter = Chapter(
       id: 'chapter',
@@ -741,6 +981,77 @@ void main() {
     expect(find.text('00:00:12'), findsOneWidget);
     expect(find.text('13%'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final width in [320.0, 390.0, 1518.0]) {
+    for (final note in ['', 'Remember this', 'Long note\n' * 8]) {
+      testWidgets(
+          'expanded bookmarks fit their contents at $width pixels (note length: ${note.length})',
+          (tester) async {
+        tester.view.physicalSize = Size(width, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final app = _ReadingApp();
+        app.api.bookmarkNote = note;
+        final player = _ReadingPlayer();
+        addTearDown(app.dispose);
+        addTearDown(player.dispose);
+        await _pump(tester, app, player, BookmarksPage(onBack: () {}));
+        await tester.tap(find.text('Book with bookmarks'));
+        await tester.pumpAndSettle();
+
+        final title = tester.getRect(find.text('Saved Chapter'));
+        final time = tester.getRect(find.text('00:00:12'));
+        final progress = tester.getRect(find.byType(LinearProgressIndicator));
+        final panel = tester.getRect(find.byType(BookBookmarkPanel));
+        expect(time.top, greaterThan(title.bottom));
+        expect(progress.top, greaterThan(time.bottom));
+        // Only the row padding and percentage label may follow the bar.
+        expect(panel.bottom - progress.bottom, lessThan(32));
+        final editButton = find.ancestor(
+            of: find.byTooltip('Edit note'), matching: find.byType(IconButton));
+        expect(tester.getTopLeft(editButton).dy, closeTo(title.top, 1));
+        expect(find.byIcon(Icons.access_time_rounded), findsOneWidget);
+        expect(find.text('No note'), findsNothing);
+        if (note.isEmpty) {
+          expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsNothing);
+        } else {
+          final noteRect = tester.getRect(find.text(note));
+          expect(noteRect.top, greaterThan(time.bottom));
+          expect(progress.top, greaterThan(noteRect.bottom));
+          expect(
+              find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+          expect(tester.widget<Text>(find.text(note)).maxLines, 3);
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('expanded bookmarks scroll with the page instead of a fixed box',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final app = _ReadingApp();
+    app.api.bookmarkCount = 12;
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, BookmarksPage(onBack: () {}));
+    await tester.tap(find.text('Book with bookmarks'));
+    await tester.pumpAndSettle();
+    final panel = find.byType(BookBookmarkPanel);
+    final list = find.descendant(of: panel, matching: find.byType(ListView));
+    expect(tester.widget<ListView>(list).physics,
+        isA<NeverScrollableScrollPhysics>());
+    final before = tester.getTopLeft(panel).dy;
+    await tester.drag(find.text('Saved Chapter').first, const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(panel).dy, lessThan(before - 100));
     expect(tester.takeException(), isNull);
   });
 

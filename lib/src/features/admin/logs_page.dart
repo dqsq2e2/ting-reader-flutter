@@ -17,75 +17,54 @@ class _LogsPageState extends State<LogsPage> {
   String _pluginSearch = '';
   List<PluginItem> _plugins = [];
   int _total = 0;
-  List<_LogEntry> _logs = [];
+  List<LogEntry> _logs = [];
   final Set<String> _expandedLogKeys = {};
   final TextEditingController _pluginSearchController = TextEditingController();
-  Timer? _timer;
+  LogState? _state;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-    _syncTimer();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_state != null) return;
+    _state = LogState(AppScope.appOf(context).api)..addListener(_logsChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _state?.start();
+    });
+  }
+
+  void _logsChanged() {
+    final state = _state;
+    if (!mounted || state == null) return;
+    setState(() {
+      _loading = state.loading;
+      _logs = state.logs;
+      _total = state.total;
+      _plugins = state.plugins;
+      _expandedLogKeys.removeWhere((key) => !_logs
+          .asMap()
+          .entries
+          .any((entry) => _logKey(entry.value, entry.key) == key));
+    });
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _state?.removeListener(_logsChanged);
+    _state?.dispose();
     _pluginSearchController.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (!silent) setState(() => _loading = true);
-    final api = AppScope.appOf(context).api;
-    try {
-      final isPluginLogs = _moduleFilter == 'plugins';
-      if (isPluginLogs && _plugins.isEmpty) {
-        try {
-          final pluginsResponse = await api.get('/api/v1/plugins');
-          if (mounted) {
-            _plugins = asMapList(pluginsResponse.data)
-                .map(PluginItem.fromJson)
-                .where((plugin) => plugin.id.isNotEmpty)
-                .toList();
-          }
-        } catch (_) {
-          // The all-plugin log endpoint remains usable if the plugin list fails.
-        }
-      }
-      final res = await api.get(
-        isPluginLogs ? '/api/v1/plugin-logs' : '/api/system/logs',
-        params: {
-          'page': 1,
-          'page_size': 100,
-          if (!isPluginLogs && _moduleFilter.isNotEmpty)
-            'module': _moduleFilter,
-          if (_levelFilter.isNotEmpty) 'level': _levelFilter,
-          if (isPluginLogs && _pluginFilter.isNotEmpty)
-            'plugin_id': _pluginFilter,
-          if (isPluginLogs && _pluginSourceFilter.isNotEmpty)
-            'source': _pluginSourceFilter,
-          if (isPluginLogs && _pluginSearch.trim().isNotEmpty)
-            'q': _pluginSearch.trim(),
-        },
-      );
-      if (!mounted) return;
-      final next =
-          asMapList(asMap(res.data)['logs']).map(_LogEntry.fromJson).toList();
-      final total = (asMap(res.data)['total'] as num?)?.toInt() ?? next.length;
-      setState(() {
-        _logs = next;
-        _total = total;
-        _expandedLogKeys.removeWhere(
-          (key) => !_logs.asMap().entries.any(
-                (entry) => _logKey(entry.value, entry.key) == key,
-              ),
-        );
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+    final state = _state;
+    if (state == null) return;
+    state
+      ..module = _moduleFilter
+      ..level = _levelFilter
+      ..plugin = _pluginFilter
+      ..source = _pluginSourceFilter
+      ..search = _pluginSearch;
+    await state.load(silent: silent);
   }
 
   Future<void> _clear() async {
@@ -97,18 +76,13 @@ class _LogsPageState extends State<LogsPage> {
     );
     if (!ok || !mounted) return;
 
-    final api = AppScope.appOf(context).api;
-    await Future.wait([
-      api.delete('/api/tasks'),
-      api.delete('/api/system/logs'),
-    ]);
+    await _state?.clear();
     _expandedLogKeys.clear();
     await _load();
   }
 
   Future<void> _cancelTask(String taskId) async {
-    await AppScope.appOf(context).api.post('/api/tasks/$taskId/cancel');
-    await _load();
+    await _state?.cancelTask(taskId);
   }
 
   Future<void> _deleteTask(String taskId) async {
@@ -119,34 +93,18 @@ class _LogsPageState extends State<LogsPage> {
     );
     if (!ok || !mounted) return;
 
-    await AppScope.appOf(context).api.delete('/api/tasks/$taskId');
-    await _load();
+    await _state?.deleteTask(taskId);
   }
 
   Future<void> _export({String? level}) async {
-    final isPluginLogs = _moduleFilter == 'plugins';
-    final exportLevel = level ?? _levelFilter;
-    final res = await AppScope.appOf(context).api.get(
-      isPluginLogs ? '/api/v1/plugin-logs/export' : '/api/system/logs/export',
-      params: {
-        if (exportLevel.isNotEmpty) 'level': exportLevel,
-        if (!isPluginLogs && _moduleFilter.isNotEmpty) 'module': _moduleFilter,
-        if (isPluginLogs && _pluginFilter.isNotEmpty)
-          'plugin_id': _pluginFilter,
-        if (isPluginLogs && _pluginSourceFilter.isNotEmpty)
-          'source': _pluginSourceFilter,
-        if (isPluginLogs && _pluginSearch.trim().isNotEmpty)
-          'q': _pluginSearch.trim(),
-      },
-    );
-    await Clipboard.setData(ClipboardData(text: res.data?.toString() ?? ''));
+    final text = await _state?.export(level: level);
+    if (!mounted || text == null) return;
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(level == 'ERROR'
-              ? context.localeText('错误日志已复制', 'Error logs copied')
-              : context.localeText('日志已复制', 'Logs copied'))),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(level == 'ERROR'
+            ? context.localeText('错误日志已复制', 'Error logs copied')
+            : context.localeText('日志已复制', 'Logs copied'))));
   }
 
   Future<bool> _confirm({
@@ -175,17 +133,9 @@ class _LogsPageState extends State<LogsPage> {
     return result ?? false;
   }
 
-  void _syncTimer() {
-    _timer?.cancel();
-    if (!_autoRefresh) return;
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) _load(silent: true);
-    });
-  }
-
   void _setAutoRefresh(bool value) {
     setState(() => _autoRefresh = value);
-    _syncTimer();
+    _state?.setAutoRefresh(value);
   }
 
   void _setModule(String value) {
@@ -236,7 +186,7 @@ class _LogsPageState extends State<LogsPage> {
     _load();
   }
 
-  String _logKey(_LogEntry log, int index) {
+  String _logKey(LogEntry log, int index) {
     return [
       log.taskId ?? '',
       log.timestamp,
@@ -289,6 +239,14 @@ class _LogsPageState extends State<LogsPage> {
           ),
         ],
         const SizedBox(height: 24),
+        if (_state?.error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Text(
+                context.localeText(
+                    '日志加载失败，请重试', 'Failed to load logs. Please retry.'),
+                style: const TextStyle(color: Colors.red)),
+          ),
         TingCard(
           padding: EdgeInsets.zero,
           radius: 24,
@@ -341,52 +299,6 @@ class _LogsPageState extends State<LogsPage> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _LogEntry {
-  const _LogEntry({
-    required this.timestamp,
-    required this.level,
-    required this.module,
-    required this.message,
-    this.rawMessage,
-    this.messageKey,
-    this.messageParams = const {},
-    this.fields = const {},
-    this.taskId,
-    this.taskStatus,
-    this.taskType,
-  });
-
-  final String timestamp;
-  final String level;
-  final String module;
-  final String message;
-  final String? rawMessage;
-  final String? messageKey;
-  final Map<String, dynamic> messageParams;
-  final Map<String, dynamic> fields;
-  final String? taskId;
-  final String? taskStatus;
-  final String? taskType;
-
-  bool get isTask => taskId != null && taskId!.isNotEmpty;
-
-  factory _LogEntry.fromJson(Map<String, dynamic> json) {
-    return _LogEntry(
-      timestamp: (json['timestamp'] ?? json['created_at'] ?? '').toString(),
-      level: (json['level'] ?? 'INFO').toString(),
-      module: (json['module'] ?? 'audit').toString(),
-      message: (json['message'] ?? '').toString(),
-      rawMessage: json['raw_message']?.toString(),
-      messageKey: json['message_key']?.toString(),
-      messageParams: asMap(json['message_params']),
-      fields: asMap(json['fields']),
-      taskId: json['task_id']?.toString(),
-      taskStatus: json['task_status']?.toString(),
-      taskType: json['task_type']?.toString(),
     );
   }
 }
@@ -984,7 +896,7 @@ class _LogRow extends StatelessWidget {
     required this.onDeleteTask,
   });
 
-  final _LogEntry log;
+  final LogEntry log;
   final bool expanded;
   final VoidCallback? onToggleDetails;
   final VoidCallback? onCancelTask;
@@ -1049,7 +961,7 @@ class _LogRow extends StatelessWidget {
 class _LogIcon extends StatelessWidget {
   const _LogIcon({required this.log});
 
-  final _LogEntry log;
+  final LogEntry log;
 
   @override
   Widget build(BuildContext context) {
@@ -1074,7 +986,7 @@ class _LogBody extends StatelessWidget {
     required this.onToggleDetails,
   });
 
-  final _LogEntry log;
+  final LogEntry log;
   final bool expanded;
   final VoidCallback? onToggleDetails;
 
@@ -1242,7 +1154,7 @@ class _LogTrailing extends StatelessWidget {
     required this.onDeleteTask,
   });
 
-  final _LogEntry log;
+  final LogEntry log;
   final bool compact;
   final VoidCallback? onCancelTask;
   final VoidCallback? onDeleteTask;
@@ -1430,7 +1342,7 @@ String _moduleName(BuildContext context, String module) {
   return module;
 }
 
-String _logMessage(BuildContext context, _LogEntry log) {
+String _logMessage(BuildContext context, LogEntry log) {
   final key = log.messageKey;
   if (key == null || key.isEmpty) {
     return log.message.isNotEmpty ? log.message : (log.rawMessage ?? '');
@@ -1881,7 +1793,7 @@ String _formatLogFieldValue(Object? value) {
   }
 }
 
-Color _logAccent(_LogEntry log) {
+Color _logAccent(LogEntry log) {
   if (!log.isTask) return AppColors.slate500;
   if (log.taskType == 'scan' || log.taskType == 'library_scan') {
     return AppColors.primary600;

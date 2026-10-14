@@ -36,6 +36,13 @@ class _LoginPageState extends State<LoginPage> {
     });
   }
 
+  @override
+  void dispose() {
+    _loginAttempt++;
+    _loginCancelToken?.cancel('Login page closed');
+    super.dispose();
+  }
+
   Future<void> _tryAutomaticGatewayLogin() async {
     if (!mounted || _automaticGatewayLoginStarted) return;
     final appState = AppScope.appOf(context);
@@ -89,17 +96,10 @@ class _LoginPageState extends State<LoginPage> {
     SavedServerProfile? activeProfile,
     SavedServerProfile? replaceProfile,
   }) async {
+    _loginCancelToken?.cancel('Login attempt replaced');
     final attempt = ++_loginAttempt;
     final cancelToken = CancelToken();
     _loginCancelToken = cancelToken;
-    final detectedGatewayHost = FnosGateway.tryGatewayHostFromInput(server);
-    final effectiveFnId = detectedGatewayHost ??
-        (mode == ServerProfileMode.fnosGateway && fnId.trim().isNotEmpty
-            ? FnosGateway.hostForFnId(fnId)
-            : '');
-    final effectiveMode = effectiveFnId.isNotEmpty
-        ? ServerProfileMode.fnosGateway
-        : ServerProfileMode.direct;
     setState(() {
       _loading = true;
       _error = null;
@@ -114,46 +114,48 @@ class _LoginPageState extends State<LoginPage> {
         if (_languageChanged) 'language': appState.languageCode,
         if (_themeChanged) 'theme': appState.theme,
       };
-      await appState.login(
-        server: server,
-        localServer: localServer,
-        username: username,
-        password: password,
-        mode: effectiveMode,
-        fnId: effectiveFnId,
-        fnosUsername: fnosUsername,
-        fnosPassword: fnosPassword,
-        gatewayCookie: gatewayCookie,
-        fnAccessCode: fnAccessCode,
-        onTwofaRequired: effectiveMode == ServerProfileMode.fnosGateway
-            ? () async {
-                if (!mounted ||
-                    cancelToken.isCancelled ||
-                    attempt != _loginAttempt) {
-                  return null;
-                }
-                if (mounted &&
-                    !cancelToken.isCancelled &&
-                    attempt == _loginAttempt) {
-                  setState(() {
-                    _loginStage = context.localeText(
-                      '需要二步验证',
-                      'Two-step verification required',
-                    );
-                  });
-                }
-                final answer = await _promptTwofaAnswer();
-                if (mounted &&
-                    !cancelToken.isCancelled &&
-                    attempt == _loginAttempt) {
-                  setState(() {
-                    _loginStage = context.l10n.startupConnecting;
-                  });
-                }
-                return answer;
-              }
-            : null,
-        onFnConnectStage: (stage) {
+      await appState.loginWithPrompts(
+        SavedServerProfile(
+          serverUrl: server,
+          localServerUrl: localServer,
+          activeUrl: server,
+          username: username,
+          password: password,
+          label: '',
+          mode: mode,
+          fnId: fnId,
+          fnosUsername: fnosUsername,
+          fnosPassword: fnosPassword,
+          gatewayCookie: gatewayCookie,
+          fnAccessCode: fnAccessCode ?? '',
+        ),
+        requestAccessCode: (incorrect) async {
+          if (!mounted || cancelToken.isCancelled || attempt != _loginAttempt) {
+            return null;
+          }
+          return _promptAccessCode(errorHint: incorrect);
+        },
+        requestTwofa: () async {
+          if (!mounted || cancelToken.isCancelled || attempt != _loginAttempt) {
+            return null;
+          }
+          if (mounted && !cancelToken.isCancelled && attempt == _loginAttempt) {
+            setState(() {
+              _loginStage = context.localeText(
+                '需要二步验证',
+                'Two-step verification required',
+              );
+            });
+          }
+          final answer = await _promptTwofaAnswer();
+          if (mounted && !cancelToken.isCancelled && attempt == _loginAttempt) {
+            setState(() {
+              _loginStage = context.l10n.startupConnecting;
+            });
+          }
+          return answer;
+        },
+        onStage: (stage) {
           if (!mounted || cancelToken.isCancelled || attempt != _loginAttempt) {
             return;
           }
@@ -179,71 +181,9 @@ class _LoginPageState extends State<LoginPage> {
           });
         },
         replaceProfile: replaceProfile,
-        loginSettingsPatch: loginSettingsPatch,
+        settingsPatch: loginSettingsPatch,
         cancelToken: cancelToken,
       );
-    } on FnConnectAccessCodeRequiredException {
-      if (cancelToken.isCancelled || !mounted) return;
-      // 服务器已开启访问码但本地没有：弹窗询问后携带访问码重试。
-      final code = await _promptAccessCode();
-      if (cancelToken.isCancelled || !mounted) return;
-      if (code == null || code.isEmpty) {
-        setState(() {
-          _loading = false;
-          _loginStage = null;
-          _error = context.localeText(
-            '服务器已开启访问码，请输入访问码后重试',
-            'The server requires an access code. Enter it and try again',
-          );
-        });
-        return;
-      }
-      await _login(
-        server: server,
-        localServer: localServer,
-        username: username,
-        password: password,
-        mode: mode,
-        fnId: fnId,
-        fnosUsername: fnosUsername,
-        fnosPassword: fnosPassword,
-        gatewayCookie: gatewayCookie,
-        fnAccessCode: code,
-        activeProfile: activeProfile,
-        replaceProfile: replaceProfile,
-      );
-      return;
-    } on FnConnectAccessCodeException {
-      if (cancelToken.isCancelled || !mounted) return;
-      // 访问码错误：清空旧值并弹窗重新询问。
-      final code = await _promptAccessCode(errorHint: true);
-      if (cancelToken.isCancelled || !mounted) return;
-      if (code == null || code.isEmpty) {
-        setState(() {
-          _loading = false;
-          _loginStage = null;
-          _error = context.localeText(
-            '访问码错误，请检查后重试',
-            'Incorrect access code. Check it and try again',
-          );
-        });
-        return;
-      }
-      await _login(
-        server: server,
-        localServer: localServer,
-        username: username,
-        password: password,
-        mode: mode,
-        fnId: fnId,
-        fnosUsername: fnosUsername,
-        fnosPassword: fnosPassword,
-        gatewayCookie: gatewayCookie,
-        fnAccessCode: code,
-        activeProfile: activeProfile,
-        replaceProfile: replaceProfile,
-      );
-      return;
     } on FnConnectTwofaSetupRequiredException {
       if (cancelToken.isCancelled || !mounted) return;
       setState(() {
@@ -302,12 +242,9 @@ class _LoginPageState extends State<LoginPage> {
   /// 二步验证（OTP）输入弹窗：飞牛账号开启双重验证后，
   /// `user.login` 只返回挑战，需要用户补一次 6 位动态验证码。
   Future<FnTwofaAnswer?> _promptTwofaAnswer() {
-    final codeController = TextEditingController();
     var trustDevice = false;
-    return showDialog<FnTwofaAnswer>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
+    return _showCredentialPrompt<FnTwofaAnswer>(
+      builder: (dialogContext, codeController) {
         void confirm() {
           final code = codeController.text.trim();
           if (code.isEmpty) return;
@@ -362,12 +299,9 @@ class _LoginPageState extends State<LoginPage> {
 
   /// 访问码输入弹窗（服务器开启访问码但本地未保存/保存错误时弹出）。
   Future<String?> _promptAccessCode({bool errorHint = false}) {
-    final codeController = TextEditingController();
     var obscure = true;
-    return showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
+    return _showCredentialPrompt<String>(
+      builder: (dialogContext, codeController) {
         void confirm() {
           final code = codeController.text.trim();
           if (code.isEmpty) return;
@@ -416,6 +350,15 @@ class _LoginPageState extends State<LoginPage> {
       },
     );
   }
+
+  Future<T?> _showCredentialPrompt<T>({
+    required Widget Function(BuildContext, TextEditingController) builder,
+  }) =>
+      showDialog<T>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => _CredentialPrompt(builder: builder),
+      );
 
   Future<void> _openServerDialog([SavedServerProfile? profile]) async {
     final result = await Navigator.of(context).push<_ServerLoginDraft>(
@@ -1589,6 +1532,28 @@ class _ErrorBox extends StatelessWidget {
 /// 网关登录过程中的询问弹窗（二步验证 / 访问码）。
 /// 视觉语言与服务器登录卡片保持一致：卡片底色、18px 圆角、
 /// 主色图标徽章、InfoBox 风格说明条、主题输入框与主色按钮。
+/// The route owns the controller until its closing animation removes the form.
+class _CredentialPrompt extends StatefulWidget {
+  const _CredentialPrompt({required this.builder});
+  final Widget Function(BuildContext, TextEditingController) builder;
+
+  @override
+  State<_CredentialPrompt> createState() => _CredentialPromptState();
+}
+
+class _CredentialPromptState extends State<_CredentialPrompt> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _controller);
+}
+
 class _GatewayAuthPromptDialog extends StatelessWidget {
   const _GatewayAuthPromptDialog({
     required this.icon,

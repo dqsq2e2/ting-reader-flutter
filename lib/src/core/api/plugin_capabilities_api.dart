@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../models/_helpers.dart' show asMap, asMapList, readInt, readString;
 import '../models/plugin.dart'
     show PluginCapabilityRegistration, ToolProviderRegistration;
@@ -10,6 +11,7 @@ class PluginCapabilitiesApi {
   Future<List<PluginCapabilityRegistration>>? _clientExtensionsFuture;
   List<PluginCapabilityRegistration>? _cachedClientExtensions;
   String? _clientExtensionsCacheKey;
+  CancelToken? _clientExtensionsToken;
 
   /// Shares the capability lookup between the global host, page actions, and
   /// inline extension slots for the current authenticated server context.
@@ -20,6 +22,8 @@ class PluginCapabilitiesApi {
       return cachedFuture;
     }
 
+    _clientExtensionsToken?.cancel('Extension server context changed');
+    _cachedClientExtensions = null;
     final future = _fetchClientExtensions(cacheKey);
     _clientExtensionsCacheKey = cacheKey;
     _clientExtensionsFuture = future;
@@ -36,6 +40,8 @@ class PluginCapabilitiesApi {
   }
 
   void invalidateClientExtensionsCache() {
+    _clientExtensionsToken?.cancel('Extension registry invalidated');
+    _clientExtensionsToken = null;
     _clientExtensionsFuture = null;
     _cachedClientExtensions = null;
     _clientExtensionsCacheKey = null;
@@ -50,33 +56,44 @@ class PluginCapabilitiesApi {
   Future<List<PluginCapabilityRegistration>> _fetchClientExtensions(
     String cacheKey,
   ) async {
+    final token = CancelToken();
+    _clientExtensionsToken = token;
     try {
       final registrations = [
-        ...await listPluginCapabilities(kind: 'ui_extension'),
+        ...await listPluginCapabilities(
+            kind: 'ui_extension', cancelToken: token),
       ];
       final result = List<PluginCapabilityRegistration>.unmodifiable(
         registrations,
       );
-      if (_clientExtensionsCacheKey == cacheKey) {
+      if (_clientExtensionsCacheKey == cacheKey &&
+          identical(_clientExtensionsToken, token)) {
         _cachedClientExtensions = result;
       }
       return result;
     } catch (_) {
-      if (_clientExtensionsCacheKey == cacheKey) {
+      if (_clientExtensionsCacheKey == cacheKey &&
+          identical(_clientExtensionsToken, token)) {
         _clientExtensionsFuture = null;
         _cachedClientExtensions = null;
         _clientExtensionsCacheKey = null;
       }
       rethrow;
+    } finally {
+      if (identical(_clientExtensionsToken, token)) {
+        _clientExtensionsToken = null;
+      }
     }
   }
 
   Future<List<PluginCapabilityRegistration>> listPluginCapabilities({
     String? kind,
+    CancelToken? cancelToken,
   }) async {
     final res = await _api.get(
       '/api/v1/plugin-capabilities',
       params: _compactParams({'kind': kind}),
+      cancelToken: cancelToken,
     );
     return asMapList(res.data)
         .map(PluginCapabilityRegistration.fromJson)

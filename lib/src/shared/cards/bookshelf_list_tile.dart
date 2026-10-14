@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/locale.dart';
 import '../common/common_widgets.dart';
+import '../common/media_widgets.dart';
 
 class BookshelfListTile extends StatelessWidget {
   const BookshelfListTile({

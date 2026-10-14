@@ -1,21 +1,21 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
 import '../models/models.dart';
 import '../utils/urls.dart';
 import 'app_state.dart';
+import 'download/download_helpers.dart';
+import 'download/download_models.dart';
+import 'download/download_storage.dart';
+import 'download/download_transfer.dart';
 
-part 'download/download_models.dart';
-part 'download/download_helpers.dart';
+export 'download/download_models.dart';
 
-/// In-memory download queue, on-disk index, and HTTP engine.
+/// Owns task states, scheduling, waiters and cancellation. Transfers and disk
+/// snapshots have separate owners, independent of application and UI state.
 ///
 /// Persistence layout under the user-chosen cache directory:
 ///   - `downloads.json`                – combined index (downloads + tasks)
@@ -23,36 +23,70 @@ part 'download/download_helpers.dart';
 ///   - `<serverKey>/<bookId>/cover.<ext>`                       – cached cover
 ///   - `<serverKey>/<bookId>/book.json`, `chapters.json`        – metadata
 class DownloadState extends ChangeNotifier {
-  DownloadState(this.appState);
-
-  static const _cacheDirectoryPrefsKey = 'download_cache_directory';
+  DownloadState(this.appState, {Dio? httpClient})
+      : _transfer = DownloadTransfer(httpClient: httpClient);
 
   final AppState appState;
-  final Dio _dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(minutes: 30),
-    ),
-  );
+  final DownloadTransfer _transfer;
+  final DownloadStorage _storage = DownloadStorage();
+  final Map<String, Timer> _completionTimers = {};
+  bool _disposed = false;
+  Future<void>? _initialization;
 
-  Directory? _rootDir;
-  File? _indexFile;
-  String? _customCacheDirectory;
   int _maxConcurrentDownloads = 2;
   final Map<String, LocalDownload> _downloads = {};
   final Map<String, DownloadTask> _tasks = {};
   final Map<String, CancelToken> _tokens = {};
   final Map<String, Future<void>> _running = {};
+  final Map<String, Future<void>> _deletions = {};
   final Map<String, List<Completer<LocalDownload>>> _waiters = {};
+
+  void _notifyIfActive() {
+    if (!_disposed) notifyListeners();
+  }
+
+  void _checkTask(DownloadTask task, CancelToken token) {
+    if (_disposed || !identical(_tasks[task.storageKey], task)) {
+      if (!token.isCancelled) token.cancel('download stopped');
+    }
+    final cancellation = token.cancelError;
+    if (cancellation != null) throw cancellation;
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    for (final timer in _completionTimers.values) {
+      timer.cancel();
+    }
+    _completionTimers.clear();
+    for (final token in _tokens.values) {
+      if (!token.isCancelled) token.cancel('download state disposed');
+    }
+    _transfer.dispose();
+    for (final key in _waiters.keys.toList()) {
+      _completeWaitersWithError(key, StateError('Download state disposed'));
+    }
+    super.dispose();
+  }
+
+  /// Wait until cancellation and all already-submitted disk writes have settled.
+  Future<void> close() async {
+    dispose();
+    await Future.wait(_running.values.toList());
+    await Future.wait(_deletions.values.toList());
+    await _storage.flush();
+  }
 
   int get maxConcurrentDownloads => _maxConcurrentDownloads;
 
-  String? get cacheDirectoryPath => _rootDir?.path;
+  String? get cacheDirectoryPath => _storage.directory?.path;
 
-  String? get customCacheDirectory => _customCacheDirectory;
+  String? get customCacheDirectory => _storage.customDirectory;
 
   bool get usingCustomCacheDirectory =>
-      _customCacheDirectory != null && _customCacheDirectory!.isNotEmpty;
+      _storage.customDirectory != null && _storage.customDirectory!.isNotEmpty;
 
   int get runningCount => _tasks.values
       .where((task) => task.status == DownloadStatus.downloading)
@@ -85,7 +119,8 @@ class DownloadState extends ChangeNotifier {
         .where((task) => task.status != DownloadStatus.completed)
         .toList();
     list.sort((a, b) {
-      final byStatus = _statusSort(a.status).compareTo(_statusSort(b.status));
+      final byStatus = downloadStatusOrder(a.status)
+          .compareTo(downloadStatusOrder(b.status));
       if (byStatus != 0) return byStatus;
       final byBook = a.bookTitle.compareTo(b.bookTitle);
       if (byBook != 0) return byBook;
@@ -107,12 +142,7 @@ class DownloadState extends ChangeNotifier {
   }
 
   String? get _currentServerName {
-    final raw = appState.serverUrl.trim().isNotEmpty
-        ? appState.serverUrl
-        : appState.localServerUrl.trim().isNotEmpty
-            ? appState.localServerUrl
-            : appState.activeUrl;
-    final uri = Uri.tryParse(ApiClient.normalizeServerUrl(raw));
+    final uri = Uri.tryParse(_currentServerKey);
     final host = uri?.host;
     if (host == null || host.isEmpty) return null;
     return host;
@@ -124,38 +154,24 @@ class DownloadState extends ChangeNotifier {
   String _legacyRecordKey(String itemId) =>
       downloadRecordKey(legacyDownloadServerKey, itemId);
 
-  String? _downloadKeyFor(String idOrKey) {
-    if (_downloads.containsKey(idOrKey)) return idOrKey;
-    final current = _currentRecordKey(idOrKey);
-    if (_downloads.containsKey(current)) return current;
-    final legacy = _legacyRecordKey(idOrKey);
-    if (_downloads.containsKey(legacy)) return legacy;
-    return null;
-  }
-
-  String? _taskKeyFor(String idOrKey) {
-    if (_tasks.containsKey(idOrKey)) return idOrKey;
-    final current = _currentRecordKey(idOrKey);
-    if (_tasks.containsKey(current)) return current;
-    final legacy = _legacyRecordKey(idOrKey);
-    if (_tasks.containsKey(legacy)) return legacy;
-    return null;
-  }
+  String? _downloadKeyFor(String idOrKey) =>
+      _findRecordKey(_downloads.keys, idOrKey);
+  String? _taskKeyFor(String idOrKey) => _findRecordKey(_tasks.keys, idOrKey);
 
   String? _bookGroupKeyFor(String idOrKey) {
-    if (_downloads.values.any((item) => item.bookGroupKey == idOrKey) ||
-        _tasks.values.any((task) => task.bookGroupKey == idOrKey)) {
-      return idOrKey;
-    }
-    final current = _currentRecordKey(idOrKey);
-    if (_downloads.values.any((item) => item.bookGroupKey == current) ||
-        _tasks.values.any((task) => task.bookGroupKey == current)) {
-      return current;
-    }
-    final legacy = _legacyRecordKey(idOrKey);
-    if (_downloads.values.any((item) => item.bookGroupKey == legacy) ||
-        _tasks.values.any((task) => task.bookGroupKey == legacy)) {
-      return legacy;
+    return _findRecordKey({
+      ..._downloads.values.map((item) => item.bookGroupKey),
+      ..._tasks.values.map((task) => task.bookGroupKey),
+    }, idOrKey);
+  }
+
+  String? _findRecordKey(Iterable<String> keys, String idOrKey) {
+    for (final candidate in [
+      idOrKey,
+      _currentRecordKey(idOrKey),
+      _legacyRecordKey(idOrKey)
+    ]) {
+      if (keys.contains(candidate)) return candidate;
     }
     return null;
   }
@@ -172,39 +188,60 @@ class DownloadState extends ChangeNotifier {
         _tasks[_legacyRecordKey(chapterId)];
   }
 
-  Future<void> initialize() async {
+  bool canQueueChapter(String chapterId) =>
+      !hasChapter(chapterId) && taskForChapter(chapterId) == null;
+
+  /// Every single-chapter entry follows the same start/resume policy.
+  /// Batch selection can preserve existing paused tasks.
+  Future<DownloadRequestResult> requestChapter(
+    Book book,
+    Chapter chapter, {
+    bool transcode = false,
+    bool resumeExisting = true,
+  }) async {
+    _checkActive();
+    if (hasChapter(chapter.id)) {
+      return const DownloadRequestResult(DownloadRequestOutcome.downloaded);
+    }
+    final task = taskForChapter(chapter.id);
+    if (task != null) {
+      if (resumeExisting &&
+          (task.status == DownloadStatus.paused ||
+              task.status == DownloadStatus.failed)) {
+        await resumeTask(task.storageKey);
+        _checkActive();
+        return DownloadRequestResult(DownloadRequestOutcome.resumed,
+            status: task.status);
+      }
+      return DownloadRequestResult(DownloadRequestOutcome.existing,
+          status: task.status);
+    }
+    final queued = queueChapter(book, chapter, transcode: transcode);
+    return DownloadRequestResult(DownloadRequestOutcome.queued,
+        status: queued.status);
+  }
+
+  Future<void> initialize() => _initialization ??= _initialize();
+
+  Future<void> _initialize() async {
+    if (_disposed) return;
     if (kIsWeb) {
-      notifyListeners();
+      _notifyIfActive();
       return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    _customCacheDirectory =
-        _normalizeDirectoryPath(prefs.getString(_cacheDirectoryPrefsKey));
-    await _useRootDirectory(await _resolveRootDirectory(_customCacheDirectory));
+    await _storage.initialize(_checkActive);
+    if (_disposed) return;
     await _loadIndex();
     _pumpQueue();
   }
 
   Future<void> setCacheDirectory(String? path) async {
-    if (kIsWeb) return;
-    final nextCustom = _normalizeDirectoryPath(path);
-    final nextRoot = await _resolveRootDirectory(nextCustom);
-    final currentRoot = _rootDir?.absolute.path;
-    if (currentRoot == nextRoot.absolute.path &&
-        _customCacheDirectory == nextCustom) {
-      return;
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    if (nextCustom == null) {
-      await prefs.remove(_cacheDirectoryPrefsKey);
-    } else {
-      await prefs.setString(_cacheDirectoryPrefsKey, nextCustom);
-    }
-    _customCacheDirectory = nextCustom;
-    await _useRootDirectory(nextRoot);
+    if (_disposed || kIsWeb) return;
+    await _initialization;
+    if (_disposed) return;
+    if (!await _storage.configureDirectory(path, _checkActive)) return;
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
   }
 
   Future<void> setMaxConcurrentDownloads(int value) async {
@@ -212,7 +249,7 @@ class DownloadState extends ChangeNotifier {
     if (_maxConcurrentDownloads == next) return;
     _maxConcurrentDownloads = next;
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
     _pumpQueue();
   }
 
@@ -231,11 +268,12 @@ class DownloadState extends ChangeNotifier {
   Future<String?> _localPathForDownloadKey(String key) async {
     final item = _downloads[key];
     if (item == null || item.filePath.isEmpty) return null;
-    final file = File(item.filePath);
-    if (await file.exists()) return item.filePath;
+    if (await _storage.existingFile(item.filePath) != null) {
+      return item.filePath;
+    }
     _downloads.remove(key);
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
     return null;
   }
 
@@ -244,7 +282,8 @@ class DownloadState extends ChangeNotifier {
     Chapter chapter, {
     bool transcode = false,
   }) {
-    if (kIsWeb || _rootDir == null) {
+    if (_disposed) throw StateError("Download state disposed");
+    if (kIsWeb || _storage.directory == null) {
       throw StateError(appState.textForLocale(
         '当前预览环境不支持本机下载，请在移动端或桌面端使用。',
         'Local downloads are unavailable in preview. Use the mobile or desktop app.',
@@ -260,10 +299,10 @@ class DownloadState extends ChangeNotifier {
       serverName: _currentServerName,
       transcode: transcode,
     );
-    _prepareTaskPaths(task);
+    _storage.preparePaths(task, transcode: shouldTranscodeDownload(task));
     _tasks[task.storageKey] = task;
-    unawaited(_saveIndex());
-    notifyListeners();
+    _saveIndexInBackground();
+    _notifyIfActive();
     _pumpQueue();
     return task;
   }
@@ -273,10 +312,8 @@ class DownloadState extends ChangeNotifier {
     final ordered = [...chapters]
       ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
     for (final chapter in ordered) {
-      if (hasChapter(chapter.id)) continue;
-      final before = _tasks.containsKey(_currentRecordKey(chapter.id));
-      queueChapter(book, chapter);
-      if (!before) queued++;
+      final result = await requestChapter(book, chapter, resumeExisting: false);
+      if (result.outcome == DownloadRequestOutcome.queued) queued++;
     }
     return queued;
   }
@@ -286,13 +323,25 @@ class DownloadState extends ChangeNotifier {
     Chapter chapter, {
     bool transcode = false,
   }) async {
-    final existing = await localPathForChapter(chapter.id);
-    if (existing != null) {
-      return findByChapter(chapter.id)!;
+    if (_disposed) throw StateError('Download state disposed');
+    final serverKey = _currentServerKey;
+    final existingKey = _downloadKeyFor(chapter.id);
+    final existing = existingKey == null ? null : _downloads[existingKey];
+    if (existing != null &&
+        await _storage.existingFile(existing.filePath) != null) {
+      return existing;
+    }
+    if (_disposed) throw StateError('Download state disposed');
+    if (_currentServerKey != serverKey) {
+      throw StateError('Server changed during download setup');
     }
     final task = queueChapter(book, chapter, transcode: transcode);
     final completer = Completer<LocalDownload>();
     _waiters.putIfAbsent(task.storageKey, () => []).add(completer);
+    if (task.status == DownloadStatus.failed ||
+        task.status == DownloadStatus.paused) {
+      await resumeTask(task.storageKey);
+    }
     return completer.future;
   }
 
@@ -309,14 +358,17 @@ class DownloadState extends ChangeNotifier {
       task.status = DownloadStatus.paused;
       task.error = null;
       task.touch();
-      _tokens.remove(key)?.cancel('paused');
+      final token = _tokens[key];
+      if (token != null && !token.isCancelled) token.cancel('paused');
     } else if (task.status == DownloadStatus.queued) {
       task.status = DownloadStatus.paused;
       task.error = null;
       task.touch();
     }
+    _completeWaitersWithError(key, StateError('Download paused'));
+    await _running[key];
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
     _pumpQueue();
   }
 
@@ -329,73 +381,94 @@ class DownloadState extends ChangeNotifier {
         task.status == DownloadStatus.queued) {
       return;
     }
+    await _running[key];
+    if (_disposed || !identical(_tasks[key], task)) return;
     task.status = DownloadStatus.queued;
     task.error = null;
     task.touch();
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
     _pumpQueue();
   }
 
   Future<void> retryTask(String chapterId) => resumeTask(chapterId);
 
-  Future<void> deleteTask(String chapterId) async {
-    final key = _taskKeyFor(chapterId) ?? chapterId;
-    _tokens.remove(key)?.cancel('deleted');
-    _running.remove(key);
+  Future<void> _deleteLocked(String key, Future<void> Function() operation) {
+    final pending = _deletions[key];
+    if (pending != null) return pending;
+    late final Future<void> result;
+    result = operation().whenComplete(() {
+      if (identical(_deletions[key], result)) _deletions.remove(key);
+      _pumpQueue();
+    });
+    _deletions[key] = result;
+    return result;
+  }
+
+  Future<void> deleteTask(String chapterId) {
+    final key = _taskKeyFor(chapterId) ?? _currentRecordKey(chapterId);
+    return _deleteLocked(key, () => _deleteTask(key));
+  }
+
+  Future<void> _deleteTask(String key) async {
+    final token = _tokens[key];
+    if (token != null && !token.isCancelled) token.cancel('deleted');
+    _completionTimers.remove(key)?.cancel();
     final task = _tasks.remove(key);
+    _completeWaitersWithError(key, StateError('Download task deleted'));
+    await _running[key];
     if (!kIsWeb && task != null) {
       final tempPath = task.tempPath;
       if (tempPath != null && tempPath.isNotEmpty) {
-        final temp = File(tempPath);
-        if (await temp.exists()) await temp.delete();
+        await _storage.deleteFile(tempPath);
       }
     }
-    _completeWaitersWithError(
-      key,
-      StateError(appState.textForLocale(
-        '下载任务已删除',
-        'Download task was deleted',
-      )),
-    );
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
     _pumpQueue();
   }
 
-  Future<void> deleteChapter(String chapterId) async {
+  Future<void> deleteChapter(String chapterId) {
+    final key = _downloadKeyFor(chapterId) ??
+        _taskKeyFor(chapterId) ??
+        _currentRecordKey(chapterId);
+    return _deleteLocked(key, () => _deleteChapter(key));
+  }
+
+  Future<void> _deleteChapter(String chapterId) async {
     final downloadKey = _downloadKeyFor(chapterId);
     final taskKey = _taskKeyFor(chapterId);
     final itemBefore = downloadKey == null ? null : _downloads[downloadKey];
     final taskBefore = taskKey == null ? null : _tasks[taskKey];
     final groupKey = itemBefore?.bookGroupKey ?? taskBefore?.bookGroupKey;
-    final dirs = groupKey == null ? <String>{} : _bookDirPaths(groupKey);
-    if (taskKey != null) await deleteTask(taskKey);
-    final item = downloadKey == null ? null : _downloads.remove(downloadKey);
+    final dirs = groupKey == null
+        ? <String>{}
+        : _storage.bookDirectories(groupKey, _downloads.values, _tasks.values);
+    if (taskKey != null) await _deleteTask(taskKey);
+    final item = _downloads.remove(downloadKey ?? taskKey ?? chapterId);
     if (!kIsWeb && item != null && item.filePath.isNotEmpty) {
-      final file = File(item.filePath);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      await _storage.deleteFile(item.filePath);
     }
-    if (!kIsWeb && groupKey != null && _rootDir != null) {
+    if (!kIsWeb && groupKey != null && _storage.directory != null) {
       final hasRemaining =
           _downloads.values.any((item) => item.bookGroupKey == groupKey) ||
               _tasks.values.any((task) => task.bookGroupKey == groupKey);
       if (!hasRemaining) {
-        for (final path in dirs) {
-          final dir = Directory(path);
-          if (await dir.exists()) await dir.delete(recursive: true);
-        }
+        await _storage.cleanBookDirectories(dirs);
       }
     }
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
   }
 
-  Future<void> deleteBook(String bookId) async {
+  Future<void> deleteBook(String bookId) {
     final groupKey = _bookGroupKeyFor(bookId) ?? bookId;
-    final dirs = _bookDirPaths(groupKey);
+    return _deleteLocked('book:$groupKey', () => _deleteBook(groupKey));
+  }
+
+  Future<void> _deleteBook(String groupKey) async {
+    final dirs =
+        _storage.bookDirectories(groupKey, _downloads.values, _tasks.values);
     final downloadedIds = _downloads.values
         .where((item) => item.bookGroupKey == groupKey)
         .map((item) => item.storageKey)
@@ -407,17 +480,14 @@ class DownloadState extends ChangeNotifier {
     for (final id in {...downloadedIds, ...taskIds}) {
       await deleteChapter(id);
     }
-    if (!kIsWeb && _rootDir != null) {
-      for (final path in dirs) {
-        final dir = Directory(path);
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-        }
-      }
+    if (!kIsWeb && _storage.directory != null) {
+      await _storage.cleanBookDirectories(dirs);
     }
   }
 
-  Future<void> clearAll() async {
+  Future<void> clearAll() => _deleteLocked('*', _clearAll);
+
+  Future<void> _clearAll() async {
     final ids = {..._downloads.keys, ..._tasks.keys}.toList();
     for (final id in ids) {
       await deleteChapter(id);
@@ -427,110 +497,50 @@ class DownloadState extends ChangeNotifier {
   Future<void> clearFinishedTasks() async {
     _tasks.removeWhere((_, task) => task.status == DownloadStatus.completed);
     await _saveIndex();
-    notifyListeners();
+    _notifyIfActive();
+  }
+
+  void _checkActive() {
+    if (_disposed) throw StateError('Download state disposed');
   }
 
   Future<void> _loadIndex() async {
-    final file = _indexFile;
-    if (file == null || !await file.exists()) return;
-    try {
-      final decoded = jsonDecode(await file.readAsString());
-      final downloadItems = decoded is List
-          ? decoded
-          : decoded is Map
-              ? decoded['downloads']
-              : const [];
-      final taskItems = decoded is Map ? decoded['tasks'] : const <dynamic>[];
-      final settings = decoded is Map ? asMap(decoded['settings']) : {};
-      _maxConcurrentDownloads =
-          (_int(settings['max_concurrent_downloads']) ?? 2).clamp(1, 6).toInt();
-      _downloads
-        ..clear()
-        ..addEntries(
-          (downloadItems is List ? downloadItems : const [])
-              .map((item) => LocalDownload.fromJson(asMap(item)))
-              .where((item) =>
-                  item.chapterId.isNotEmpty && item.filePath.isNotEmpty)
-              .map((item) => MapEntry(item.storageKey, item)),
-        );
-      _tasks
-        ..clear()
-        ..addEntries(
-          (taskItems is List ? taskItems : const [])
-              .map((item) => DownloadTask.fromJson(asMap(item)))
-              .where((task) =>
-                  task.chapterId.isNotEmpty &&
-                  task.bookId.isNotEmpty &&
-                  task.chapterPath.isNotEmpty &&
-                  !_downloads.containsKey(task.storageKey))
-              .map((task) => MapEntry(task.storageKey, task)),
-        );
-    } catch (_) {
-      _downloads.clear();
-      _tasks.clear();
-    }
-    await _pruneMissingFiles();
-    await _refreshPartialSizes();
-    notifyListeners();
-  }
-
-  Future<void> _pruneMissingFiles() async {
-    final missing = <String>[];
-    for (final entry in _downloads.entries) {
-      if (!await File(entry.value.filePath).exists()) {
-        missing.add(entry.key);
-      }
-    }
-    if (missing.isEmpty) return;
-    for (final id in missing) {
-      _downloads.remove(id);
-    }
+    if (_disposed) return;
+    final index = await _storage.readIndex(_checkActive);
+    if (index == null || _disposed) return;
+    _maxConcurrentDownloads = index.maxConcurrent;
+    _downloads
+      ..clear()
+      ..addEntries(
+          index.downloads.map((item) => MapEntry(item.storageKey, item)));
+    _tasks
+      ..clear()
+      ..addEntries(index.tasks.map((task) => MapEntry(task.storageKey, task)));
     await _saveIndex();
+    _notifyIfActive();
   }
 
-  Future<void> _refreshPartialSizes() async {
-    for (final task in _tasks.values) {
-      final tempPath = task.tempPath;
-      if (tempPath == null || tempPath.isEmpty) continue;
-      final temp = File(tempPath);
-      if (!await temp.exists()) continue;
-      task.receivedBytes = await temp.length();
-      if (task.totalBytes > 0) {
-        task.progress = (task.receivedBytes / task.totalBytes).clamp(0, 1);
-      }
-    }
-  }
+  Future<void> _saveIndex() => _disposed
+      ? Future<void>.value()
+      : _storage.saveIndex(DownloadIndex(
+          downloads: _downloads.values.toList(),
+          tasks: _tasks.values.toList(),
+          maxConcurrent: _maxConcurrentDownloads));
 
-  Future<void> _saveIndex() async {
-    final file = _indexFile;
-    if (file == null) return;
-    final tasks = _tasks.values
-        .where((task) => task.status != DownloadStatus.completed)
-        .map((task) => task.toJson())
-        .toList();
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(
-        {
-          'version': 2,
-          'settings': {
-            'max_concurrent_downloads': _maxConcurrentDownloads,
-            if (_customCacheDirectory != null)
-              'cache_directory': _customCacheDirectory,
-          },
-          'downloads': _downloads.values.map((item) => item.toJson()).toList(),
-          'tasks': tasks,
-        },
-      ),
-      flush: true,
-    );
+  void _saveIndexInBackground() {
+    unawaited(_saveIndex().catchError((Object error, StackTrace stack) {
+      debugPrint('Failed to save download index: $error');
+    }));
   }
 
   void _pumpQueue() {
-    if (kIsWeb || _rootDir == null) return;
+    if (_disposed || kIsWeb || _storage.directory == null) return;
     while (_running.length < _maxConcurrentDownloads) {
       DownloadTask? next;
       for (final task in _tasks.values) {
-        if (task.status == DownloadStatus.queued && _canRunTask(task)) {
+        if (task.status == DownloadStatus.queued &&
+            !_running.containsKey(task.storageKey) &&
+            _canRunTask(task)) {
           next = task;
           break;
         }
@@ -541,7 +551,7 @@ class DownloadState extends ChangeNotifier {
   }
 
   void _startTask(DownloadTask task) {
-    if (!_canRunTask(task)) return;
+    if (_disposed || !_canRunTask(task)) return;
     final key = task.storageKey;
     if (_running.containsKey(key)) return;
     final token = CancelToken();
@@ -549,7 +559,7 @@ class DownloadState extends ChangeNotifier {
     task.status = DownloadStatus.downloading;
     task.error = null;
     task.touch();
-    notifyListeners();
+    _notifyIfActive();
     _running[key] = _runTask(task, token).whenComplete(() {
       _running.remove(key);
       _tokens.remove(key);
@@ -558,395 +568,97 @@ class DownloadState extends ChangeNotifier {
   }
 
   Future<void> _runTask(DownloadTask task, CancelToken token) async {
-    _prepareTaskPaths(task);
-    await _saveIndex();
-
-    var tempPath = task.tempPath;
-    var filePath = task.filePath;
-    if (tempPath == null || filePath == null) return;
-
-    var tempFile = File(tempPath);
-    if (!await tempFile.parent.exists()) {
-      await tempFile.parent.create(recursive: true);
-    }
-    final transcode = _shouldTranscode(task);
-    if (transcode && await tempFile.exists()) {
-      await tempFile.delete();
-    }
-    final existingBytes = await tempFile.exists() ? await tempFile.length() : 0;
-    task.receivedBytes = existingBytes;
-    if (task.totalBytes > 0) {
-      task.progress = (existingBytes / task.totalBytes).clamp(0, 1);
-    }
-    notifyListeners();
-
-    IOSink? sink;
-    var append = false;
-    var receivedThisRequest = 0;
     try {
-      final headers = <String, dynamic>{
-        ...appState.api.authHeaders,
-        if (existingBytes > 0) 'Range': 'bytes=$existingBytes-',
-      };
-      final response = await _dio.get<ResponseBody>(
-        _streamUrl(task.chapterId, transcode: transcode),
-        cancelToken: token,
-        options: Options(
-          responseType: ResponseType.stream,
-          headers: headers,
-          validateStatus: (status) =>
-              status != null && status >= 200 && status < 500,
-        ),
-      );
-      if (response.statusCode == 416) {
-        if (await tempFile.exists()) await tempFile.delete();
-        task.receivedBytes = 0;
-        task.totalBytes = 0;
-        task.progress = 0;
+      _checkTask(task, token);
+      final transcode = shouldTranscodeDownload(task);
+      // Capture the authenticated source before a disk operation can yield.
+      final requestUrl = _streamUrl(task.chapterId, transcode: transcode);
+      final requestHeaders =
+          Map<String, dynamic>.from(appState.api.authHeaders);
+      final coverSource = coverUrl(appState,
+          url: task.coverUrl, libraryId: task.libraryId, bookId: task.bookId);
+      _storage.preparePaths(task, transcode: transcode);
+      await _saveIndex();
+      _checkTask(task, token);
+      final item = await _transfer.run(task, token,
+          storage: _storage,
+          transcode: transcode,
+          requestUrl: requestUrl,
+          coverSource: coverSource,
+          requestHeaders: requestHeaders,
+          checkActive: () => _checkTask(task, token),
+          onProgress: _notifyIfActive,
+          retainPartial: () => identical(_tasks[task.storageKey], task));
+      if (item != null &&
+          (_disposed ||
+              token.isCancelled ||
+              !identical(_tasks[task.storageKey], task))) {
+        await _storage.rollbackAudio(item.filePath, task.tempPath!,
+            keepPartial: identical(_tasks[task.storageKey], task));
+      }
+      _checkTask(task, token);
+      if (item == null) {
         task.status = DownloadStatus.queued;
         await _saveIndex();
-        notifyListeners();
+        _notifyIfActive();
         return;
       }
-      if (response.statusCode == null || response.statusCode! >= 400) {
-        throw StateError('HTTP ${response.statusCode}');
-      }
-
-      append = existingBytes > 0 && response.statusCode == 206;
-      if (existingBytes > 0 && !append && await tempFile.exists()) {
-        await tempFile.delete();
-        task.receivedBytes = 0;
-      }
-
-      if (!append && !transcode) {
-        final responseExtension =
-            _downloadExtensionFromHeaders(response.headers);
-        if (responseExtension != null &&
-            responseExtension != _extensionFromPath(filePath)) {
-          filePath = _replacePathExtension(filePath, responseExtension);
-          tempPath = '$filePath.part';
-          task.filePath = filePath;
-          task.tempPath = tempPath;
-          tempFile = File(tempPath);
-          if (!await tempFile.parent.exists()) {
-            await tempFile.parent.create(recursive: true);
-          }
-        }
-      }
-
-      final responseBody = response.data;
-      if (responseBody == null) {
-        throw StateError(appState.textForLocale(
-          '响应体为空',
-          'Empty response body',
-        ));
-      }
-      final contentRange = response.headers.value('content-range');
-      final rangeTotal = _parseContentRangeTotal(contentRange);
-      final contentLength =
-          int.tryParse(response.headers.value('content-length') ?? '');
-      final totalBytes = rangeTotal ??
-          (contentLength == null
-              ? task.totalBytes
-              : contentLength + (append ? existingBytes : 0));
-      task.totalBytes = totalBytes > 0
-          ? totalBytes
-          : _estimatedDownloadBytes(task, transcode);
-
-      sink =
-          tempFile.openWrite(mode: append ? FileMode.append : FileMode.write);
-      await for (final chunk in responseBody.stream) {
-        sink.add(chunk);
-        receivedThisRequest += chunk.length;
-        task.receivedBytes = (append ? existingBytes : 0) + receivedThisRequest;
-        if (task.totalBytes <= 0) {
-          task.totalBytes = _estimatedDownloadBytes(task, transcode);
-        }
-        if (task.totalBytes > 0) {
-          task.progress = (task.receivedBytes / task.totalBytes).clamp(0, 1);
-        }
-        task.touch();
-        notifyListeners();
-      }
-      await sink.flush();
-      await sink.close();
-      sink = null;
-
-      final file = File(filePath);
-      if (await file.exists()) await file.delete();
-      await tempFile.rename(file.path);
-      final size = await file.length();
-      final localCoverPath = await _cacheBookResources(task, token);
-      final item = LocalDownload(
-        chapterId: task.chapterId,
-        bookId: task.bookId,
-        bookTitle: task.bookTitle,
-        chapterTitle: task.chapterTitle,
-        chapterIndex: task.chapterIndex,
-        filePath: file.path,
-        fileSize: size,
-        createdAt: DateTime.now(),
-        coverUrl: task.coverUrl,
-        localCoverPath: localCoverPath,
-        libraryId: task.libraryId,
-        duration: task.duration,
-        isExtra: task.isExtra,
-        bookMetadata: task.bookMetadata,
-        serverKey: task.serverKey,
-        serverName: task.serverName,
-      );
       _downloads[task.storageKey] = item;
       task.status = DownloadStatus.completed;
       task.progress = 1;
-      task.receivedBytes = size;
-      task.totalBytes = size;
+      task.receivedBytes = task.totalBytes = item.fileSize;
       task.touch();
-      _completeWaiters(task.storageKey, item);
       await _saveIndex();
-      notifyListeners();
-      unawaited(Future<void>.delayed(const Duration(seconds: 2), () async {
-        if (_tasks[task.storageKey]?.status == DownloadStatus.completed) {
+      _checkTask(task, token);
+      _completeWaiters(task.storageKey, item);
+      _notifyIfActive();
+      _completionTimers.remove(task.storageKey)?.cancel();
+      _completionTimers[task.storageKey] =
+          Timer(const Duration(seconds: 2), () {
+        _completionTimers.remove(task.storageKey);
+        if (!_disposed &&
+            identical(_tasks[task.storageKey], task) &&
+            task.status == DownloadStatus.completed) {
           _tasks.remove(task.storageKey);
-          await _saveIndex();
-          notifyListeners();
+          _saveIndexInBackground();
+          _notifyIfActive();
         }
-      }));
+      });
     } catch (error) {
-      await sink?.close();
+      if (_disposed || !identical(_tasks[task.storageKey], task)) return;
       if (error is DioException &&
           CancelToken.isCancel(error) &&
           task.status == DownloadStatus.paused) {
         await _saveIndex();
-        notifyListeners();
+        _notifyIfActive();
         return;
       }
-      if (!_tasks.containsKey(task.storageKey)) return;
       task.status = DownloadStatus.failed;
       task.error = error.toString();
       task.touch();
-      _completeWaitersWithError(task.chapterId, error);
-      await _saveIndex();
-      notifyListeners();
+      _completeWaitersWithError(task.storageKey, error);
+      try {
+        await _saveIndex();
+      } catch (error) {
+        debugPrint('Failed to persist failed download: $error');
+      }
+      _notifyIfActive();
     }
   }
 
   bool _canRunTask(DownloadTask task) {
-    return task.serverKey == legacyDownloadServerKey ||
-        task.serverKey == _currentServerKey;
-  }
-
-  void _prepareTaskPaths(DownloadTask task) {
-    final root = _rootDir;
-    if (root == null) {
-      return;
-    }
-    final sourceExtension = _extensionFromPath(task.chapterPath);
-    final shouldTranscode = _shouldTranscode(task);
-    final extension = shouldTranscode ? 'mp3' : sourceExtension;
-    if (task.filePath != null && task.tempPath != null) {
-      final currentExtension = _extensionFromPath(task.filePath!);
-      if (task.status == DownloadStatus.completed ||
-          currentExtension == extension) {
-        return;
-      }
-      task.filePath = null;
-      task.tempPath = null;
-    }
-    final dir = Directory(
-      '${root.path}${Platform.pathSeparator}${_safeSegment(task.serverKey)}'
-      '${Platform.pathSeparator}${_safeSegment(task.bookId)}',
-    );
-    final fileName =
-        '${task.chapterIndex.toString().padLeft(4, '0')}_${_safeSegment(task.chapterId)}.$extension';
-    final file = File('${dir.path}${Platform.pathSeparator}$fileName');
-    task.filePath ??= file.path;
-    task.tempPath ??= '${file.path}.part';
-  }
-
-  Directory _bookDir(String bookId) {
-    final root = _rootDir!;
-    return Directory(
-      '${root.path}${Platform.pathSeparator}${_safeSegment(_currentServerKey)}'
-      '${Platform.pathSeparator}${_safeSegment(bookId)}',
-    );
-  }
-
-  Directory _bookDirForTask(DownloadTask task) {
-    final filePath = task.filePath;
-    if (filePath != null && filePath.isNotEmpty) {
-      return File(filePath).parent;
-    }
-    return _bookDir(task.bookId);
-  }
-
-  Set<String> _bookDirPaths(String groupKey) {
-    final paths = <String>{};
-    for (final item in _downloads.values) {
-      if (item.bookGroupKey == groupKey && item.filePath.isNotEmpty) {
-        paths.add(File(item.filePath).parent.path);
-      }
-    }
-    for (final task in _tasks.values) {
-      if (task.bookGroupKey == groupKey) {
-        final filePath = task.filePath;
-        if (filePath != null && filePath.isNotEmpty) {
-          paths.add(File(filePath).parent.path);
-        }
-      }
-    }
-    return paths;
-  }
-
-  Future<String?> _cacheBookResources(
-    DownloadTask task,
-    CancelToken token,
-  ) async {
-    final dir = _bookDirForTask(task);
-    if (!await dir.exists()) {
-      await dir.create(recursive: true);
-    }
-    final localCoverPath = await _cacheCover(task, dir, token);
-    await _writeBookMetadata(task, dir, localCoverPath);
-    await _writeChapterMetadata(task, dir);
-    return localCoverPath;
-  }
-
-  Future<String?> _cacheCover(
-    DownloadTask task,
-    Directory dir,
-    CancelToken token,
-  ) async {
-    final existing = await _existingCoverPath(dir);
-    if (existing != null) return existing;
-
-    final source = coverUrl(
-      appState,
-      url: task.coverUrl,
-      libraryId: task.libraryId,
-      bookId: task.bookId,
-    );
-    if (source.isEmpty) return null;
-
-    try {
-      final headers = <String, dynamic>{
-        ...appState.api.authHeaders,
-      };
-      final response = await _dio.get<List<int>>(
-        source,
-        cancelToken: token,
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: headers,
-          validateStatus: (status) =>
-              status != null && status >= 200 && status < 400,
-        ),
-      );
-      final bytes = response.data;
-      if (bytes == null || bytes.isEmpty) return null;
-      final extension = _coverExtension(
-        contentType: response.headers.value('content-type'),
-        source: source,
-      );
-      final file = File('${dir.path}${Platform.pathSeparator}cover.$extension');
-      await file.writeAsBytes(bytes, flush: true);
-      return file.path;
-    } catch (error) {
-      if (error is DioException && CancelToken.isCancel(error)) rethrow;
-      return null;
-    }
-  }
-
-  Future<String?> _existingCoverPath(Directory dir) async {
-    for (final extension in const ['jpg', 'jpeg', 'png', 'webp', 'gif']) {
-      final file = File('${dir.path}${Platform.pathSeparator}cover.$extension');
-      if (await file.exists() && await file.length() > 0) return file.path;
-    }
-    return null;
-  }
-
-  Future<void> _writeBookMetadata(
-    DownloadTask task,
-    Directory dir,
-    String? localCoverPath,
-  ) async {
-    final file = File('${dir.path}${Platform.pathSeparator}book.json');
-    final metadata = {
-      ...task.bookMetadata,
-      'id': task.bookId,
-      'library_id': task.libraryId,
-      'title': task.bookTitle,
-      if (task.coverUrl != null) 'cover_url': task.coverUrl,
-      if (localCoverPath != null) 'local_cover_path': localCoverPath,
-      'updated_at': DateTime.now().toIso8601String(),
-    }..removeWhere((_, value) => value == null || value == '');
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(metadata),
-      flush: true,
-    );
-  }
-
-  Future<void> _writeChapterMetadata(DownloadTask task, Directory dir) async {
-    final file = File('${dir.path}${Platform.pathSeparator}chapters.json');
-    final existing = <String, Map<String, dynamic>>{};
-    if (await file.exists()) {
-      try {
-        final decoded = jsonDecode(await file.readAsString());
-        if (decoded is List) {
-          for (final item in decoded) {
-            final map = asMap(item);
-            final id = _string(map['id']) ?? _string(map['chapter_id']);
-            if (id != null) existing[id] = map;
-          }
-        }
-      } catch (_) {
-        existing.clear();
-      }
-    }
-
-    existing[task.chapterId] = {
-      'id': task.chapterId,
-      'book_id': task.bookId,
-      'title': task.chapterTitle,
-      'chapter_index': task.chapterIndex,
-      'duration': task.duration,
-      'is_extra': task.isExtra,
-      'source_path': task.chapterPath,
-      'local_file_path': task.filePath,
-      'downloaded_at': DateTime.now().toIso8601String(),
-    }..removeWhere((_, value) => value == null || value == '');
-
-    final chapters = existing.values.toList()
-      ..sort((a, b) => (_int(a['chapter_index']) ?? 0)
-          .compareTo(_int(b['chapter_index']) ?? 0));
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(chapters),
-      flush: true,
-    );
-  }
-
-  bool _shouldTranscode(DownloadTask task) {
-    final sourceExtension = _extensionFromPath(task.chapterPath);
-    if (task.transcode ||
-        _alwaysTranscodeDownloadExtensions.contains(sourceExtension)) {
-      return true;
-    }
-    if (!kIsWeb && Platform.isAndroid) {
-      return _androidTranscodeDownloadExtensions.contains(sourceExtension);
-    }
-    return false;
-  }
-
-  int _estimatedDownloadBytes(DownloadTask task, bool transcode) {
-    if (!transcode || task.duration == null || task.duration! <= 0) return 0;
-    const estimatedMp3BytesPerSecond = 16000;
-    return task.duration! * estimatedMp3BytesPerSecond;
+    return !_deletions.containsKey('*') &&
+        !_deletions.containsKey(task.storageKey) &&
+        !_deletions.containsKey('book:${task.bookGroupKey}') &&
+        (task.serverKey == legacyDownloadServerKey ||
+            task.serverKey == _currentServerKey);
   }
 
   String _streamUrl(String chapterId, {bool transcode = false}) {
+    final token = appState.token;
     final params = <String, String>{
       'download': '1',
-      if (appState.token != null && appState.token!.isNotEmpty)
-        'token': appState.token!,
+      if (token != null && token.isNotEmpty) 'token': token,
       if (transcode) 'transcode': 'mp3',
     };
     final base = '${appState.activeUrl}/api/stream/$chapterId';
@@ -966,38 +678,5 @@ class DownloadState extends ChangeNotifier {
     for (final waiter in waiters) {
       if (!waiter.isCompleted) waiter.completeError(error);
     }
-  }
-
-  Future<void> _useRootDirectory(Directory dir) async {
-    if (await dir.exists()) {
-      final type = await FileSystemEntity.type(dir.path);
-      if (type != FileSystemEntityType.directory) {
-        throw StateError(appState.textForLocale(
-          '缓存位置不是文件夹：${dir.path}',
-          'Cache location is not a folder: ${dir.path}',
-        ));
-      }
-    } else {
-      await dir.create(recursive: true);
-    }
-    _rootDir = dir;
-    _indexFile = File('${dir.path}${Platform.pathSeparator}downloads.json');
-  }
-
-  Future<Directory> _resolveRootDirectory(String? customPath) async {
-    final path = _normalizeDirectoryPath(customPath);
-    if (path != null) return Directory(path);
-    if (Platform.isAndroid) {
-      final external = await getExternalStorageDirectory();
-      if (external != null) {
-        return Directory(
-          '${external.path}${Platform.pathSeparator}ting_reader_downloads',
-        );
-      }
-    }
-    final docs = await getApplicationDocumentsDirectory();
-    return Directory(
-      '${docs.path}${Platform.pathSeparator}ting_reader_downloads',
-    );
   }
 }

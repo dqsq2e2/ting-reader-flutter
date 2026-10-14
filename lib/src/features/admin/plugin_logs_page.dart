@@ -33,73 +33,73 @@ class _PluginLogsPageState extends State<PluginLogsPage> {
   String? _error;
   int _page = 1;
   int _total = 0;
-  List<_LogEntry> _logs = [];
+  List<LogEntry> _logs = [];
   final Set<String> _expandedKeys = {};
-  Timer? _timer;
+  LogState? _state;
 
   int get _pageCount => (_total / _pageSize).ceil().clamp(1, 1 << 20);
 
-  String get _encodedPluginId => Uri.encodeComponent(widget.plugin.id);
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_state != null) return;
+    _state = LogState(AppScope.appOf(context).api, pluginId: widget.plugin.id)
+      ..addListener(_logsChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _state?.start();
+    });
+  }
+
+  void _logsChanged() {
+    final state = _state;
+    if (!mounted || state == null) return;
+    setState(() {
+      _loading = state.loading;
+      _logs = state.logs;
+      _total = state.total;
+      _error = state.error == null
+          ? null
+          : context.localeText('插件日志加载失败', 'Failed to load plugin logs');
+      _expandedKeys.removeWhere((key) => !_logs
+          .asMap()
+          .entries
+          .any((entry) => _logKey(entry.value, entry.key) == key));
+    });
+  }
 
   @override
-  void initState() {
-    super.initState();
-    _load();
-    _syncTimer();
+  void didUpdateWidget(covariant PluginLogsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.plugin.id == widget.plugin.id) return;
+    _state?.removeListener(_logsChanged);
+    _state?.dispose();
+    _state = null;
+    _page = 1;
+    _logs = [];
+    _expandedKeys.clear();
+    didChangeDependencies();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _state?.removeListener(_logsChanged);
+    _state?.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool silent = false}) async {
-    if (!silent && mounted) setState(() => _loading = true);
-    try {
-      final response = await AppScope.appOf(context).api.get(
-        '/api/v1/plugins/$_encodedPluginId/logs',
-        params: {
-          'page': _page,
-          'page_size': _pageSize,
-          if (_level.isNotEmpty) 'level': _level,
-          if (_source.isNotEmpty) 'source': _source,
-        },
-      );
-      if (!mounted) return;
-      final data = asMap(response.data);
-      final logs = asMapList(data['logs']).map(_LogEntry.fromJson).toList();
-      setState(() {
-        _logs = logs;
-        _total = (data['total'] as num?)?.toInt() ?? logs.length;
-        _error = null;
-        _expandedKeys.removeWhere(
-          (key) => !_logs.asMap().entries.any(
-                (entry) => _logKey(entry.value, entry.key) == key,
-              ),
-        );
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _error = context.localeText('插件日志加载失败', 'Failed to load plugin logs');
-      });
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  void _syncTimer() {
-    _timer?.cancel();
-    if (!_autoRefresh) return;
-    _timer = Timer.periodic(const Duration(seconds: 3), (_) {
-      if (mounted) _load(silent: true);
-    });
+    final state = _state;
+    if (state == null) return;
+    state
+      ..level = _level
+      ..source = _source
+      ..page = _page;
+    await state.load(silent: silent);
   }
 
   void _setAutoRefresh(bool value) {
     setState(() => _autoRefresh = value);
-    _syncTimer();
+    _state?.setAutoRefresh(value);
   }
 
   void _setLevel(String value) {
@@ -131,24 +131,15 @@ class _PluginLogsPageState extends State<PluginLogsPage> {
   }
 
   Future<void> _export() async {
-    final response = await AppScope.appOf(context).api.get(
-      '/api/v1/plugins/$_encodedPluginId/logs/export',
-      params: {
-        if (_level.isNotEmpty) 'level': _level,
-        if (_source.isNotEmpty) 'source': _source,
-      },
-    );
-    await Clipboard.setData(
-      ClipboardData(text: response.data?.toString() ?? ''),
-    );
+    final text = await _state?.export();
+    if (!mounted || text == null) return;
+    await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(context.localeText('插件日志已复制', 'Plugin logs copied'))),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(context.localeText('插件日志已复制', 'Plugin logs copied'))));
   }
 
-  String _logKey(_LogEntry log, int index) =>
+  String _logKey(LogEntry log, int index) =>
       '${log.timestamp}|${log.fields['event_id'] ?? ''}|$index';
 
   void _toggleExpanded(String key) {
@@ -469,7 +460,7 @@ class _PluginLogRow extends StatelessWidget {
     required this.onToggleDetails,
   });
 
-  final _LogEntry log;
+  final LogEntry log;
   final bool expanded;
   final VoidCallback? onToggleDetails;
 

@@ -1,12 +1,9 @@
-import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/locale.dart';
-import '../app_scope.dart';
 
 class TingCard extends StatelessWidget {
   const TingCard({
@@ -752,6 +749,25 @@ class EmptyState extends StatelessWidget {
   }
 }
 
+class LoadErrorView extends StatelessWidget {
+  const LoadErrorView({super.key, required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => EmptyState(
+        icon: Icons.error_outline_rounded,
+        title: context.localeText('加载失败', 'Could not load'),
+        message:
+            context.localeText('请检查连接后重试。', 'Check your connection and retry.'),
+        action: PrimaryButton(
+          label: context.localeText('重试', 'Retry'),
+          icon: Icons.refresh_rounded,
+          onPressed: onRetry,
+        ),
+      );
+}
+
 class PrimaryButton extends StatelessWidget {
   const PrimaryButton({
     super.key,
@@ -791,162 +807,6 @@ class PrimaryButton extends StatelessWidget {
       label: Text(
         loading ? context.localeText('处理中...', 'Processing...') : label,
       ),
-    );
-  }
-}
-
-class CoverImage extends StatefulWidget {
-  const CoverImage({
-    super.key,
-    required this.url,
-    this.radius = 8,
-    this.fit = BoxFit.cover,
-    this.placeholderIcon = Icons.menu_book_rounded,
-  });
-
-  final String url;
-  final double radius;
-  final BoxFit fit;
-  final IconData placeholderIcon;
-
-  @override
-  State<CoverImage> createState() => _CoverImageState();
-}
-
-class _CoverImageState extends State<CoverImage> {
-  bool _recoveringRedirect = false;
-  int _retryEpoch = 0;
-  String? _failedUrl;
-  String? _recoveredUrl;
-
-  @override
-  void didUpdateWidget(covariant CoverImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
-      _failedUrl = null;
-      _recoveredUrl = null;
-      _recoveringRedirect = false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final url = _recoveredUrl ?? widget.url;
-    final localFile = _localImageFile(url);
-    // 指向当前服务器的封面需要携带完整认证头（fnos-token cookie /
-    // 访问码 x-access-code）；第三方图床 URL 绝不附带，避免凭据外泄。
-    final appState = AppScope.appOf(context);
-    final imageHeaders = localFile == null &&
-            url.isNotEmpty &&
-            appState.usesActiveOrigin(url)
-        ? appState.api.authHeaders
-        : const <String, String>{};
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(widget.radius),
-      child: url.isEmpty
-          ? _placeholder(context)
-          : localFile != null
-              ? Image.file(
-                  localFile,
-                  fit: widget.fit,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _placeholder(context),
-                )
-              : Image.network(
-                  url,
-                  key: ValueKey('$url:$_retryEpoch'),
-                  headers: imageHeaders.isEmpty ? null : imageHeaders,
-                  fit: widget.fit,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (context, error, stackTrace) {
-                    _recoverRedirectAndRetry(url);
-                    return _placeholder(context, loading: _recoveringRedirect);
-                  },
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return _placeholder(context, loading: true);
-                  },
-                ),
-    );
-  }
-
-  File? _localImageFile(String url) {
-    if (kIsWeb || url.isEmpty || url.startsWith('http')) return null;
-    final path =
-        url.startsWith('file://') ? Uri.tryParse(url)?.toFilePath() : url;
-    if (path == null || path.isEmpty) return null;
-    final looksLocal = RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path) ||
-        path.startsWith('/data/') ||
-        path.startsWith('/storage/') ||
-        path.startsWith('/var/') ||
-        path.startsWith('/Users/');
-    if (!looksLocal) return null;
-    return File(path);
-  }
-
-  void _recoverRedirectAndRetry(String url) {
-    if (_recoveringRedirect || _failedUrl == url) return;
-    final appState = AppScope.appOf(context);
-    if (!appState.usesActiveOrigin(url)) return;
-
-    _failedUrl = url;
-    _recoveringRedirect = true;
-    final previousActiveUrl = appState.activeUrl;
-
-    Future<void>(() async {
-      final recoveredActiveUrl = await appState.recoverActiveUrl();
-      if (!mounted) return;
-      setState(() {
-        _recoveringRedirect = false;
-        if (recoveredActiveUrl != null &&
-            recoveredActiveUrl.isNotEmpty &&
-            recoveredActiveUrl != previousActiveUrl) {
-          _failedUrl = null;
-          _recoveredUrl = _replaceOrigin(
-            url,
-            from: previousActiveUrl,
-            to: recoveredActiveUrl,
-          );
-          _retryEpoch++;
-        }
-      });
-    }).catchError((_) {
-      if (!mounted) return;
-      setState(() => _recoveringRedirect = false);
-    });
-  }
-
-  String _replaceOrigin(String url,
-      {required String from, required String to}) {
-    final uri = Uri.tryParse(url);
-    final fromUri = Uri.tryParse(from);
-    if (uri == null || fromUri == null) return url;
-    if (uri.scheme != fromUri.scheme ||
-        uri.host != fromUri.host ||
-        uri.port != fromUri.port) {
-      return url;
-    }
-
-    final base = to.replaceAll(RegExp(r'/$'), '');
-    final query = uri.hasQuery ? '?${uri.query}' : '';
-    final fragment = uri.hasFragment ? '#${uri.fragment}' : '';
-    return '$base${uri.path}$query$fragment';
-  }
-
-  Widget _placeholder(BuildContext context, {bool loading = false}) {
-    return Container(
-      color: context.isDark ? AppColors.slate800 : AppColors.slate100,
-      alignment: Alignment.center,
-      child: loading
-          ? const SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(widget.placeholderIcon, color: AppColors.slate400, size: 32),
     );
   }
 }

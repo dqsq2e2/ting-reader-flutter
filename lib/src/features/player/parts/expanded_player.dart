@@ -10,8 +10,7 @@ class _ExpandedPlayer extends StatefulWidget {
 }
 
 class _ExpandedPlayerState extends State<_ExpandedPlayer> {
-  Timer? _sleepTimer;
-  int? _sleepRemainingSeconds;
+  int? get _sleepRemainingSeconds => widget.player.sleepRemainingSeconds;
   // 按集数睡眠的状态由 PlayerState 管理（避免 widget 销毁丢失）。
   CoverShape _coverShape = CoverShape.square;
   double? _dragSeekValue;
@@ -20,12 +19,6 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _coverShape = coverShapeFromAppSettings(AppScope.appOf(context).settings);
-  }
-
-  @override
-  void dispose() {
-    _sleepTimer?.cancel();
-    super.dispose();
   }
 
   Future<void> _openSpeedSheet(
@@ -100,36 +93,17 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
     final book = player.currentBook;
     final chapter = player.currentChapter;
     if (book == null || chapter == null) return;
-
-    final downloadState = AppScope.downloadOf(context);
-    if (downloadState.hasChapter(chapter.id)) {
-      _showPlayerMessage(context.localeText(
-          '当前章节已下载', 'Current chapter is already downloaded'));
-      return;
-    }
-    final task = downloadState.taskForChapter(chapter.id);
-    if (task != null) {
-      if (task.status == DownloadStatus.paused ||
-          task.status == DownloadStatus.failed) {
-        final resumedMessage = context.localeText(
-            '已恢复下载：${chapter.title}', 'Resumed download: ${chapter.title}');
-        await downloadState.resumeTask(chapter.id);
-        _showPlayerMessage(resumedMessage);
-      } else {
-        final status = task.status.labelForLocale(context.isEnglishLocale);
-        _showPlayerMessage(context.localeText(
-            '下载任务已存在：$status', 'Download task already exists: $status'));
-      }
-      return;
-    }
-
     try {
-      downloadState.queueChapter(book, chapter);
-      _showPlayerMessage(context.localeText('已加入下载队列：${chapter.title}',
-          'Added to download queue: ${chapter.title}'));
-    } catch (err) {
+      final result =
+          await AppScope.downloadOf(context).requestChapter(book, chapter);
+      if (!mounted) return;
       _showPlayerMessage(
-          context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
+          result.messageForLocale(context.isEnglishLocale, chapter.title));
+    } catch (error) {
+      if (mounted) {
+        _showPlayerMessage(context.localeText(
+            '加入下载失败：$error', 'Failed to add download: $error'));
+      }
     }
   }
 
@@ -157,16 +131,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
       );
     }
     return _ExpandedDownloadAction(
-      icon: switch (task.status) {
-        DownloadStatus.downloading => Icons.downloading_rounded,
-        DownloadStatus.paused => Icons.pause_circle_outline_rounded,
-        DownloadStatus.failed => Icons.error_outline_rounded,
-        DownloadStatus.completed => Icons.download_done_rounded,
-        DownloadStatus.queued => Icons.schedule_rounded,
-      },
-      label: task.status == DownloadStatus.downloading
-          ? '${(task.progress * 100).clamp(0, 100).round()}%'
-          : task.status.labelForLocale(context.isEnglishLocale),
+      icon: task.status.downloadIcon(),
+      label: task.downloadLabel(context.isEnglishLocale),
       active: task.status != DownloadStatus.failed,
     );
   }
@@ -245,45 +211,12 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
   }
 
   Future<void> _startSleepTimer(PlayerState player, int minutes) async {
-    _sleepTimer?.cancel();
-    _sleepRemainingSeconds = minutes * 60;
-    player.cancelEpisodeSleepTimer();
-    setState(() {});
-    _sleepTimer = Timer.periodic(const Duration(seconds: 1), (_) async {
-      if (!mounted) return;
-      // 播放暂停时倒计时也暂停，恢复后才继续递减。
-      if (!player.isPlaying) return;
-      final remaining = (_sleepRemainingSeconds ?? 0) - 1;
-      if (remaining <= 0) {
-        _sleepTimer?.cancel();
-        _sleepTimer = null;
-        _sleepRemainingSeconds = null;
-        await player.pause();
-        if (mounted) setState(() {});
-        return;
-      }
-      _sleepRemainingSeconds = remaining;
-      if (mounted) setState(() {});
-    });
+    player.startSleepTimer(minutes);
   }
 
-  void _cancelSleepTimer() {
-    _sleepTimer?.cancel();
-    _sleepTimer = null;
-    _sleepRemainingSeconds = null;
-    widget.player.cancelEpisodeSleepTimer();
-    if (mounted) setState(() {});
-  }
-
-  // 按集数定时：episodes = 1 表示播完本集即停，与按分钟定时互斥。
-  void _startEpisodeSleepTimer(int episodes) {
-    if (episodes <= 0) return;
-    _sleepTimer?.cancel();
-    _sleepTimer = null;
-    _sleepRemainingSeconds = null;
-    widget.player.startEpisodeSleepTimer(episodes);
-    setState(() {});
-  }
+  void _cancelSleepTimer() => widget.player.cancelSleepTimer();
+  void _startEpisodeSleepTimer(int episodes) =>
+      widget.player.startEpisodeSleepTimer(episodes);
 
   Future<void> _openSleepTimerSheet(
     PlayerState player,
@@ -613,7 +546,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                   SizedBox(
                     width: double.infinity,
                     child: TextButton(
-                      onPressed: _sleepTimer == null &&
+                      onPressed: _sleepRemainingSeconds == null &&
                               player.sleepEpisodesRemaining == null
                           ? null
                           : () {
@@ -796,18 +729,8 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                                   int.tryParse(outroController.text.trim()) ??
                                       0;
                               try {
-                                await player.appState.api.patch(
-                                  '/api/books/${book.id}',
-                                  data: {
-                                    'skip_intro': skipIntro,
-                                    'skip_outro': skipOutro,
-                                  },
-                                );
-                                final updated = book.copyWith(
-                                  skipIntro: skipIntro,
-                                  skipOutro: skipOutro,
-                                );
-                                player.replaceCurrentBook(updated);
+                                await player.savePlaybackSettings(
+                                    book, skipIntro, skipOutro);
                                 if (mounted) setState(() {});
                                 if (!mounted) return;
                                 if (dialogContext.mounted) {
@@ -982,10 +905,10 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
         final sliderValue = (_dragSeekValue ?? player.currentTime)
             .clamp(0, sliderMax)
             .toDouble();
-        final themeColor = _effectivePlayerThemeColor(book.themeColor);
+        final themeColor = effectiveBookThemeColor(book.themeColor);
         final accentColor = themeColor ?? AppColors.primary600;
         final accentTextColor =
-            themeColor != null && _isPlayerThemeLight(themeColor)
+            themeColor != null && isBookThemeLight(themeColor)
                 ? AppColors.slate600
                 : Colors.white;
         final coverUrl = bookCoverUrl(appState, book);
@@ -1156,7 +1079,7 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
                           SizedBox(height: tightControls ? 20 : 24),
                           SizedBox(
                             height: tightControls ? 32 : 36,
-                            child: _ScrollingPlayerTitle(
+                            child: ScrollingText(
                               text: localizedChapterTitle(context, chapter),
                               style: TextStyle(
                                 fontSize: tightControls ? 22 : 24,
@@ -1366,49 +1289,4 @@ class _ExpandedPlayerState extends State<_ExpandedPlayer> {
       },
     );
   }
-}
-
-Color? _effectivePlayerThemeColor(String? raw) {
-  final color = _parsePlayerThemeColor(raw);
-  if (color == null) return null;
-  return _playerThemeLuminance(color) > 0.9 ? null : color;
-}
-
-Color? _parsePlayerThemeColor(String? raw) {
-  if (raw == null || raw.trim().isEmpty) return null;
-  final value = raw.trim();
-  if (value.startsWith('#')) {
-    var hex = value.substring(1);
-    if (hex.length == 3) {
-      hex = hex.split('').map((char) => '$char$char').join();
-    }
-    if (hex.length == 6) {
-      final rgb = int.tryParse(hex, radix: 16);
-      if (rgb != null) return Color(0xff000000 | rgb);
-    }
-  }
-
-  final match = RegExp(r'rgba?\(([^)]+)\)').firstMatch(value);
-  if (match != null) {
-    final parts = match
-        .group(1)!
-        .split(',')
-        .map((part) => part.trim())
-        .toList(growable: false);
-    if (parts.length >= 3) {
-      int? channel(String text) {
-        final parsed = double.tryParse(text);
-        if (parsed == null) return null;
-        return parsed.round().clamp(0, 255);
-      }
-
-      final r = channel(parts[0]);
-      final g = channel(parts[1]);
-      final b = channel(parts[2]);
-      if (r != null && g != null && b != null) {
-        return Color.fromARGB(255, r, g, b);
-      }
-    }
-  }
-  return null;
 }

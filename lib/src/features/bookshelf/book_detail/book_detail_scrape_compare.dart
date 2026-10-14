@@ -1,4 +1,4 @@
-part of 'book_detail_page.dart';
+part of 'book_detail_scrape.dart';
 
 class _ScrapeCoverCompare extends StatelessWidget {
   const _ScrapeCoverCompare({
@@ -114,19 +114,24 @@ class _ScrapeValueCompare extends StatelessWidget {
 
 class _SelectedScrapeFieldCard extends StatelessWidget {
   const _SelectedScrapeFieldCard({
+    super.key,
+    required this.book,
+    required this.selected,
     required this.field,
     required this.onChanged,
     required this.onRemove,
   });
 
-  final _SelectedScrapeField field;
+  final SelectedScrapeField field;
+  final Book book;
+  final bool selected;
   final ValueChanged<String> onChanged;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final definition = _scrapeFieldDefinitions[field.key];
-    final editorValue = _scrapeValueForEditor(field.value);
+    final editorValue = scrapeValueForEditor(field.value);
     final isLongText = field.key == 'description' || field.key == 'tags';
     final isBoolean = field.key == 'explicit' || field.key == 'abridged';
     return Container(
@@ -162,7 +167,12 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${field.sourceName} · ${field.resultTitle}',
+                      selected
+                          ? [field.sourceName, field.resultTitle]
+                              .where((value) => value.isNotEmpty)
+                              .join(' · ')
+                          : context.localeText(
+                              '当前值 · 未修改', 'Current value · Unchanged'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -173,16 +183,18 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: onRemove,
-                icon: const Icon(Icons.delete_outline_rounded, size: 20),
-                color: const Color(0xffef4444),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 34,
-                  height: 34,
+              if (selected)
+                IconButton(
+                  tooltip: context.localeText('恢复当前值', 'Restore current value'),
+                  onPressed: onRemove,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  color: const Color(0xffef4444),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -198,7 +210,13 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
                         AppScope.appOf(context).settings,
                       ),
                     ),
-                    child: CoverImage(url: editorValue, radius: 10),
+                    child: CoverImage(
+                      url: coverUrl(AppScope.appOf(context),
+                          url: editorValue,
+                          libraryId: book.libraryId,
+                          bookId: book.id),
+                      radius: 10,
+                    ),
                   ),
                 );
                 final input = _ScrapeReviewTextField(
@@ -228,7 +246,7 @@ class _SelectedScrapeFieldCard extends StatelessWidget {
             )
           else if (isBoolean)
             _ScrapeReviewBooleanField(
-              value: field.value == true,
+              value: field.value is bool ? field.value as bool : null,
               onChanged: onChanged,
             )
           else
@@ -348,7 +366,7 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
     required this.onChanged,
   });
 
-  final bool value;
+  final bool? value;
   final ValueChanged<String> onChanged;
 
   @override
@@ -376,9 +394,18 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
           ),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: value ? 'true' : 'false',
+              value: value == null
+                  ? ''
+                  : value == true
+                      ? 'true'
+                      : 'false',
               isExpanded: true,
               items: [
+                DropdownMenuItem(
+                  value: '',
+                  enabled: false,
+                  child: Text(context.localeText('未知', 'Unknown')),
+                ),
                 DropdownMenuItem(
                     value: 'true', child: Text(context.localeText('是', 'Yes'))),
                 DropdownMenuItem(

@@ -101,9 +101,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
 
   List<Chapter> _downloadableChapters(DownloadState downloadState) {
     return widget.chapters
-        .where((chapter) =>
-            !downloadState.hasChapter(chapter.id) &&
-            downloadState.taskForChapter(chapter.id) == null)
+        .where((chapter) => downloadState.canQueueChapter(chapter.id))
         .toList();
   }
 
@@ -143,34 +141,17 @@ class _ChapterSectionState extends State<_ChapterSection> {
   }
 
   Future<void> _downloadChapter(Chapter chapter) async {
-    final downloadState = AppScope.downloadOf(context);
-    if (downloadState.hasChapter(chapter.id)) {
-      _showDownloadMessage(
-          context.localeText('章节已下载', 'Chapter already downloaded'));
-      return;
-    }
-    final task = downloadState.taskForChapter(chapter.id);
-    if (task != null) {
-      if (task.status == DownloadStatus.paused ||
-          task.status == DownloadStatus.failed) {
-        final resumedMessage = context.localeText(
-            '已恢复下载：${chapter.title}', 'Resumed download: ${chapter.title}');
-        await downloadState.resumeTask(chapter.id);
-        _showDownloadMessage(resumedMessage);
-      } else {
-        final status = task.status.labelForLocale(context.isEnglishLocale);
-        _showDownloadMessage(context.localeText(
-            '下载任务已存在：$status', 'Download task already exists: $status'));
-      }
-      return;
-    }
     try {
-      downloadState.queueChapter(widget.book, chapter);
-      _showDownloadMessage(context.localeText('已加入下载队列：${chapter.title}',
-          'Added to download queue: ${chapter.title}'));
-    } catch (err) {
+      final result = await AppScope.downloadOf(context)
+          .requestChapter(widget.book, chapter);
+      if (!mounted) return;
       _showDownloadMessage(
-          context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
+          result.messageForLocale(context.isEnglishLocale, chapter.title));
+    } catch (error) {
+      if (mounted) {
+        _showDownloadMessage(context.localeText(
+            '加入下载失败：$error', 'Failed to add download: $error'));
+      }
     }
   }
 
@@ -179,8 +160,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
     final targets = widget.chapters
         .where((chapter) =>
             _selectedIds.contains(chapter.id) &&
-            !downloadState.hasChapter(chapter.id) &&
-            downloadState.taskForChapter(chapter.id) == null)
+            downloadState.canQueueChapter(chapter.id))
         .toList()
       ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
     if (targets.isEmpty) {
@@ -191,9 +171,11 @@ class _ChapterSectionState extends State<_ChapterSection> {
     var queued = 0;
     for (final chapter in targets) {
       try {
-        downloadState.queueChapter(widget.book, chapter);
-        queued++;
+        final result = await downloadState.requestChapter(widget.book, chapter,
+            resumeExisting: false);
+        if (result.outcome == DownloadRequestOutcome.queued) queued++;
       } catch (err) {
+        if (!mounted) return;
         _showDownloadMessage(
             context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
         break;
@@ -226,8 +208,7 @@ class _ChapterSectionState extends State<_ChapterSection> {
     final selectedDownloadable = widget.chapters
         .where((chapter) =>
             _selectedIds.contains(chapter.id) &&
-            !downloadState.hasChapter(chapter.id) &&
-            downloadState.taskForChapter(chapter.id) == null)
+            downloadState.canQueueChapter(chapter.id))
         .length;
     final displayChapters = widget.chapters;
     return Container(
@@ -690,9 +671,10 @@ class _ChapterGroupButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedBackground = themeColor ?? AppColors.primary600;
-    final selectedForeground = themeColor != null && _isThemeLight(themeColor!)
-        ? AppColors.slate600
-        : Colors.white;
+    final selectedForeground =
+        themeColor != null && isBookThemeLight(themeColor!)
+            ? AppColors.slate600
+            : Colors.white;
     return TextButton(
       onPressed: onPressed,
       style: TextButton.styleFrom(
@@ -767,7 +749,7 @@ class _ChapterListRowState extends State<_ChapterListRow> {
             : null;
     final themeColor = widget.themeColor;
     final themedActive = widget.active && themeColor != null && !context.isDark;
-    final themeTextColor = themeColor != null && _isThemeLight(themeColor)
+    final themeTextColor = themeColor != null && isBookThemeLight(themeColor)
         ? AppColors.slate600
         : Colors.white;
     final bg =
@@ -914,7 +896,7 @@ class _ChapterListRowState extends State<_ChapterListRow> {
               ),
               if (widget.playing || !compact) SizedBox(width: compact ? 8 : 16),
               if (widget.playing) ...[
-                _PlayingBars(
+                PlayingBars(
                   color: themeColor ?? AppColors.primary600,
                   compact: compact,
                 ),
@@ -953,95 +935,6 @@ class _ChapterListRowState extends State<_ChapterListRow> {
   }
 }
 
-class _PlayingBars extends StatefulWidget {
-  const _PlayingBars({
-    required this.color,
-    required this.compact,
-  });
-
-  final Color color;
-  final bool compact;
-
-  @override
-  State<_PlayingBars> createState() => _PlayingBarsState();
-}
-
-class _PlayingBarsState extends State<_PlayingBars>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1600),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final maxHeight = widget.compact ? 16.0 : 20.0;
-    final minHeight = widget.compact ? 5.0 : 6.0;
-    return SizedBox(
-      width: widget.compact ? 18 : 22,
-      height: maxHeight,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          return Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              for (var i = 0; i < 3; i++) ...[
-                _PlayingBar(
-                  color: widget.color,
-                  width: widget.compact ? 3 : 4,
-                  height: minHeight +
-                      (maxHeight - minHeight) *
-                          (0.25 +
-                              0.75 *
-                                  math
-                                      .sin(
-                                        _controller.value * math.pi * 2 +
-                                            i * math.pi / 2,
-                                      )
-                                      .abs()),
-                ),
-                if (i != 2) SizedBox(width: widget.compact ? 2 : 3),
-              ],
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PlayingBar extends StatelessWidget {
-  const _PlayingBar({
-    required this.color,
-    required this.width,
-    required this.height,
-  });
-
-  final Color color;
-  final double width;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-      ),
-    );
-  }
-}
-
 class _ChapterDownloadAction extends StatelessWidget {
   const _ChapterDownloadAction({
     required this.compact,
@@ -1070,38 +963,18 @@ class _ChapterDownloadAction extends StatelessWidget {
 
     final task = this.task;
     if (task != null) {
-      final color = switch (task.status) {
-        DownloadStatus.downloading => AppColors.primary600,
-        DownloadStatus.paused => Colors.orange,
-        DownloadStatus.failed => Colors.red,
-        DownloadStatus.completed => AppColors.primary600,
-        DownloadStatus.queued => AppColors.slate500,
-      };
-      final label = task.status == DownloadStatus.downloading
-          ? '${(task.progress * 100).clamp(0, 100).round()}%'
-          : task.status.labelForLocale(context.isEnglishLocale);
+      final color = task.status.downloadColor;
+      final label = task.downloadLabel(context.isEnglishLocale);
       if (compact) {
         return _iconChip(
           context,
-          icon: switch (task.status) {
-            DownloadStatus.downloading => Icons.downloading_rounded,
-            DownloadStatus.paused => Icons.pause_circle_outline_rounded,
-            DownloadStatus.failed => Icons.error_outline_rounded,
-            DownloadStatus.completed => Icons.download_done_rounded,
-            DownloadStatus.queued => Icons.schedule_rounded,
-          },
+          icon: task.status.downloadIcon(),
           color: color,
           tooltip: label,
         );
       }
       return _ChapterDownloadPill(
-        icon: switch (task.status) {
-          DownloadStatus.downloading => Icons.downloading_rounded,
-          DownloadStatus.paused => Icons.pause_circle_outline_rounded,
-          DownloadStatus.failed => Icons.error_outline_rounded,
-          DownloadStatus.completed => Icons.download_done_rounded,
-          DownloadStatus.queued => Icons.schedule_rounded,
-        },
+        icon: task.status.downloadIcon(),
         label: compact && label.length > 3 ? label.substring(0, 3) : label,
         color: color,
       );

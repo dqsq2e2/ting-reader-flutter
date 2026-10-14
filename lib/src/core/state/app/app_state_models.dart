@@ -117,8 +117,10 @@ class SavedServerProfile {
         if (fnosUsername.isNotEmpty) 'fnos_username': fnosUsername,
         if (includeSecrets && fnosPassword.isNotEmpty)
           'fnos_password': fnosPassword,
-        if (gatewayCookie.isNotEmpty) 'gateway_cookie': gatewayCookie,
-        if (fnAccessCode.isNotEmpty) 'fn_access_code': fnAccessCode,
+        if (includeSecrets && gatewayCookie.isNotEmpty)
+          'gateway_cookie': gatewayCookie,
+        if (includeSecrets && fnAccessCode.isNotEmpty)
+          'fn_access_code': fnAccessCode,
         if (gatewayCookieAt != null)
           'gateway_cookie_at': gatewayCookieAt!.toIso8601String(),
         if (lastLoginAt != null)
