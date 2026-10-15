@@ -61,7 +61,7 @@ DateTime? parseBackendUtcDateTime(String? raw) {
   }
   value = value.replaceAllMapped(
     RegExp(r'(\.\d{3})\d+'),
-    (match) => match.group(1)!,
+    (match) => match.group(1) ?? match[0] ?? '',
   );
   if (RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
     value = '${value}T00:00:00Z';

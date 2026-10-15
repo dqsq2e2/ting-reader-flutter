@@ -317,6 +317,7 @@ class PageListView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onRefreshValue = onRefresh;
     return LayoutBuilder(
       builder: (context, constraints) {
         final list = ListView(
@@ -325,10 +326,10 @@ class PageListView extends StatelessWidget {
           children: children,
         );
 
-        if (onRefresh == null) return list;
+        if (onRefreshValue == null) return list;
         return RefreshIndicator(
           color: AppColors.primary600,
-          onRefresh: onRefresh!,
+          onRefresh: onRefreshValue,
           child: list,
         );
       },
@@ -497,7 +498,7 @@ class BatchCheckbox extends StatelessWidget {
           )
         : visual;
     if (tooltip != null) {
-      result = Tooltip(message: tooltip!, child: result);
+      result = Tooltip(message: tooltip, child: result);
     }
     return result;
   }
@@ -704,6 +705,7 @@ class EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actionValue = action;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
@@ -739,9 +741,9 @@ class EmptyState extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(color: context.mutedText),
           ),
-          if (action != null) ...[
+          if (actionValue != null) ...[
             const SizedBox(height: 24),
-            action!,
+            actionValue,
           ],
         ],
       ),
@@ -903,6 +905,7 @@ class PageHeaderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final actionValue = action;
     return LayoutBuilder(
       builder: (context, constraints) {
         final header = HeaderText(
@@ -911,14 +914,14 @@ class PageHeaderRow extends StatelessWidget {
           title: title,
           subtitle: subtitle,
         );
-        if (constraints.maxWidth < 720 || action == null) {
+        if (constraints.maxWidth < 720 || actionValue == null) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               header,
-              if (action != null) ...[
+              if (actionValue != null) ...[
                 const SizedBox(height: 14),
-                action!,
+                actionValue,
               ],
             ],
           );
@@ -926,7 +929,7 @@ class PageHeaderRow extends StatelessWidget {
         return Row(
           children: [
             Expanded(child: header),
-            action!,
+            actionValue,
           ],
         );
       },

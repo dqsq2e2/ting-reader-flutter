@@ -19,7 +19,7 @@ extension _AppAuthentication on AppState {
             : '');
     var code = profile.fnAccessCode;
     while (true) {
-      if (cancelToken?.isCancelled ?? false) {
+      if (cancelToken != null && cancelToken.isCancelled) {
         throw DioException.requestCancelled(
             requestOptions: RequestOptions(path: '/api/auth/login'),
             reason: 'Login cancelled');
@@ -86,7 +86,11 @@ extension _AppAuthentication on AppState {
         user = _requireAuthenticatedUser(res.data);
       }
       checkCancelled();
-      await _prefs?.setString('user', user!.encode());
+      final authenticatedUser = user;
+      if (authenticatedUser == null) {
+        throw StateError('Session validation did not provide a user');
+      }
+      await _prefs?.setString('user', authenticatedUser.encode());
       needsGatewayLogin = false;
       await _prefs?.remove(AppState._gatewayReloginRequiredPrefsKey);
     } on _StartupCancelled {
@@ -201,9 +205,10 @@ extension _AppAuthentication on AppState {
     Map<String, dynamic> map;
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
     // 访问码来源优先级：本次登录输入 > 被替换/编辑的配置中已保存的值。
-    var resolvedAccessCode = (fnAccessCode?.trim().isNotEmpty == true)
-        ? fnAccessCode!.trim()
-        : (replaceProfile?.fnAccessCode.trim() ?? '');
+    var resolvedAccessCode =
+        (fnAccessCode != null && fnAccessCode.trim().isNotEmpty)
+            ? fnAccessCode.trim()
+            : (replaceProfile?.fnAccessCode.trim() ?? '');
 
     Future<Map<String, dynamic>> loginWithGatewaySession(
       String gatewayHost,
@@ -341,7 +346,8 @@ extension _AppAuthentication on AppState {
 
     _throwIfLoginCancelled(cancelToken);
     token = map['token']?.toString();
-    user = _requireAuthenticatedUser(map['user']);
+    final authenticatedUser = _requireAuthenticatedUser(map['user']);
+    user = authenticatedUser;
     this.gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
         ? resolvedGatewayCookie
         : null;
@@ -369,7 +375,7 @@ extension _AppAuthentication on AppState {
     await _prefs?.setString('active_url', activeUrl);
     await _prefs?.setString(AppState._serverModePrefsKey, serverMode.name);
     await _prefs?.setString(AppState._fnIdPrefsKey, this.fnId);
-    await _prefs?.setString('user', user!.encode());
+    await _prefs?.setString('user', authenticatedUser.encode());
     await _prefs?.remove(AppState._gatewayReloginRequiredPrefsKey);
     await _saveServerProfile(
       SavedServerProfile(
@@ -450,8 +456,8 @@ extension _AppAuthentication on AppState {
   }
 
   void _throwIfLoginCancelled(CancelToken? cancelToken) {
-    if (cancelToken?.isCancelled ?? false) {
-      throw cancelToken!.cancelError ??
+    if (cancelToken != null && cancelToken.isCancelled) {
+      throw cancelToken.cancelError ??
           DioException.requestCancelled(
             requestOptions: RequestOptions(),
             reason: 'Login cancelled',
@@ -489,6 +495,8 @@ extension _AppAuthentication on AppState {
   }
 
   Future<void> _logoutSession() async {
+    _gatewayRecoveryCancelToken?.cancel('User signed out');
+    cancelStartup();
     final loginPreferences = <String, dynamic>{
       'language': languageCode,
       'theme': theme,

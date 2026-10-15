@@ -21,6 +21,7 @@ import '../mine/bookmarks_page.dart';
 part 'parts/chapter_sheet.dart';
 part 'parts/collapsed_mini_player.dart';
 part 'parts/expanded_player.dart';
+part 'parts/playback_menus.dart';
 part 'parts/player_controls.dart';
 part 'parts/theme_utils.dart';
 

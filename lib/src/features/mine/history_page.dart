@@ -121,7 +121,7 @@ class _HistoryPageState extends State<HistoryPage> {
         _chapterPages[bookId] = page;
         _chapterTotals[bookId] = readInt(data, 'total') ?? 0;
         final index = _books.indexWhere((book) => book.id == bookId);
-        if (index >= 0) _books[index].chapters = _chapters[bookId]!;
+        if (index >= 0) _books[index].chapters = next;
       });
     } catch (error) {
       if (mounted) {

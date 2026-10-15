@@ -13,6 +13,7 @@ import '../../../core/utils/locale.dart';
 import '../../../core/utils/urls.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
+import '../../../shared/common/chapter_type_selector.dart';
 import '../../../shared/common/media_widgets.dart';
 import '../../../shared/plugin_extensions/plugin_extension_host.dart';
 import 'book_detail_editing.dart';
@@ -21,6 +22,7 @@ import 'chapter_manager_dialog.dart';
 
 part 'book_detail_components.dart';
 part 'book_detail_chapter_section.dart';
+part 'book_detail_chapter_row.dart';
 
 class BookDetailPage extends StatefulWidget {
   const BookDetailPage({
@@ -112,13 +114,14 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   Future<void> _load() async {
+    final initialChapterIdValue = widget.initialChapterId;
     _tagsExpanded = false;
     final detail = _detail;
-    await detail?.load(initialChapter: widget.initialChapterId);
+    await detail?.load(initialChapter: initialChapterIdValue);
     if (mounted &&
         identical(detail, _detail) &&
-        widget.initialChapterId != null) {
-      _ensureChapterVisible(widget.initialChapterId!);
+        initialChapterIdValue != null) {
+      _ensureChapterVisible(initialChapterIdValue);
     }
   }
 
@@ -213,8 +216,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     if (book == null) return;
     final player = AppScope.playerOf(context);
     final current = player.currentChapter;
-    if (current?.bookId == book.id) {
-      await _locateChapter(current!, loadPage: true);
+    if (current != null && current.bookId == book.id) {
+      await _locateChapter(current, loadPage: true);
       if (!mounted || !identical(detail, _detail)) return;
       if (!player.isPlaying) {
         await player.togglePlay();
@@ -356,6 +359,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     }
 
     final appState = AppScope.appOf(context);
+    final description = book.description;
+    final tags = book.tags;
     final resume = _resumeChapter;
     final player = AppScope.playerOf(context);
     final currentChapter = player.currentChapter;
@@ -452,10 +457,10 @@ class _BookDetailPageState extends State<BookDetailPage> {
                       _Meta(icon: Icons.event_rounded, text: '${book.year}'),
                   ],
                 ),
-                if ((book.tags ?? '').isNotEmpty) ...[
+                if (tags != null && tags.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   _CollapsibleBookTags(
-                    tags: book.tags!
+                    tags: tags
                         .split(RegExp(r'[,，]'))
                         .map((tag) => tag.trim())
                         .where((tag) => tag.isNotEmpty)
@@ -490,8 +495,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 ),
                 const SizedBox(height: 20),
                 _DescriptionPanel(
-                  description: book.description?.isNotEmpty == true
-                      ? _inlineDescription(book.description!)
+                  description: description != null && description.isNotEmpty
+                      ? _inlineDescription(description)
                       : context.l10n.bookDetailNoDescription,
                   themeColor: themeColor,
                 ),

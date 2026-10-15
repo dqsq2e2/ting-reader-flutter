@@ -105,9 +105,12 @@ $items = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     );
     final networks = <_Ipv4Network>[];
     for (final match in expression.allMatches(result.stdout.toString())) {
-      final prefix = ipv4PrefixLengthFromMask(match.group(2)!);
+      final address = match.group(1);
+      final mask = match.group(2);
+      if (address == null || mask == null) continue;
+      final prefix = ipv4PrefixLengthFromMask(mask);
       if (prefix != null) {
-        networks.add(_Ipv4Network(match.group(1)!, prefix));
+        networks.add(_Ipv4Network(address, prefix));
       }
     }
     return networks;
@@ -153,8 +156,9 @@ Future<List<_Ipv4Network>> _macOsIpv4Networks() async {
     );
     final networks = <_Ipv4Network>[];
     for (final match in expression.allMatches(result.stdout.toString())) {
-      final address = match.group(1)!;
-      final rawMask = match.group(2)!;
+      final address = match.group(1);
+      final rawMask = match.group(2);
+      if (address == null || rawMask == null) continue;
       final prefix = rawMask.startsWith('0x')
           ? _prefixLengthFromHexMask(rawMask)
           : ipv4PrefixLengthFromMask(rawMask);

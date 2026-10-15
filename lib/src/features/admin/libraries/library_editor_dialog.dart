@@ -41,7 +41,8 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     _usernameController = TextEditingController(text: library?.username ?? '');
     _passwordController = TextEditingController();
     _rootPathController = TextEditingController(
-      text: (library?.rootPath.isNotEmpty ?? false) ? library!.rootPath : '/',
+      text:
+          library == null || library.rootPath.isEmpty ? '/' : library.rootPath,
     );
     _scraperController = TextEditingController(
       text: _isRss
@@ -141,6 +142,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
   }
 
   Future<void> _save() async {
+    final libraryValue = widget.library;
     if (!(_formKey.currentState?.validate() ?? false)) return;
 
     final scraperText = _scraperController.text.trim();
@@ -185,8 +187,8 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     setState(() => _saving = true);
     try {
       final api = AppScope.appOf(context).api;
-      if (_editing) {
-        await api.patch('/api/libraries/${widget.library!.id}', data: payload);
+      if (libraryValue != null) {
+        await api.patch('/api/libraries/${libraryValue.id}', data: payload);
       } else {
         await api.post('/api/libraries', data: payload);
       }
@@ -582,7 +584,7 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
     final configuredInterval = config['scheduled_sync_interval']?.toString();
     const intervals = ['hourly', 'daily', 'weekly', 'monthly'];
     final interval =
-        intervals.contains(configuredInterval) ? configuredInterval! : 'daily';
+        intervals.contains(configuredInterval) ? configuredInterval : 'daily';
 
     String intervalLabel(String value) {
       switch (value) {

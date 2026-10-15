@@ -109,14 +109,14 @@ class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
                     _DisplayFilterOption(
                       label: context.localeText('网格（默认）', 'Grid (Default)'),
                       selected: widget.viewMode == BookshelfViewMode.grid,
-                      onTap: () =>
-                          widget.onViewModeChanged!(BookshelfViewMode.grid),
+                      onTap: () => widget.onViewModeChanged
+                          ?.call(BookshelfViewMode.grid),
                     ),
                     _DisplayFilterOption(
                       label: context.localeText('列表', 'List'),
                       selected: widget.viewMode == BookshelfViewMode.list,
-                      onTap: () =>
-                          widget.onViewModeChanged!(BookshelfViewMode.list),
+                      onTap: () => widget.onViewModeChanged
+                          ?.call(BookshelfViewMode.list),
                     ),
                   ]),
                 _section('sort', context.localeText('排序方式', 'Sort'), [
@@ -124,7 +124,7 @@ class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
                     _DisplayFilterOption(
                       label: option.label,
                       selected: _sortSelected(option.value),
-                      onTap: () => widget.onSortChanged(option.value),
+                      onTap: () => widget.onSortChanged.call(option.value),
                     ),
                 ]),
                 _section('size', context.localeText('图标大小', 'Icon Size'), [
@@ -132,19 +132,19 @@ class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
                     label: context.localeText('大图标', 'Large'),
                     selected: widget.iconSize == IconSizeSetting.large,
                     onTap: () =>
-                        widget.onIconSizeChanged(IconSizeSetting.large),
+                        widget.onIconSizeChanged.call(IconSizeSetting.large),
                   ),
                   _DisplayFilterOption(
                     label: context.localeText('中图标（默认）', 'Medium (Default)'),
                     selected: widget.iconSize == IconSizeSetting.medium,
                     onTap: () =>
-                        widget.onIconSizeChanged(IconSizeSetting.medium),
+                        widget.onIconSizeChanged.call(IconSizeSetting.medium),
                   ),
                   _DisplayFilterOption(
                     label: context.localeText('小图标', 'Small'),
                     selected: widget.iconSize == IconSizeSetting.small,
                     onTap: () =>
-                        widget.onIconSizeChanged(IconSizeSetting.small),
+                        widget.onIconSizeChanged.call(IconSizeSetting.small),
                   ),
                 ]),
                 if (widget.coverShape != null &&
@@ -153,7 +153,8 @@ class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
                     _DisplayFilterOption(
                       label: context.localeText('3:4 比例', '3:4'),
                       selected: widget.coverShape == CoverShape.rect,
-                      onTap: () => widget.onCoverShapeChanged!(CoverShape.rect),
+                      onTap: () =>
+                          widget.onCoverShapeChanged?.call(CoverShape.rect),
                     ),
                     _DisplayFilterOption(
                       label: context.localeText(
@@ -162,7 +163,7 @@ class _DisplayFilterMenuState extends State<DisplayFilterMenu> {
                       ),
                       selected: widget.coverShape == CoverShape.square,
                       onTap: () =>
-                          widget.onCoverShapeChanged!(CoverShape.square),
+                          widget.onCoverShapeChanged?.call(CoverShape.square),
                     ),
                   ]),
               ],

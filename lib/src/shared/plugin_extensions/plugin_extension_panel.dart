@@ -343,6 +343,7 @@ class _PluginExtensionPanelBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final messageValue = message;
     if (extension.renderMode == ClientExtensionRenderMode.action) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -362,11 +363,11 @@ class _PluginExtensionPanelBody extends StatelessWidget {
                   : context.localeText('运行', 'Run'),
             ),
           ),
-          if (message != null) ...[
+          if (messageValue != null) ...[
             const SizedBox(height: 14),
             Expanded(
               child: _PluginActionMessage(
-                message: message!,
+                message: messageValue,
                 failed: failed,
               ),
             ),

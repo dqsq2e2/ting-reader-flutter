@@ -67,21 +67,24 @@ class _LibraryPermissionBox extends StatelessWidget {
               child: Column(
                 children: [
                   for (final library in libraries)
-                    CheckboxListTile(
-                      value: selectedIds.contains(library.id),
-                      onChanged: (value) =>
-                          onChanged(library.id, value ?? false),
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      activeColor: AppColors.primary600,
-                      title: Text(
-                        localizedLibraryName(context, library),
-                        style: TextStyle(
-                          color: context.isDark
-                              ? AppColors.slate300
-                              : AppColors.slate700,
-                          fontSize: 14,
+                    Material(
+                      type: MaterialType.transparency,
+                      child: CheckboxListTile(
+                        value: selectedIds.contains(library.id),
+                        onChanged: (value) =>
+                            onChanged(library.id, value ?? false),
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        activeColor: AppColors.primary600,
+                        title: Text(
+                          localizedLibraryName(context, library),
+                          style: TextStyle(
+                            color: context.isDark
+                                ? AppColors.slate300
+                                : AppColors.slate700,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
@@ -238,6 +241,7 @@ class _SearchResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final subtitleValue = subtitle;
     return InkWell(
       onTap: onTap,
       child: Padding(
@@ -256,10 +260,10 @@ class _SearchResultRow extends StatelessWidget {
                       fontSize: 14,
                     ),
                   ),
-                  if (subtitle != null) ...[
+                  if (subtitleValue != null) ...[
                     const SizedBox(height: 2),
                     Text(
-                      subtitle!,
+                      subtitleValue,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

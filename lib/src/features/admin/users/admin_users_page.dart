@@ -30,7 +30,9 @@ class _AdminUsersV2PageState extends State<AdminUsersV2Page> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {

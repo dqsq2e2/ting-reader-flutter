@@ -19,12 +19,16 @@ import 'package:ting_reader_flutter/src/features/mine/history_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/mine_page.dart';
 import 'package:ting_reader_flutter/src/features/player/mini_player.dart';
 import 'package:ting_reader_flutter/src/features/login_page.dart';
+import 'package:ting_reader_flutter/src/features/admin/users/admin_users_page.dart';
+import 'package:ting_reader_flutter/src/features/bookshelf/book_picker_dialog.dart';
 import 'package:ting_reader_flutter/src/shared/app_scope.dart';
 import 'package:ting_reader_flutter/src/shared/cards/book_card.dart';
 import 'package:ting_reader_flutter/src/shared/cards/bookshelf_list_tile.dart';
 import 'package:ting_reader_flutter/src/shared/common/media_widgets.dart';
 import 'package:ting_reader_flutter/src/shared/common/common_widgets.dart';
 import 'package:ting_reader_flutter/src/shared/filter/display_filter_menu.dart';
+import 'package:ting_reader_flutter/src/shared/dialogs/text_input_dialog.dart';
+import 'package:ting_reader_flutter/src/shared/common/chapter_type_selector.dart';
 
 class _ReadingApi extends ApiClient {
   final gets = <String>[];
@@ -58,6 +62,7 @@ class _ReadingApi extends ApiClient {
     if (pendingBookmarks.containsKey(path)) {
       return pendingBookmarks[path]!.future;
     }
+    if (path == '/api/users') return _response(path, []);
     if (path == '/api/settings') return _response(path, settingsPayload);
     if (path == '/api/system/statistics') {
       return _response(path, statisticsPayload);
@@ -391,6 +396,113 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets(
+      'creating a user initializes an empty form without an existing user',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AdminUsersV2Page());
+    await tester.tap(find.widgetWithText(ElevatedButton, 'Create'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'shared book picker searches author and prevents selecting existing books',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(
+        tester,
+        app,
+        player,
+        const BookPickerDialog(
+          books: [
+            Book(
+                id: 'first',
+                libraryId: 'lib',
+                title: 'First',
+                author: 'Writer A'),
+            Book(
+                id: 'second',
+                libraryId: 'lib',
+                title: 'Second',
+                author: 'Writer B'),
+          ],
+          existingIds: {'first'},
+          coverShape: CoverShape.square,
+        ));
+    await tester.enterText(find.byType(TextField), 'Writer B');
+    await tester.pumpAndSettle();
+    expect(find.text('First'), findsNothing);
+    expect(find.text('Second'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'shared text input owns its controller through the closing animation',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    String? saved;
+    await _pump(
+        tester,
+        app,
+        player,
+        Builder(
+            builder: (context) => TextButton(
+                onPressed: () async {
+                  saved = await showTextInputDialog(context,
+                      title: 'Edit note',
+                      action: 'Save',
+                      initialValue: 'Old note');
+                },
+                child: const Text('Open input'))));
+    await tester.tap(find.text('Open input'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Updated note');
+    await tester.tap(find.text('Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(tester.takeException(), isNull);
+    await tester.pumpAndSettle();
+    expect(saved, 'Updated note');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chapter browsing and editor use the same main/extra selection',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    var selected = 'main';
+    await _pump(
+        tester,
+        app,
+        player,
+        StatefulBuilder(
+            builder: (context, update) => ChapterTypeSelector(
+                activeTab: selected,
+                mainCount: 10,
+                extraCount: 2,
+                onChanged: (tab) => update(() => selected = tab))));
+    await tester.tap(find.text('Extra (2)'));
+    await tester.pumpAndSettle();
+    expect(selected, 'extra');
+    await tester.tap(find.text('Main (10)'));
+    await tester.pumpAndSettle();
+    expect(selected, 'main');
+    expect(tester.takeException(), isNull);
+  });
+
   for (final twofa in [false, true]) {
     testWidgets(
         '${twofa ? "two-factor" : "access-code"} prompt releases its controller after dismissal',
@@ -891,6 +1003,86 @@ void main() {
                     progressPercent: 100),
                 onTap: () {})));
     expect(find.text('Read'), findsNothing);
+  });
+
+  testWidgets(
+      'book and series cards show only known author and narrator credits',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    for (final (author, narrator, listCredits, gridCredits)
+        in <(String?, String?, String, String)>[
+      (null, null, '', ''),
+      ('Unknown', 'unknow', '', ''),
+      (' 未知作者 ', '未知演播', '', ''),
+      (' 作者 ', 'Unknown Narrator', '作者', '作者'),
+      ('UNKNOWN AUTHOR', ' 演播者 ', '演播者', '演播者'),
+      ('作者', '演播者', '作者 · 演播者', '作者'),
+      ('未知君', 'Unknown Stories', '未知君 · Unknown Stories', '未知君'),
+    ]) {
+      expect(bookCredits(author, narrator), listCredits);
+      expect(bookPrimaryCredit(author, narrator), gridCredits);
+      for (final mode in BookshelfViewMode.values) {
+        final expected =
+            mode == BookshelfViewMode.grid ? gridCredits : listCredits;
+        for (final series in [false, true]) {
+          await _pump(
+            tester,
+            app,
+            player,
+            SizedBox(
+              width: mode == BookshelfViewMode.list ? 360 : 180,
+              child: series
+                  ? SeriesCard(
+                      series: Series(
+                          id: 'series',
+                          libraryId: 'lib',
+                          title: 'Collection',
+                          author: author,
+                          narrator: narrator),
+                      viewMode: mode,
+                      onTap: () {},
+                    )
+                  : BookCard(
+                      book: Book(
+                          id: 'book',
+                          libraryId: 'lib',
+                          title: 'Book',
+                          author: author,
+                          narrator: narrator),
+                      viewMode: mode,
+                      onTap: () {},
+                    ),
+            ),
+          );
+          if (expected.isNotEmpty) {
+            expect(find.text(expected), findsOneWidget);
+          } else {
+            expect(
+                find.byWidgetPredicate(
+                  (widget) => widget is Text && widget.data == '',
+                ),
+                findsNothing);
+          }
+          if (mode == BookshelfViewMode.grid && listCredits != gridCredits) {
+            expect(find.text(listCredits), findsNothing);
+          }
+          for (final placeholder in [
+            'Unknown',
+            'unknow',
+            '未知作者',
+            '未知演播',
+            'Unknown Author',
+            'Unknown Narrator'
+          ]) {
+            expect(find.text(placeholder), findsNothing);
+          }
+          expect(tester.takeException(), isNull);
+        }
+      }
+    }
   });
 
   testWidgets(

@@ -35,6 +35,10 @@ class ActivityBookCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final percentValue = percent;
+    final metaValue = meta;
+    final previewValue = preview;
+    final selectionValue = selection;
     final compact = MediaQuery.sizeOf(context).width < 600;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -62,8 +66,8 @@ class ActivityBookCard extends StatelessWidget {
                 padding: EdgeInsets.all(compact ? 16 : 20),
                 child: Row(
                   children: [
-                    if (selection != null) ...[
-                      selection!,
+                    if (selectionValue != null) ...[
+                      selectionValue,
                       const SizedBox(width: 12),
                     ],
                     SizedBox(
@@ -105,22 +109,23 @@ class ActivityBookCard extends StatelessWidget {
                               ),
                             ),
                           ]),
-                          if (preview?.isNotEmpty == true) ...[
+                          if (previewValue != null &&
+                              previewValue.isNotEmpty) ...[
                             const SizedBox(height: 4),
-                            Text(preview!,
+                            Text(previewValue,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     color: context.mutedText, fontSize: 12)),
                           ],
-                          if (meta != null) ...[
+                          if (metaValue != null) ...[
                             const SizedBox(height: 6),
                             Row(children: [
                               Icon(Icons.access_time_rounded,
                                   size: 13, color: context.mutedText),
                               const SizedBox(width: 5),
                               Expanded(
-                                  child: Text(meta!,
+                                  child: Text(metaValue,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
@@ -128,8 +133,8 @@ class ActivityBookCard extends StatelessWidget {
                                           fontSize: 12))),
                             ]),
                           ],
-                          if (percent != null)
-                            ActivityProgress(percent: percent!),
+                          if (percentValue != null)
+                            ActivityProgress(percent: percentValue),
                         ],
                       ),
                     ),
@@ -154,7 +159,7 @@ class ActivityBookCard extends StatelessWidget {
                       top: BorderSide(
                           color: context.faintBorder.withValues(alpha: 0.6))),
                 ),
-                child: Material(type: MaterialType.transparency, child: child!),
+                child: Material(type: MaterialType.transparency, child: child),
               ),
           ],
         ),

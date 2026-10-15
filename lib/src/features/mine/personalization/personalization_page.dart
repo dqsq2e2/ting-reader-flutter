@@ -293,6 +293,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
 
   @override
   Widget build(BuildContext context) {
+    final onBackValue = widget.onBack;
     if (_loading) return const LoadingView();
     final appState = AppScope.appOf(context);
     final l10n = context.l10n;
@@ -303,8 +304,8 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       children: [
         PageListView(
           children: [
-            if (widget.onBack != null) ...[
-              AppBackButton(onPressed: widget.onBack!),
+            if (onBackValue != null) ...[
+              AppBackButton(onPressed: onBackValue),
               const SizedBox(height: 24),
             ],
             LayoutBuilder(

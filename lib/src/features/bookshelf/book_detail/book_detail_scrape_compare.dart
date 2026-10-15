@@ -421,3 +421,165 @@ class _ScrapeReviewBooleanField extends StatelessWidget {
     );
   }
 }
+
+const _scrapeFieldDefinitions = <String, ({String label, IconData icon})>{
+  'title': (label: 'Title', icon: Icons.menu_book_rounded),
+  'author': (label: 'Author', icon: Icons.person_rounded),
+  'narrator': (label: 'Narrator', icon: Icons.mic_rounded),
+  'cover_url': (label: 'Cover', icon: Icons.image_rounded),
+  'description': (label: 'Description', icon: Icons.notes_rounded),
+  'tags': (label: 'Tags', icon: Icons.local_offer_rounded),
+  'genre': (label: 'Genre', icon: Icons.category_rounded),
+  'year': (label: 'Year', icon: Icons.calendar_month_rounded),
+};
+
+int _scrapeFieldSortIndex(String key) {
+  final index = scrapeFieldOrder.indexOf(key);
+  return index < 0 ? 999 : index;
+}
+
+bool _scrapeFieldIsWide(String key) {
+  return key == 'cover_url' || key == 'description' || key == 'tags';
+}
+
+String _localizedScrapeFieldLabel(BuildContext context, String key) {
+  switch (normalizeScrapeFieldKey(key)) {
+    case 'title':
+      return context.localeText('书名', 'Title');
+    case 'author':
+      return context.localeText('作者', 'Author');
+    case 'narrator':
+      return context.localeText('演播', 'Narrator');
+    case 'cover_url':
+      return context.localeText('封面', 'Cover');
+    case 'description':
+      return context.localeText('简介', 'Description');
+    case 'tags':
+      return context.localeText('标签', 'Tags');
+    case 'genre':
+      return context.localeText('类型', 'Genre');
+    case 'year':
+      return context.localeText('年份', 'Year');
+    case 'subtitle':
+      return context.localeText('副标题', 'Subtitle');
+    case 'published_date':
+      return context.localeText('发布日期', 'Published');
+    case 'publisher':
+      return context.localeText('出版社', 'Publisher');
+    case 'isbn':
+      return 'ISBN';
+    case 'asin':
+      return 'ASIN';
+    case 'language':
+      return context.localeText('语言', 'Language');
+    case 'explicit':
+      return context.localeText('成人内容', 'Explicit');
+    case 'abridged':
+      return context.localeText('删节版', 'Abridged');
+    case 'duration':
+      return context.localeText('总时长', 'Duration');
+    default:
+      return key;
+  }
+}
+
+String _localizedScrapeResultFieldLabel(
+  BuildContext context,
+  ScrapeSource source,
+  String key,
+) {
+  final normalized = normalizeScrapeFieldKey(key);
+  final declared = source.resultFieldLabels[key]
+          ?.resolve(english: context.isEnglishLocale) ??
+      source.resultFieldLabels[normalized]
+          ?.resolve(english: context.isEnglishLocale);
+  if (declared != null && declared.trim().isNotEmpty) {
+    return declared.trim();
+  }
+  return _localizedScrapeFieldLabel(context, normalized);
+}
+
+String _localizedScrapeSearchFieldLabel(
+  BuildContext context,
+  ScrapeSearchField field,
+) {
+  final declared = field.labelI18n?.resolve(english: context.isEnglishLocale);
+  if (declared != null && declared.trim().isNotEmpty) {
+    return declared.trim();
+  }
+  final normalized = normalizeScrapeFieldKey(field.key);
+  if (_scrapeFieldDefinitions.containsKey(normalized)) {
+    return _localizedScrapeFieldLabel(context, normalized);
+  }
+  return field.label;
+}
+
+String _formatScrapeValueForLocale(
+  BuildContext context,
+  Object? value, [
+  String? emptyZh,
+  String? emptyEn,
+]) {
+  if (!hasScrapeValue(value)) {
+    return context.localeText(emptyZh ?? '未返回', emptyEn ?? 'Not returned');
+  }
+  if (value is Iterable) {
+    return value.map((item) => item.toString()).join(' / ');
+  }
+  if (value is bool) {
+    return context.localeText(value ? '是' : '否', value ? 'Yes' : 'No');
+  }
+  return value.toString();
+}
+
+String _scrapeResultTitleForLocale(BuildContext context, ScrapeResult result) {
+  return _formatScrapeValueForLocale(
+    context,
+    scrapeItemValue(result.item, 'title'),
+  );
+}
+
+String _scrapeResultSubtitleForLocale(
+  BuildContext context,
+  ScrapeResult result,
+) {
+  final author = _formatScrapeValueForLocale(
+    context,
+    scrapeItemValue(result.item, 'author'),
+    '',
+    '',
+  );
+  final narrator = _formatScrapeValueForLocale(
+    context,
+    scrapeItemValue(result.item, 'narrator'),
+    '',
+    '',
+  );
+  return [author, narrator].where((value) => value.isNotEmpty).join(' / ');
+}
+
+String _scrapeCountText(
+  BuildContext context,
+  int count,
+  String zhUnit,
+  String enSingular,
+  String enPlural,
+) {
+  if (!context.isEnglishLocale) return '$count $zhUnit';
+  return '$count ${count == 1 ? enSingular : enPlural}';
+}
+
+String _scrapeSummaryText(
+  BuildContext context, {
+  required int pluginCount,
+  required int resultCount,
+  required int selectedCount,
+}) {
+  if (!context.isEnglishLocale) {
+    return '$pluginCount 个插件 · $resultCount 条结果 · 已选择 $selectedCount 个字段';
+  }
+  final plugins = pluginCount == 1 ? 'plugin' : 'plugins';
+  final results = resultCount == 1 ? 'result' : 'results';
+  final fields = selectedCount == 1 ? 'field' : 'fields';
+  return '$pluginCount $plugins · $resultCount $results · $selectedCount $fields selected';
+}

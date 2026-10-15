@@ -234,13 +234,14 @@ class _TagWrap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trailingValue = trailing;
     return Wrap(
       alignment: alignment,
       spacing: 8,
       runSpacing: _CollapsibleBookTags._runSpacing,
       children: [
         for (final tag in tags) _BookTag(label: tag),
-        if (trailing != null) trailing!,
+        if (trailingValue != null) trailingValue,
       ],
     );
   }
@@ -421,9 +422,10 @@ class _BookActionPanelState extends State<_BookActionPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final playBackground = widget.themeColor ?? AppColors.primary600;
+    final themeColorValue = widget.themeColor;
+    final playBackground = themeColorValue ?? AppColors.primary600;
     final playForeground =
-        widget.themeColor != null && isBookThemeLight(widget.themeColor!)
+        themeColorValue != null && isBookThemeLight(themeColorValue)
             ? AppColors.slate600
             : Colors.white;
     final favoriteLabel = context.localeText(
@@ -720,6 +722,7 @@ class _DescriptionPanelState extends State<_DescriptionPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final themeColorValue = widget.themeColor;
     return LayoutBuilder(
       builder: (context, constraints) {
         final descriptionStyle = DefaultTextStyle.of(context).style.merge(
@@ -745,8 +748,8 @@ class _DescriptionPanelState extends State<_DescriptionPanel> {
           width: double.infinity,
           padding: const EdgeInsets.all(_panelPadding),
           decoration: BoxDecoration(
-            color: widget.themeColor != null && !context.isDark
-                ? widget.themeColor!.withValues(alpha: 0.08)
+            color: themeColorValue != null && !context.isDark
+                ? themeColorValue.withValues(alpha: 0.08)
                 : (context.isDark
                     ? AppColors.slate900.withValues(alpha: 0.28)
                     : Colors.white.withValues(alpha: 0.74)),

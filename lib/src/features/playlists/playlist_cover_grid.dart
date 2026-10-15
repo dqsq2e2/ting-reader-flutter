@@ -72,10 +72,12 @@ List<_PlaylistCover> _collectPlaylistCoverCandidates(
 
   if (playlist.items.isNotEmpty) {
     for (final item in playlist.items) {
-      if (item.itemType == 'series' && item.series != null) {
-        pushSeries(item.series!);
-      } else if (item.book != null) {
-        pushBook(item.book!);
+      final bookValue = item.book;
+      final seriesValue = item.series;
+      if (item.itemType == 'series' && seriesValue != null) {
+        pushSeries(seriesValue);
+      } else if (bookValue != null) {
+        pushBook(bookValue);
       }
     }
   } else {

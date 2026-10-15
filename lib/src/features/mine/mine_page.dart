@@ -1,21 +1,17 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:dio/dio.dart';
 
 import '../../core/models/models.dart';
-import '../../core/state/notification_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
-import '../../core/utils/application_time_zone.dart';
 import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/common/common_widgets.dart';
 import '../../shared/fnos_logo.dart';
 
-part 'statistics_pages.dart';
-part 'notification_pages.dart';
+export 'statistics_pages.dart';
+export 'notification_pages.dart';
 
 class MyPage extends StatefulWidget {
   const MyPage({

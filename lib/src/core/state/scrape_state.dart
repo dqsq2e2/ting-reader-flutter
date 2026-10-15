@@ -173,11 +173,11 @@ class ScrapeState extends ChangeNotifier {
       ScrapeResult result, String key, String label, String resultTitle) {
     if (!scrapeFieldOrder.contains(key)) return;
     final value = scrapeItemValue(result.item, key);
-    if (!hasScrapeValue(value)) return;
+    if (value == null || !hasScrapeValue(value)) return;
     selectedFields[key] = SelectedScrapeField(
         key: key,
         label: label,
-        value: value!,
+        value: value,
         sourceId: result.source.id,
         sourceName: result.source.name,
         resultId: result.externalId,
@@ -348,8 +348,10 @@ class LocalizedPluginText {
   }
 
   String get fallback {
-    if (zh?.trim().isNotEmpty == true) return zh!.trim();
-    if (en?.trim().isNotEmpty == true) return en!.trim();
+    final enValue = en;
+    final zhValue = zh;
+    if (zhValue != null && zhValue.trim().isNotEmpty) return zhValue.trim();
+    if (enValue != null && enValue.trim().isNotEmpty) return enValue.trim();
     return '';
   }
 }
@@ -487,7 +489,7 @@ const scrapeFieldOrder = [
 String normalizeScrapeFieldKey(String key) {
   final normalized = key
       .replaceAllMapped(
-          RegExp('[A-Z]'), (match) => '_${match.group(0)!.toLowerCase()}')
+          RegExp('[A-Z]'), (match) => '_${match[0]?.toLowerCase() ?? ''}')
       .toLowerCase();
   if (normalized == 'intro') return 'description';
   if (normalized == 'published_year') return 'year';

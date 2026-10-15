@@ -125,6 +125,7 @@ class _PluginSchemaFormState extends State<_PluginSchemaForm> {
 
   @override
   Widget build(BuildContext context) {
+    final messageValue = _message;
     if (_fields.isEmpty) {
       return _PluginUnsupportedBody(
         title: context.localeText('表单不可用', 'Form unavailable'),
@@ -160,9 +161,10 @@ class _PluginSchemaFormState extends State<_PluginSchemaForm> {
                     ),
                     const SizedBox(height: 12),
                   ],
-                  if (_message != null) ...[
+                  if (messageValue != null) ...[
                     const SizedBox(height: 2),
-                    _PluginActionMessage(message: _message!, failed: _failed),
+                    _PluginActionMessage(
+                        message: messageValue, failed: _failed),
                   ],
                 ],
               ),

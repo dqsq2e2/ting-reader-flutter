@@ -80,10 +80,17 @@ class _SearchPageState extends State<SearchPage> {
       final genres = <String>{};
       final years = <String>{};
       for (final book in allBooks) {
-        if ((book.author ?? '').isNotEmpty) authors.add(book.author!);
-        if ((book.narrator ?? '').isNotEmpty) narrators.add(book.narrator!);
-        if ((book.genre ?? '').isNotEmpty) {
-          genres.addAll(book.genre!
+        final authorValue = book.author;
+        final narratorValue = book.narrator;
+        final genreValue = book.genre;
+        if (authorValue != null && authorValue.isNotEmpty) {
+          authors.add(authorValue);
+        }
+        if (narratorValue != null && narratorValue.isNotEmpty) {
+          narrators.add(narratorValue);
+        }
+        if (genreValue != null && genreValue.isNotEmpty) {
+          genres.addAll(genreValue
               .split(',')
               .map((item) => item.trim())
               .where((item) => item.isNotEmpty));

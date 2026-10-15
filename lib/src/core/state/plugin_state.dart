@@ -231,9 +231,14 @@ class PluginState extends ChangeNotifier {
       throw StateError('Missing plugin package');
     }
     final installed = await installWithConfirmation((digest, token) async {
-      final file = path != null
-          ? await MultipartFile.fromFile(path, filename: name)
-          : MultipartFile.fromBytes(bytes!, filename: name);
+      final MultipartFile file;
+      if (path != null) {
+        file = await MultipartFile.fromFile(path, filename: name);
+      } else if (bytes != null) {
+        file = MultipartFile.fromBytes(bytes, filename: name);
+      } else {
+        throw StateError('Missing plugin package');
+      }
       if (_disposed || token.isCancelled) {
         throw StateError('Plugin install cancelled');
       }

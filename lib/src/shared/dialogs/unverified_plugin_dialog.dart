@@ -92,7 +92,7 @@ class UnverifiedPluginDialog extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(label),
-                        if (permission.scope != null) Text(permission.scope!),
+                        if (permission.scope case final scope?) Text(scope),
                         if (sensitive)
                           Text(
                               context.localeText(

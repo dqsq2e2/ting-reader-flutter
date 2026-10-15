@@ -121,10 +121,10 @@ class SavedServerProfile {
           'gateway_cookie': gatewayCookie,
         if (includeSecrets && fnAccessCode.isNotEmpty)
           'fn_access_code': fnAccessCode,
-        if (gatewayCookieAt != null)
-          'gateway_cookie_at': gatewayCookieAt!.toIso8601String(),
-        if (lastLoginAt != null)
-          'last_login_at': lastLoginAt!.toIso8601String(),
+        if (gatewayCookieAt case final time?)
+          'gateway_cookie_at': time.toIso8601String(),
+        if (lastLoginAt case final time?)
+          'last_login_at': time.toIso8601String(),
       };
 }
 

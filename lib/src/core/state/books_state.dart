@@ -7,6 +7,67 @@ import '../models/models.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/formatters.dart';
 
+/// Pending chapter edits, shared filtering and the exact batch write payload.
+/// UI controllers and confirmation dialogs stay with the page.
+class ChapterEditDraft {
+  ChapterEditDraft(Iterable<Chapter> source)
+      : _chapters = source.toList()
+          ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+
+  List<Chapter> _chapters;
+  final Set<String> changedIds = {};
+  List<Chapter> get chapters => List.unmodifiable(_chapters);
+
+  List<Chapter> forTab(String tab) => _chapters
+      .where((chapter) => chapter.isExtra == (tab == 'extra'))
+      .toList();
+
+  int count(String tab) =>
+      _chapters.where((chapter) => chapter.isExtra == (tab == 'extra')).length;
+
+  List<Chapter> filter(
+      String tab, String query, String Function(String) displayPath) {
+    final needle = query.trim().toLowerCase();
+    return forTab(tab)
+        .where((chapter) =>
+            needle.isEmpty ||
+            chapter.title.toLowerCase().contains(needle) ||
+            chapter.chapterIndex.toString().contains(needle) ||
+            displayPath(chapter.path).toLowerCase().contains(needle))
+        .toList();
+  }
+
+  void update(String id, Chapter Function(Chapter) change) {
+    if (!_chapters.any((chapter) => chapter.id == id)) {
+      throw StateError('Cannot edit a chapter outside the current draft');
+    }
+    _chapters = [
+      for (final chapter in _chapters)
+        if (chapter.id == id) change(chapter) else chapter,
+    ];
+    changedIds.add(id);
+  }
+
+  void renumber() {
+    _chapters = [
+      for (var i = 0; i < _chapters.length; i++)
+        _chapters[i].copyWith(chapterIndex: i + 1),
+    ];
+    changedIds.addAll(_chapters.map((chapter) => chapter.id));
+  }
+
+  List<Map<String, Object>> get updates => [
+        for (final chapter in _chapters)
+          if (changedIds.contains(chapter.id))
+            {
+              'id': chapter.id,
+              'title': chapter.title,
+              'chapter_index': chapter.chapterIndex,
+              'is_extra': chapter.isExtra ? 1 : 0,
+            },
+      ];
+}
+
 /// Shared book mutations for shelf, series, detail and player settings.
 /// The owner scopes cancellation; callers keep confirmation dialogs.
 class BookOperations {
@@ -466,7 +527,7 @@ List<Map<String, String>> serializeChapterGroupOrders(
             'book_id': entry['book_id'] ?? '',
             'order': entry['order'] ?? 'asc',
           })
-      .where((entry) => entry['book_id']!.isNotEmpty)
+      .where((entry) => entry['book_id']?.isNotEmpty == true)
       .toList(growable: false);
 }
 

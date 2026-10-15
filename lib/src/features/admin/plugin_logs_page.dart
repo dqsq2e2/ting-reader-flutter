@@ -210,6 +210,7 @@ class _PluginLogsPageState extends State<PluginLogsPage> {
   }
 
   Widget _buildLogsBody() {
+    final errorValue = _error;
     if (_loading && _logs.isEmpty) {
       return const SizedBox(
         height: 260,
@@ -218,12 +219,12 @@ class _PluginLogsPageState extends State<PluginLogsPage> {
         ),
       );
     }
-    if (_error != null && _logs.isEmpty) {
+    if (errorValue != null && _logs.isEmpty) {
       return SizedBox(
         height: 260,
         child: Center(
-          child:
-              Text(_error!, style: const TextStyle(color: Color(0xffdc2626))),
+          child: Text(errorValue,
+              style: const TextStyle(color: Color(0xffdc2626))),
         ),
       );
     }
@@ -472,8 +473,9 @@ class _PluginLogRow extends StatelessWidget {
     final source = fields['source']?.toString();
     final operation = fields['op']?.toString();
     final eventId = fields['event_id']?.toString();
-    final message = (log.rawMessage?.trim().isNotEmpty ?? false)
-        ? log.rawMessage!
+    final rawMessage = log.rawMessage;
+    final message = rawMessage != null && rawMessage.trim().isNotEmpty
+        ? rawMessage
         : log.message;
     final accent = _levelColor(log.level);
 

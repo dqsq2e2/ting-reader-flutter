@@ -190,6 +190,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
 
   @override
   Widget build(BuildContext context) {
+    final themeColorValue = widget.themeColor;
     return AnimatedBuilder(
       animation: widget.player,
       builder: (context, _) {
@@ -213,9 +214,9 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
         final activeChapters = activeGroup == null
             ? const <Chapter>[]
             : _visibleGroupChapters(activeGroup);
-        final accent = widget.themeColor ?? AppColors.primary600;
+        final accent = themeColorValue ?? AppColors.primary600;
         final onAccent =
-            widget.themeColor != null && _isPlayerThemeLight(widget.themeColor!)
+            themeColorValue != null && _isPlayerThemeLight(themeColorValue)
                 ? AppColors.slate600
                 : Colors.white;
         final height = MediaQuery.sizeOf(context).height * 0.8;
@@ -655,6 +656,7 @@ class _ChapterSheetTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final progressTextValue = progressText;
     final compact = MediaQuery.sizeOf(context).width < 640;
     return Material(
       color: active
@@ -736,22 +738,22 @@ class _ChapterSheetTile extends StatelessWidget {
                             ),
                           ],
                         ),
-                        if (progressText != null)
+                        if (progressTextValue != null)
                           Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 6,
                               vertical: 2,
                             ),
                             decoration: BoxDecoration(
-                              color: progressText!.completed
+                              color: progressTextValue.completed
                                   ? const Color(0xffdcfce7)
                                   : AppColors.primary50,
                               borderRadius: BorderRadius.circular(5),
                             ),
                             child: Text(
-                              progressText!.text,
+                              progressTextValue.text,
                               style: TextStyle(
-                                color: progressText!.completed
+                                color: progressTextValue.completed
                                     ? const Color(0xff22c55e)
                                     : AppColors.primary600,
                                 fontSize: compact ? 10 : 11,

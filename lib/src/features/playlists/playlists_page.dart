@@ -269,7 +269,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       return;
     }
     setState(() => _showFilterMenu = true);
-    _filterOverlay = OverlayEntry(
+    final overlay = OverlayEntry(
       builder: (context) {
         return Positioned.fill(
           child: Stack(
@@ -310,7 +310,8 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         );
       },
     );
-    Overlay.of(context).insert(_filterOverlay!);
+    _filterOverlay = overlay;
+    Overlay.of(context).insert(overlay);
   }
 
   void _closeFilterMenu() {

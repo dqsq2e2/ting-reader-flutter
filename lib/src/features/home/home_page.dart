@@ -180,7 +180,7 @@ class _HomePageState extends State<HomePage> {
           id: book.id,
           title: localizedBookTitle(context, book),
           subtitle: book.author?.isNotEmpty == true
-              ? book.author!
+              ? (book.author ?? '')
               : context.localeText('今日推荐', 'Today Pick'),
           description: _inlineDescription(
             book.description,
@@ -247,13 +247,14 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    final errorValue = _error;
     if (_loading) return const LoadingView();
-    if (_error != null) {
+    if (errorValue != null) {
       return Center(
         child: EmptyState(
           icon: Icons.cloud_off_rounded,
           title: context.localeText('加载失败', 'Load Failed'),
-          message: _error!,
+          message: errorValue,
           action: PrimaryButton(
             icon: Icons.refresh_rounded,
             label: context.localeText('重试', 'Retry'),
@@ -286,8 +287,8 @@ class _HomePageState extends State<HomePage> {
             onCycle: _cycleHero,
             onPrimary: () {
               final item = _activeHero;
-              if (item?.id.isNotEmpty == true) {
-                widget.openBook(item!.id);
+              if (item != null && item.id.isNotEmpty) {
+                widget.openBook(item.id);
               } else {
                 widget.openBookshelf();
               }

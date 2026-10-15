@@ -48,16 +48,18 @@ class ApiClient {
   /// Unlike Dio, native audio backends do not share its default headers or
   /// cookie jar, so expose the complete authenticated set explicitly.
   Map<String, String> get authHeaders {
+    final cookieValue = _cookie;
+    final tokenValue = _token;
     final headers = <String, String>{
       'Accept-Language': _languageCode,
       ..._gatewayExtraHeaders,
       ..._clientHeaders,
     };
-    if (_token != null && _token!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $_token';
+    if (tokenValue != null && tokenValue.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $tokenValue';
     }
-    if (_cookie != null && _cookie!.isNotEmpty) {
-      headers['Cookie'] = _cookie!;
+    if (cookieValue != null && cookieValue.isNotEmpty) {
+      headers['Cookie'] = cookieValue;
     }
     return Map.unmodifiable(headers);
   }
@@ -354,11 +356,12 @@ class ApiClient {
           );
         }
       }
-      if (retrying || !_shouldTryRecover(error) || recoverBaseUrl == null) {
+      final recover = recoverBaseUrl;
+      if (retrying || !_shouldTryRecover(error) || recover == null) {
         rethrow;
       }
 
-      final recovered = await recoverBaseUrl!(_baseUrl, cancelToken);
+      final recovered = await recover(_baseUrl, cancelToken);
       if (cancelToken?.isCancelled ?? false) {
         throw DioException(
           requestOptions: error.requestOptions,
@@ -471,17 +474,19 @@ class ApiClient {
     String? idempotencyKey,
     Duration? receiveTimeout,
   }) {
+    final cookieValue = _cookie;
+    final tokenValue = _token;
     final headers = <String, dynamic>{
       'Content-Type': 'application/json',
       'Accept-Language': _languageCode,
       ..._gatewayExtraHeaders,
       ..._clientHeaders,
     };
-    if (_token != null && _token!.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $_token';
+    if (tokenValue != null && tokenValue.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $tokenValue';
     }
-    if (_cookie != null && _cookie!.isNotEmpty) {
-      headers['Cookie'] = _cookie;
+    if (cookieValue != null && cookieValue.isNotEmpty) {
+      headers['Cookie'] = cookieValue;
     }
     if (idempotencyKey != null) {
       headers['Idempotency-Key'] = idempotencyKey;

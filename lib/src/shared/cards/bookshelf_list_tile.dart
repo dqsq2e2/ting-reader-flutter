@@ -5,6 +5,32 @@ import '../../core/utils/locale.dart';
 import '../common/common_widgets.dart';
 import '../common/media_widgets.dart';
 
+String bookCredits(String? author, String? narrator) {
+  const unknown = {
+    'unknown',
+    'unknow',
+    'unknown author',
+    'unknown narrator',
+    'unknown artist',
+    '未知',
+    '未知作者',
+    '未知演播',
+    '未知主播',
+    '未知演播者',
+    '未知演播人',
+  };
+  return [author, narrator]
+      .map((value) => value?.trim() ?? '')
+      .where(
+          (value) => value.isNotEmpty && !unknown.contains(value.toLowerCase()))
+      .join(' · ');
+}
+
+String bookPrimaryCredit(String? author, String? narrator) {
+  final authorCredit = bookCredits(author, null);
+  return authorCredit.isNotEmpty ? authorCredit : bookCredits(null, narrator);
+}
+
 class BookshelfListTile extends StatelessWidget {
   const BookshelfListTile({
     super.key,
@@ -22,7 +48,7 @@ class BookshelfListTile extends StatelessWidget {
   });
 
   final String title;
-  final String author;
+  final String? author;
   final String? narrator;
   final String coverUrl;
   final double coverWidth;
@@ -37,6 +63,7 @@ class BookshelfListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final progress = this.progress;
     final bookCount = this.bookCount;
+    final credits = bookCredits(author, narrator);
     final progressColor =
         progress == 100 ? const Color(0xff10b981) : context.mutedText;
     return Semantics(
@@ -95,17 +122,16 @@ class BookshelfListTile extends StatelessWidget {
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
                                         height: 1.35)),
-                                const SizedBox(height: 4),
-                                Text(
-                                  [
-                                    author,
-                                    if (narrator?.isNotEmpty == true) narrator!
-                                  ].join(' · '),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.mutedText, fontSize: 12),
-                                ),
+                                if (credits.isNotEmpty) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    credits,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: context.mutedText, fontSize: 12),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

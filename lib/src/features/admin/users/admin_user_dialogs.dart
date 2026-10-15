@@ -141,7 +141,9 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     _role = user?.role == 'admin' ? 'admin' : 'user';
     _libraryIds = {...?user?.librariesAccessible};
     _bookIds = {...?user?.booksAccessible};
-    _loadSelectedBooks();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadSelectedBooks();
+    });
   }
 
   @override
@@ -274,8 +276,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
     });
     final api = AppScope.appOf(context).api;
     try {
-      if (_editing) {
-        final user = widget.user!;
+      if (widget.user case final user?) {
         final data = <String, dynamic>{};
         if (username != user.username) data['username'] = username;
         if (_password.text.isNotEmpty) data['password'] = _password.text;
@@ -313,6 +314,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final errorValue = _error;
     final maxHeight = MediaQuery.sizeOf(context).height * 0.86;
     return Dialog(
       insetPadding: const EdgeInsets.all(24),
@@ -444,10 +446,10 @@ class _UserFormDialogState extends State<_UserFormDialog> {
                     ),
                   ),
                 ],
-                if (_error != null) ...[
+                if (errorValue != null) ...[
                   const SizedBox(height: 16),
                   Text(
-                    _error!,
+                    errorValue,
                     style: const TextStyle(
                       color: Color(0xffef4444),
                       fontSize: 13,

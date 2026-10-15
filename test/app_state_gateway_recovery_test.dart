@@ -463,6 +463,26 @@ void main() {
     expect(state.token, 'old-token');
     expect(state.gatewaySessionRecoveryInFlight, isNull);
   });
+
+  test(
+      'logout cancels in-flight renewal and prevents restoring the old account',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final client = _FnConnectClient('http://127.0.0.1')
+      ..loginStarted = Completer<void>()
+      ..allowLogin = Completer<void>();
+    final state = _authenticatedState(client);
+    addTearDown(state.dispose);
+    final pending = state.handleGatewaySessionExpired();
+    await client.loginStarted!.future.timeout(const Duration(seconds: 5));
+    await state.logout();
+    expect(client.loginCancelToken!.isCancelled, isTrue);
+    client.allowLogin!.complete();
+    await pending;
+    expect(state.user, isNull);
+    expect(state.token, isNull);
+    expect(state.gatewaySessionRecoveryInFlight, isNull);
+  });
 }
 
 class _PromptApp extends AppState {

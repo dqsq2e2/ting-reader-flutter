@@ -88,6 +88,11 @@ String localizedBookTitle(BuildContext context, Book book) {
       : context.localeText('未命名书籍', 'Untitled Book');
 }
 
+String localizedAuthor(BuildContext context, String? author) {
+  if (author != null && author.isNotEmpty) return author;
+  return context.localeText('未知作者', 'Unknown Author');
+}
+
 String localizedChapterTitle(BuildContext context, Chapter chapter) {
   final title = chapter.title.trim();
   return title.isNotEmpty
@@ -140,6 +145,7 @@ class BookCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final url = bookCoverUrl(appState, book);
+    final credits = bookPrimaryCredit(book.author, book.narrator);
     final settingsJson = asMap(appState.settings['settings_json']);
     final showProgress = (appState.settings['bookshelf_progress_enabled'] ??
             settingsJson['bookshelf_progress_enabled']) !=
@@ -153,9 +159,7 @@ class BookCard extends StatelessWidget {
     if (viewMode == BookshelfViewMode.list) {
       return BookshelfListTile(
         title: localizedBookTitle(context, book),
-        author: book.author?.isNotEmpty == true
-            ? book.author!
-            : context.localeText('未知作者', 'Unknown Author'),
+        author: book.author,
         narrator: book.narrator,
         coverUrl: url,
         coverWidth: listCoverWidth(iconSize),
@@ -303,19 +307,19 @@ class BookCard extends StatelessWidget {
                 height: 1.15,
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              book.author?.isNotEmpty == true
-                  ? book.author!
-                  : context.localeText('未知作者', 'Unknown Author'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.mutedText,
-                fontSize: 12,
-                height: 1.2,
+            if (credits.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                credits,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.mutedText,
+                  fontSize: 12,
+                  height: 1.2,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -347,13 +351,12 @@ class SeriesCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
     final url = seriesCoverUrl(appState, series);
+    final credits = bookPrimaryCredit(series.author, series.narrator);
 
     if (viewMode == BookshelfViewMode.list) {
       return BookshelfListTile(
         title: localizedSeriesTitle(context, series),
-        author: series.author?.isNotEmpty == true
-            ? series.author!
-            : context.localeText('未知作者', 'Unknown Author'),
+        author: series.author,
         narrator: series.narrator,
         coverUrl: url,
         coverWidth: listCoverWidth(iconSize),
@@ -527,15 +530,15 @@ class SeriesCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 4),
-            Text(
-              series.author?.isNotEmpty == true
-                  ? series.author!
-                  : context.localeText('系列', 'Series'),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: context.mutedText, fontSize: 12),
-            ),
+            if (credits.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                credits,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: context.mutedText, fontSize: 12),
+              ),
+            ],
           ],
         ),
       ),

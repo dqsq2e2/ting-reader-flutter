@@ -199,7 +199,8 @@ extension _PlayerPlayback on PlayerState {
     currentTime = target;
     _furthestChapterPosition = target;
     _notifyIfActive();
-    if (_usingTranscodeStream && currentChapter != null) {
+    final chapter = currentChapter;
+    if (_usingTranscodeStream && chapter != null) {
       _resetTranscodeClock(target);
       _suppressPositionUpdates = true;
       final resumePlayback = isPlaying || _audio.playing;
@@ -207,8 +208,8 @@ extension _PlayerPlayback on PlayerState {
       try {
         final mediaItem = book == null
             ? MediaItem(
-                id: currentChapter!.id,
-                title: currentChapter!.title,
+                id: chapter.id,
+                title: chapter.title,
                 duration: duration > 0
                     ? Duration(milliseconds: (duration * 1000).round())
                     : null,
@@ -218,12 +219,12 @@ extension _PlayerPlayback on PlayerState {
               )
             : _mediaItemFor(
                 book,
-                currentChapter!,
+                chapter,
                 streamOffset: target,
               );
         await _queueTranscodeSeek(() async {
           if (seekGeneration != _seekGeneration) return;
-          await _setMp3TranscodeSource(currentChapter!, mediaItem, target);
+          await _setMp3TranscodeSource(chapter, mediaItem, target);
           if (seekGeneration != _seekGeneration) return;
           await _audio.setSpeed(playbackSpeed);
           await _audio.setVolume(volume);

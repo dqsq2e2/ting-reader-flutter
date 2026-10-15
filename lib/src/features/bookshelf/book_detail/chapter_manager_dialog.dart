@@ -6,10 +6,14 @@ import '../../../core/models/models.dart';
 import '../../../core/state/books_state.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/locale.dart';
-import '../../../core/utils/urls.dart';
 import '../../../shared/app_scope.dart';
 import '../../../shared/common/common_widgets.dart';
-import '../../../shared/common/media_widgets.dart';
+import '../../../shared/cards/book_card.dart';
+import '../../../shared/dialogs/text_input_dialog.dart';
+import '../book_picker_dialog.dart';
+import '../../../shared/common/chapter_type_selector.dart';
+
+part 'chapter_editor_sheet.dart';
 
 class ChapterManagerDialog extends StatefulWidget {
   const ChapterManagerDialog({
@@ -28,8 +32,9 @@ class ChapterManagerDialog extends StatefulWidget {
 class ChapterManagerDialogState extends State<ChapterManagerDialog> {
   static const int _groupSize = 100;
 
-  late List<Chapter> _chapters;
-  final Set<String> _changedIds = {};
+  late final ChapterEditDraft _draft;
+  List<Chapter> get _chapters => _draft.chapters;
+  Set<String> get _changedIds => _draft.changedIds;
   final Set<String> _selectedIds = {};
   final _searchController = TextEditingController();
   String _activeChapterTab = 'main';
@@ -43,8 +48,7 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
   @override
   void initState() {
     super.initState();
-    _chapters = [...widget.chapters]
-      ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+    _draft = ChapterEditDraft(widget.chapters);
   }
 
   @override
@@ -62,30 +66,11 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
     super.dispose();
   }
 
-  List<Chapter> get _tabChapters {
-    return _chapters
-        .where((chapter) =>
-            _activeChapterTab == 'extra' ? chapter.isExtra : !chapter.isExtra)
-        .toList();
-  }
-
-  List<Chapter> get _filteredChapters {
-    final search = _searchController.text.trim().toLowerCase();
-    final source = _tabChapters;
-    if (search.isEmpty) return source;
-    return source
-        .where((chapter) =>
-            chapter.title.toLowerCase().contains(search) ||
-            chapter.chapterIndex.toString().contains(search) ||
-            _chapterDisplayPath(chapter.path).toLowerCase().contains(search))
-        .toList();
-  }
-
-  int get _mainChapterCount =>
-      _chapters.where((chapter) => !chapter.isExtra).length;
-
-  int get _extraChapterCount =>
-      _chapters.where((chapter) => chapter.isExtra).length;
+  List<Chapter> get _tabChapters => _draft.forTab(_activeChapterTab);
+  List<Chapter> get _filteredChapters => _draft.filter(
+      _activeChapterTab, _searchController.text, _chapterDisplayPath);
+  int get _mainChapterCount => _draft.count('main');
+  int get _extraChapterCount => _draft.count('extra');
 
   void _setChapterTab(String tab) {
     if (_activeChapterTab == tab) return;
@@ -97,15 +82,8 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
     });
   }
 
-  void _replaceChapter(String id, Chapter Function(Chapter chapter) update) {
-    setState(() {
-      _chapters = [
-        for (final chapter in _chapters)
-          if (chapter.id == id) update(chapter) else chapter,
-      ];
-      _changedIds.add(id);
-    });
-  }
+  void _replaceChapter(String id, Chapter Function(Chapter) update) =>
+      setState(() => _draft.update(id, update));
 
   void _toggleSelection(String id) {
     if (!_selectionMode) return;
@@ -171,9 +149,13 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
   }
 
   Future<void> _loadPathContext() async {
+    final operationsValue = _operations;
+    if (operationsValue == null) {
+      throw StateError('Chapter manager has not initialized');
+    }
     try {
-      final res = await _operations!.run((token) =>
-          _operations!.api.get('/api/libraries', cancelToken: token));
+      final res = await operationsValue.run((token) =>
+          operationsValue.api.get('/api/libraries', cancelToken: token));
       if (!mounted) return;
       final raw = res.data is List
           ? asMapList(res.data)
@@ -210,31 +192,20 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    setState(() {
-      _chapters = [
-        for (var i = 0; i < _chapters.length; i++)
-          _chapters[i].copyWith(chapterIndex: i + 1),
-      ];
-      _changedIds.addAll(_chapters.map((chapter) => chapter.id));
-    });
+    setState(_draft.renumber);
   }
 
   Future<void> _save() async {
+    final operationsValue = _operations;
+    if (operationsValue == null) {
+      throw StateError('Chapter manager has not initialized');
+    }
     if (_changedIds.isEmpty || _saving) return;
     setState(() => _saving = true);
     try {
-      final updates = _chapters
-          .where((chapter) => _changedIds.contains(chapter.id))
-          .map((chapter) => {
-                'id': chapter.id,
-                'title': chapter.title,
-                'chapter_index': chapter.chapterIndex,
-                'is_extra': chapter.isExtra ? 1 : 0,
-              })
-          .toList();
-      await _operations!.run((token) => _operations!.api.put(
+      await operationsValue.run((token) => operationsValue.api.put(
             '/api/books/${Uri.encodeComponent(widget.book.id)}/chapters/batch',
-            data: {'updates': updates},
+            data: {'updates': _draft.updates},
             cancelToken: token,
           ));
       if (!mounted) return;
@@ -252,12 +223,16 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
   }
 
   Future<void> _moveSelected() async {
+    final operationsValue = _operations;
+    if (operationsValue == null) {
+      throw StateError('Chapter manager has not initialized');
+    }
     if (_selectedIds.isEmpty || _moving) return;
     setState(() => _moving = true);
     try {
       final target = await _pickTargetBook();
       if (target == null || !mounted) return;
-      await _operations!.run((token) => _operations!.api.post(
+      await operationsValue.run((token) => operationsValue.api.post(
             '/api/books/chapters/move',
             data: {
               'target_book_id': target.id,
@@ -280,9 +255,13 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
   }
 
   Future<Book?> _pickTargetBook() async {
+    final operationsValue = _operations;
+    if (operationsValue == null) {
+      throw StateError('Chapter manager has not initialized');
+    }
     final appState = AppScope.appOf(context);
-    final res = await _operations!
-        .run((token) => _operations!.api.get('/api/books', cancelToken: token));
+    final res = await operationsValue.run(
+        (token) => operationsValue.api.get('/api/books', cancelToken: token));
     final books = asMapList(res.data)
         .map(Book.fromJson)
         .where((book) => book.id != widget.book.id)
@@ -291,84 +270,12 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
     if (!mounted) return null;
     return showDialog<Book>(
       context: context,
-      builder: (context) {
-        var search = '';
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final filtered = search.trim().isEmpty
-                ? books
-                : books
-                    .where((book) => book.title
-                        .toLowerCase()
-                        .contains(search.trim().toLowerCase()))
-                    .toList();
-            return AlertDialog(
-              title: Text(context.localeText('移动到作品', 'Move to Book')),
-              content: SizedBox(
-                width: 520,
-                height: 520,
-                child: Column(
-                  children: [
-                    TextField(
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        prefixIcon: const Icon(Icons.search_rounded),
-                        hintText: context.localeText('搜索作品', 'Search books'),
-                      ),
-                      onChanged: (value) =>
-                          setDialogState(() => search = value),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? EmptyState(
-                              icon: Icons.menu_book_rounded,
-                              title: context.localeText(
-                                  '没有可移动的目标作品', 'No Target Books'),
-                              message: context.localeText('请先创建或扫描其他作品。',
-                                  'Create or scan another book first.'),
-                            )
-                          : ListView.separated(
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final book = filtered[index];
-                                return ListTile(
-                                  leading: SizedBox(
-                                    width: 42,
-                                    height: 56,
-                                    child: CoverImage(
-                                      url: bookCoverUrl(appState, book),
-                                      radius: 8,
-                                    ),
-                                  ),
-                                  title: Text(
-                                    book.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(book.author ??
-                                      context.localeText(
-                                          '未知作者', 'Unknown Author')),
-                                  onTap: () => Navigator.pop(context, book),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(context.l10n.commonCancel),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (context) => BookPickerDialog(
+        title: context.localeText('移动到作品', 'Move to Book'),
+        books: books,
+        existingIds: const {},
+        coverShape: coverShapeFromAppSettings(appState.settings),
+      ),
     );
   }
 
@@ -422,39 +329,15 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
 
   @override
   Widget build(BuildContext context) => _buildResponsiveDialog(context);
-}
-
-extension _ChapterManagerLayout on ChapterManagerDialogState {
   Future<void> _jumpToChapter() async {
-    final controller = TextEditingController();
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(context.localeText('跳转到章节', 'Jump to Chapter')),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            prefixIcon: const Icon(Icons.tag_rounded),
-            hintText: context.localeText('输入章节序号', 'Enter chapter number'),
-          ),
-          onSubmitted: (value) => Navigator.pop(context, value),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(context.l10n.commonCancel),
-          ),
-          PrimaryButton(
-            label: context.localeText('跳转', 'Jump'),
-            icon: Icons.subdirectory_arrow_right_rounded,
-            onPressed: () => Navigator.pop(context, controller.text),
-          ),
-        ],
-      ),
+    final value = await showTextInputDialog(
+      context,
+      title: context.localeText('跳转到章节', 'Jump to Chapter'),
+      action: context.localeText('跳转', 'Jump'),
+      hint: context.localeText('输入章节序号', 'Enter chapter number'),
+      keyboardType: TextInputType.number,
     );
-    controller.dispose();
+    if (!mounted) return;
     final target = int.tryParse((value ?? '').trim());
     if (target == null) return;
     final chapters = _tabChapters;
@@ -607,7 +490,7 @@ extension _ChapterManagerLayout on ChapterManagerDialogState {
                           ),
                           if (showChapterTypeSwitch) ...[
                             SizedBox(width: compact ? 10 : 12),
-                            _ChapterTypeSwitch(
+                            ChapterTypeSelector(
                               activeTab: _activeChapterTab,
                               mainCount: _mainChapterCount,
                               extraCount: _extraChapterCount,
@@ -1110,405 +993,6 @@ class _ChapterManagerSearchField extends StatelessWidget {
         ),
         onChanged: onChanged,
       ),
-    );
-  }
-}
-
-class _ChapterTypeSwitch extends StatelessWidget {
-  const _ChapterTypeSwitch({
-    required this.activeTab,
-    required this.mainCount,
-    required this.extraCount,
-    required this.compact,
-    required this.onChanged,
-  });
-
-  final String activeTab;
-  final int mainCount;
-  final int extraCount;
-  final bool compact;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: context.isDark ? AppColors.slate900 : AppColors.slate50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.faintBorder),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ChapterTypeSwitchItem(
-            label: compact
-                ? context.localeText('正文', 'Main')
-                : context.localeText('正文 $mainCount', 'Main $mainCount'),
-            selected: activeTab == 'main',
-            compact: compact,
-            onTap: () => onChanged('main'),
-          ),
-          _ChapterTypeSwitchItem(
-            label: compact
-                ? context.localeText('番外', 'Extra')
-                : context.localeText('番外 $extraCount', 'Extra $extraCount'),
-            selected: activeTab == 'extra',
-            compact: compact,
-            onTap: () => onChanged('extra'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChapterTypeSwitchItem extends StatelessWidget {
-  const _ChapterTypeSwitchItem({
-    required this.label,
-    required this.selected,
-    required this.compact,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final bool compact;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : context.secondaryText;
-    return Material(
-      color: selected ? AppColors.primary600 : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: compact ? 11 : 14,
-            vertical: compact ? 6 : 7,
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: foreground,
-              fontSize: compact ? 12 : 13,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-              height: 1.1,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChapterEditResult {
-  const _ChapterEditResult({
-    required this.title,
-    required this.chapterIndex,
-    required this.isExtra,
-  });
-
-  final String title;
-  final int chapterIndex;
-  final bool isExtra;
-}
-
-class _ChapterEditSheet extends StatefulWidget {
-  const _ChapterEditSheet({
-    required this.chapter,
-    required this.libraryName,
-    required this.displayPath,
-  });
-
-  final Chapter chapter;
-  final String libraryName;
-  final String displayPath;
-
-  @override
-  State<_ChapterEditSheet> createState() => _ChapterEditSheetState();
-}
-
-class _ChapterEditSheetState extends State<_ChapterEditSheet> {
-  late final TextEditingController _titleController;
-  late final TextEditingController _indexController;
-  late bool _isExtra;
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(text: widget.chapter.title);
-    _indexController =
-        TextEditingController(text: widget.chapter.chapterIndex.toString());
-    _isExtra = widget.chapter.isExtra;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _indexController.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final title = _titleController.text.trim();
-    final index = int.tryParse(_indexController.text.trim());
-    if (title.isEmpty || index == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(context.localeText(
-                '请填写标题和有效序号', 'Enter a title and valid index'))),
-      );
-      return;
-    }
-    Navigator.pop(
-      context,
-      _ChapterEditResult(
-        title: title,
-        chapterIndex: index,
-        isExtra: _isExtra,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          decoration: BoxDecoration(
-            color: context.cardColor,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-          ),
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        context.localeText('编辑章节', 'Edit Chapter'),
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: context.localeText('关闭', 'Close'),
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _titleController,
-                  decoration: InputDecoration(
-                    labelText: context.localeText('标题', 'Title'),
-                    prefixIcon: const Icon(Icons.title_rounded),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _indexController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: context.localeText('序号', 'Index'),
-                    prefixIcon: const Icon(Icons.tag_rounded),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _ChapterEditTypeSwitch(
-                  isExtra: _isExtra,
-                  onChanged: (value) => setState(() => _isExtra = value),
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color:
-                        context.isDark ? AppColors.slate900 : AppColors.slate50,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: context.faintBorder),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        context.localeText('文件来源', 'File Source'),
-                        style: TextStyle(
-                          color: context.primaryText,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      _ChapterEditMetaRow(
-                        icon: Icons.storage_rounded,
-                        label: context.localeText('存储库', 'Library'),
-                        value: widget.libraryName,
-                      ),
-                      const SizedBox(height: 8),
-                      _ChapterEditMetaRow(
-                        icon: Icons.folder_rounded,
-                        label: context.localeText('存储位置', 'Location'),
-                        value: widget.displayPath.isEmpty
-                            ? context.localeText('未识别', 'Unknown')
-                            : widget.displayPath,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: Text(context.l10n.commonCancel),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: PrimaryButton(
-                        label: context.localeText('保存此章节', 'Save Chapter'),
-                        icon: Icons.save_rounded,
-                        onPressed: _submit,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChapterEditTypeSwitch extends StatelessWidget {
-  const _ChapterEditTypeSwitch({
-    required this.isExtra,
-    required this.onChanged,
-  });
-
-  final bool isExtra;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: context.isDark ? AppColors.slate900 : AppColors.slate100,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: context.faintBorder),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ChapterEditTypeItem(
-              label: context.localeText('正文', 'Main'),
-              selected: !isExtra,
-              onTap: () => onChanged(false),
-            ),
-          ),
-          Expanded(
-            child: _ChapterEditTypeItem(
-              label: context.localeText('番外', 'Extra'),
-              selected: isExtra,
-              onTap: () => onChanged(true),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChapterEditTypeItem extends StatelessWidget {
-  const _ChapterEditTypeItem({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? AppColors.primary600 : Colors.transparent,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: selected ? Colors.white : context.secondaryText,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ChapterEditMetaRow extends StatelessWidget {
-  const _ChapterEditMetaRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 16, color: context.tertiaryText),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 60,
-          child: Text(
-            label,
-            style: TextStyle(color: context.mutedText, fontSize: 12),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: TextStyle(
-              color: context.secondaryText,
-              fontSize: 12,
-              height: 1.25,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

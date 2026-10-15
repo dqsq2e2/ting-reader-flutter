@@ -211,6 +211,45 @@ Future<void> _showEditor(
 }
 
 void main() {
+  test(
+      'chapter draft keeps filtering, renumbering and write payload consistent',
+      () {
+    final draft = ChapterEditDraft([
+      const Chapter(
+          id: 'extra',
+          bookId: 'book',
+          title: 'Bonus',
+          path: '/bonus.m4a',
+          chapterIndex: 3,
+          isExtra: true),
+      const Chapter(
+          id: 'main',
+          bookId: 'book',
+          title: 'Opening',
+          path: '/opening.m4a',
+          chapterIndex: 1),
+    ]);
+    expect(draft.count('main'), 1);
+    expect(draft.count('extra'), 1);
+    expect(
+        draft.filter('main', 'opening.m4a', (path) => path).single.id, 'main');
+    expect(draft.filter('main', 'Bonus', (path) => path), isEmpty);
+    draft.update('extra',
+        (chapter) => chapter.copyWith(title: 'Epilogue', isExtra: false));
+    expect(draft.count('main'), 2);
+    expect(draft.updates.single, {
+      'id': 'extra',
+      'title': 'Epilogue',
+      'chapter_index': 3,
+      'is_extra': 0,
+    });
+    draft.renumber();
+    expect(draft.chapters.map((chapter) => chapter.chapterIndex), [1, 2]);
+    expect(draft.updates.length, 2);
+    expect(
+        () => draft.update('absent', (chapter) => chapter), throwsStateError);
+  });
+
   bookWorkflowTests();
   late _CoverPicker picker;
   setUp(() {

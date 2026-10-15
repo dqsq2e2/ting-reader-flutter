@@ -92,6 +92,8 @@ class _LanguageSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final onTimeZoneChangedValue = onTimeZoneChanged;
+    final applicationTimeZoneValue = applicationTimeZone;
     final l10n = context.l10n;
     return _SettingsSection(
       icon: Icons.language_rounded,
@@ -105,14 +107,15 @@ class _LanguageSection extends StatelessWidget {
             language: language,
             onLanguage: onLanguage,
           ),
-          if (applicationTimeZone != null && onTimeZoneChanged != null) ...[
+          if (applicationTimeZoneValue != null &&
+              onTimeZoneChangedValue != null) ...[
             const SizedBox(height: 22),
             _SettingDivider(),
             const SizedBox(height: 22),
             _ApplicationTimeZoneSettingRow(
-              value: applicationTimeZone!,
+              value: applicationTimeZoneValue,
               saving: timeZoneSaving,
-              onChanged: onTimeZoneChanged!,
+              onChanged: onTimeZoneChangedValue,
             ),
           ],
         ],

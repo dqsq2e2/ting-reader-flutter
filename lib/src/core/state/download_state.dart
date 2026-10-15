@@ -86,7 +86,7 @@ class DownloadState extends ChangeNotifier {
   String? get customCacheDirectory => _storage.customDirectory;
 
   bool get usingCustomCacheDirectory =>
-      _storage.customDirectory != null && _storage.customDirectory!.isNotEmpty;
+      _storage.customDirectory?.isNotEmpty == true;
 
   int get runningCount => _tasks.values
       .where((task) => task.status == DownloadStatus.downloading)
@@ -593,7 +593,11 @@ class DownloadState extends ChangeNotifier {
           (_disposed ||
               token.isCancelled ||
               !identical(_tasks[task.storageKey], task))) {
-        await _storage.rollbackAudio(item.filePath, task.tempPath!,
+        final rollbackPath = task.tempPath;
+        if (rollbackPath == null) {
+          throw StateError('Download temporary path is missing');
+        }
+        await _storage.rollbackAudio(item.filePath, rollbackPath,
             keepPartial: identical(_tasks[task.storageKey], task));
       }
       _checkTask(task, token);

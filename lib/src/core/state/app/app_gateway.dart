@@ -11,8 +11,7 @@ extension _AppGateway on AppState {
 
     if (serverMode != ServerProfileMode.fnosGateway ||
         fnId.trim().isEmpty ||
-        token == null ||
-        token!.trim().isEmpty ||
+        (token?.trim().isEmpty ?? true) ||
         offlineMode) {
       return false;
     }
@@ -80,7 +79,8 @@ extension _AppGateway on AppState {
       needsGatewayLogin = false;
       connectionError = null;
 
-      await _persistAuthenticatedGatewayState();
+      await _persistAuthenticatedGatewayState(renewedUser, cancelToken);
+      _throwIfLoginCancelled(cancelToken);
       await _saveServerProfile(
         profile.copyWith(
           serverUrl: serverUrl,
@@ -93,6 +93,7 @@ extension _AppGateway on AppState {
         ),
         replaceProfile: profile,
       );
+      _throwIfLoginCancelled(cancelToken);
       _notifyIfActive();
       await _notifyGatewayLoginRestored();
       return true;
@@ -133,14 +134,23 @@ extension _AppGateway on AppState {
     _notifyIfActive();
   }
 
-  Future<void> _persistAuthenticatedGatewayState() async {
+  Future<void> _persistAuthenticatedGatewayState(
+      User authenticatedUser, CancelToken cancelToken) async {
+    _throwIfLoginCancelled(cancelToken);
     await _persistSessionCredentials();
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString('server_url', serverUrl);
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString('local_server_url', localServerUrl);
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString('active_url', activeUrl);
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString(AppState._serverModePrefsKey, serverMode.name);
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.setString(AppState._fnIdPrefsKey, fnId);
-    await _prefs?.setString('user', user!.encode());
+    _throwIfLoginCancelled(cancelToken);
+    await _prefs?.setString('user', authenticatedUser.encode());
+    _throwIfLoginCancelled(cancelToken);
     await _prefs?.remove(AppState._gatewayReloginRequiredPrefsKey);
   }
 

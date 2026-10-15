@@ -21,21 +21,24 @@ class AppScope extends StatefulWidget {
   static AppState appOf(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<_AppStateScope>();
     assert(scope != null, 'No AppScope found in context');
-    return scope!.appState;
+    if (scope == null) throw StateError('No AppScope found in context');
+    return scope.appState;
   }
 
   static PlayerState playerOf(BuildContext context) {
     final scope =
         context.dependOnInheritedWidgetOfExactType<_PlayerStateScope>();
     assert(scope != null, 'No PlayerScope found in context');
-    return scope!.playerState;
+    if (scope == null) throw StateError('No AppScope found in context');
+    return scope.playerState;
   }
 
   static DownloadState downloadOf(BuildContext context) {
     final scope =
         context.dependOnInheritedWidgetOfExactType<_DownloadStateScope>();
     assert(scope != null, 'No DownloadScope found in context');
-    return scope!.downloadState;
+    if (scope == null) throw StateError('No AppScope found in context');
+    return scope.downloadState;
   }
 
   @override

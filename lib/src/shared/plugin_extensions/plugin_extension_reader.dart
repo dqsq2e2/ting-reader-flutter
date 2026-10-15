@@ -165,6 +165,9 @@ class _PluginDocumentReaderPanelState
 
   @override
   Widget build(BuildContext context) {
+    final pageValue = _page;
+    final chunkValue = _chunk;
+    final errorValue = _error;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -206,9 +209,9 @@ class _PluginDocumentReaderPanelState
             ),
           ],
         ),
-        if (_error != null) ...[
+        if (errorValue != null) ...[
           const SizedBox(height: 12),
-          _PluginActionMessage(message: _error!, failed: true),
+          _PluginActionMessage(message: errorValue, failed: true),
         ],
         if (_session != null) ...[
           const SizedBox(height: 12),
@@ -245,12 +248,12 @@ class _PluginDocumentReaderPanelState
                     onPressed: _loading ? null : _readChunk,
                     child: Text(context.localeText('读取片段', 'Chunk')),
                   ),
-                  if (_chunk != null) ...[
+                  if (chunkValue != null) ...[
                     const SizedBox(height: 10),
                     _PluginActionMessage(
-                      message: _chunk!.text ??
-                          _chunk!.html ??
-                          _jsonEncode(_chunkSummary(_chunk!)),
+                      message: chunkValue.text ??
+                          chunkValue.html ??
+                          _jsonEncode(_chunkSummary(chunkValue)),
                       failed: false,
                     ),
                   ],
@@ -277,22 +280,22 @@ class _PluginDocumentReaderPanelState
                       ),
                     ],
                   ),
-                  if (_page != null) ...[
+                  if (pageValue != null) ...[
                     const SizedBox(height: 10),
-                    if (_page!.imageBase64 != null)
+                    if (pageValue.imageBase64 case final imageBase64?)
                       Image.memory(
-                        base64Decode(_page!.imageBase64!),
+                        base64Decode(imageBase64),
                         fit: BoxFit.contain,
                         errorBuilder: (_, __, ___) => _PluginActionMessage(
-                          message: _jsonEncode(_pageSummary(_page!)),
+                          message: _jsonEncode(_pageSummary(pageValue)),
                           failed: false,
                         ),
                       )
                     else
                       _PluginActionMessage(
-                        message: _page!.text ??
-                            _page!.svg ??
-                            _jsonEncode(_pageSummary(_page!)),
+                        message: pageValue.text ??
+                            pageValue.svg ??
+                            _jsonEncode(_pageSummary(pageValue)),
                         failed: false,
                       ),
                   ],

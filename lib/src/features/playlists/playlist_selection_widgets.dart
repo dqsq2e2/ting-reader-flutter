@@ -301,28 +301,30 @@ class _PlaylistContentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bookValue = item.book;
+    final seriesValue = item.series;
     final coverShape = _playlistCoverShape(context);
     final isSeries = item.itemType == 'series';
     final title = isSeries
-        ? (item.series == null
+        ? (seriesValue == null
             ? context.localeText('未知系列', 'Unknown Series')
-            : localizedSeriesTitle(context, item.series!))
-        : (item.book == null
+            : localizedSeriesTitle(context, seriesValue))
+        : (bookValue == null
             ? context.localeText('未知书籍', 'Unknown Book')
-            : localizedBookTitle(context, item.book!));
+            : localizedBookTitle(context, bookValue));
     final subtitle = isSeries
         ? context.localeText(
-            '${item.series?.author ?? '未知作者'} · ${item.series?.books.length ?? 0} 本',
-            '${item.series?.author ?? 'Unknown Author'} · ${item.series?.books.length ?? 0} books',
+            '${seriesValue?.author ?? '未知作者'} · ${seriesValue?.books.length ?? 0} 本',
+            '${seriesValue?.author ?? 'Unknown Author'} · ${seriesValue?.books.length ?? 0} books',
           )
-        : (item.book?.author ??
-            item.book?.narrator ??
+        : (bookValue?.author ??
+            bookValue?.narrator ??
             context.localeText('未知作者', 'Unknown Author'));
     final cover = isSeries
-        ? (item.series == null ? '' : _seriesFirstCover(context, item.series!))
-        : (item.book == null
+        ? (seriesValue == null ? '' : _seriesFirstCover(context, seriesValue))
+        : (bookValue == null
             ? ''
-            : bookCoverUrl(AppScope.appOf(context), item.book!));
+            : bookCoverUrl(AppScope.appOf(context), bookValue));
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

@@ -223,9 +223,13 @@ extension _PlayerSources on PlayerState {
     Chapter chapter, {
     double streamOffset = 0,
   }) {
+    final authorValue = book.author;
+    final narratorValue = book.narrator;
     final artistParts = [
-      if ((book.narrator ?? '').trim().isNotEmpty) book.narrator!.trim(),
-      if ((book.author ?? '').trim().isNotEmpty) book.author!.trim(),
+      if (narratorValue != null && narratorValue.trim().isNotEmpty)
+        narratorValue.trim(),
+      if (authorValue != null && authorValue.trim().isNotEmpty)
+        authorValue.trim(),
     ];
     final artUri = _mediaArtUri(book);
     final artHeaders = artUri != null &&

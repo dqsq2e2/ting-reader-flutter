@@ -1,22 +1,32 @@
-part of 'series_detail_page.dart';
+import 'package:flutter/material.dart';
+import '../../core/models/models.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/utils/locale.dart';
+import '../../core/utils/urls.dart';
+import '../../shared/app_scope.dart';
+import '../../shared/cards/book_card.dart';
+import '../../shared/common/common_widgets.dart';
+import '../../shared/common/media_widgets.dart';
 
-class _SeriesBookPickerDialog extends StatefulWidget {
-  const _SeriesBookPickerDialog({
+class BookPickerDialog extends StatefulWidget {
+  const BookPickerDialog({
+    super.key,
     required this.books,
     required this.existingIds,
     required this.coverShape,
+    this.title,
   });
 
+  final String? title;
   final List<Book> books;
   final Set<String> existingIds;
   final CoverShape coverShape;
 
   @override
-  State<_SeriesBookPickerDialog> createState() =>
-      _SeriesBookPickerDialogState();
+  State<BookPickerDialog> createState() => _BookPickerDialogState();
 }
 
-class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
+class _BookPickerDialogState extends State<BookPickerDialog> {
   final _searchController = TextEditingController();
   String _query = '';
 
@@ -66,7 +76,8 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
                   children: [
                     Expanded(
                       child: Text(
-                        context.localeText('添加系列条目', 'Add Series Item'),
+                        widget.title ??
+                            context.localeText('添加系列条目', 'Add Series Item'),
                         style: TextStyle(
                           fontSize: context.adaptiveFont(21, 18),
                           fontWeight: FontWeight.w700,
@@ -118,7 +129,7 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
                         itemBuilder: (context, index) {
                           final book = filtered[index];
                           final added = widget.existingIds.contains(book.id);
-                          return _SeriesPickerBookRow(
+                          return _PickerBookRow(
                             book: book,
                             coverShape: widget.coverShape,
                             added: added,
@@ -137,8 +148,8 @@ class _SeriesBookPickerDialogState extends State<_SeriesBookPickerDialog> {
   }
 }
 
-class _SeriesPickerBookRow extends StatelessWidget {
-  const _SeriesPickerBookRow({
+class _PickerBookRow extends StatelessWidget {
+  const _PickerBookRow({
     required this.book,
     required this.coverShape,
     required this.added,
@@ -192,9 +203,7 @@ class _SeriesPickerBookRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      book.author?.isNotEmpty == true
-                          ? book.author!
-                          : context.localeText('未知作者', 'Unknown Author'),
+                      localizedAuthor(context, book.author),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

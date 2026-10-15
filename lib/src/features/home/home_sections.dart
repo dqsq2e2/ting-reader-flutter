@@ -481,9 +481,7 @@ class _RecentlyAddedTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  book.author?.isNotEmpty == true
-                      ? book.author!
-                      : context.localeText('未知作者', 'Unknown Author'),
+                  localizedAuthor(context, book.author),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -605,10 +603,12 @@ String? _playlistRandomCoverUrl(
 
   if (playlist.items.isNotEmpty) {
     for (final item in playlist.items) {
-      if (item.itemType == 'series' && item.series != null) {
-        pushSeries(item.series!);
-      } else if (item.book != null) {
-        pushBook(item.book!);
+      final bookValue = item.book;
+      final seriesValue = item.series;
+      if (item.itemType == 'series' && seriesValue != null) {
+        pushSeries(seriesValue);
+      } else if (bookValue != null) {
+        pushBook(bookValue);
       }
     }
   } else {
@@ -642,6 +642,7 @@ class _CollectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final resolvedCover = coverUrlValue;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -664,8 +665,8 @@ class _CollectionCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                if (coverUrlValue != null)
-                  CoverImage(url: coverUrlValue!, radius: 24),
+                if (resolvedCover != null)
+                  CoverImage(url: resolvedCover, radius: 24),
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(

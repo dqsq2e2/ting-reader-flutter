@@ -53,13 +53,15 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
   Future<void> _addBook() async {
     final selected = await showDialog<Book>(
       context: context,
-      builder: (context) => _SeriesBookPickerDialog(
+      builder: (context) => BookPickerDialog(
         books: widget.allBooks,
         existingIds: _books.map((book) => book.id).toSet(),
         coverShape: widget.coverShape,
       ),
     );
-    if (selected == null || _books.any((book) => book.id == selected.id)) {
+    if (!mounted ||
+        selected == null ||
+        _books.any((book) => book.id == selected.id)) {
       return;
     }
     setState(() => _books = [..._books, selected]);
@@ -146,7 +148,7 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
       );
       if (!mounted) return;
       navigator.pop(false);
-      widget.onDeleted();
+      widget.onDeleted.call();
     } catch (error) {
       if (!mounted) return;
       messenger.showSnackBar(
@@ -646,9 +648,7 @@ class _SeriesBookEditorRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  book.author?.isNotEmpty == true
-                      ? book.author!
-                      : context.localeText('未知作者', 'Unknown Author'),
+                  localizedAuthor(context, book.author),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -667,13 +667,13 @@ class _SeriesBookEditorRow extends StatelessWidget {
                   icon: Icons.keyboard_arrow_up_rounded,
                   onPressed: index == 0 || onMove == null
                       ? null
-                      : () => onMove!(index, -1),
+                      : () => onMove?.call(index, -1),
                 ),
                 _TinyIconButton(
                   icon: Icons.keyboard_arrow_down_rounded,
                   onPressed: index == total - 1 || onMove == null
                       ? null
-                      : () => onMove!(index, 1),
+                      : () => onMove?.call(index, 1),
                 ),
               ],
             )
@@ -685,20 +685,20 @@ class _SeriesBookEditorRow extends StatelessWidget {
                   icon: Icons.arrow_upward_rounded,
                   onPressed: index == 0 || onMove == null
                       ? null
-                      : () => onMove!(index, -1),
+                      : () => onMove?.call(index, -1),
                 ),
                 _TinyIconButton(
                   icon: Icons.arrow_downward_rounded,
                   onPressed: index == total - 1 || onMove == null
                       ? null
-                      : () => onMove!(index, 1),
+                      : () => onMove?.call(index, 1),
                 ),
               ],
             ),
           _TinyIconButton(
             icon: Icons.close_rounded,
             color: const Color(0xffef4444),
-            onPressed: onRemove == null ? null : () => onRemove!(book),
+            onPressed: onRemove == null ? null : () => onRemove?.call(book),
           ),
         ],
       ),

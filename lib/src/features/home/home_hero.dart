@@ -196,22 +196,24 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final nextValue = next;
+    final itemValue = item;
     final appState = AppScope.appOf(context);
-    final cover = item == null
+    final cover = itemValue == null
         ? ''
         : coverUrl(
             appState,
-            url: item!.coverUrl,
-            libraryId: item!.libraryId,
-            bookId: item!.id,
+            url: itemValue.coverUrl,
+            libraryId: itemValue.libraryId,
+            bookId: itemValue.id,
           );
-    final nextCover = next == null
+    final nextCover = nextValue == null
         ? ''
         : coverUrl(
             appState,
-            url: next!.coverUrl,
-            libraryId: next!.libraryId,
-            bookId: next!.id,
+            url: nextValue.coverUrl,
+            libraryId: nextValue.libraryId,
+            bookId: nextValue.id,
           );
 
     final smallScreen = MediaQuery.sizeOf(context).width < 640;
@@ -292,7 +294,7 @@ class _HeroCard extends StatelessWidget {
               builder: (context, constraints) {
                 final compact = constraints.maxWidth < 760;
                 final text = _HeroText(
-                  item: item,
+                  item: itemValue,
                   onPrimary: onPrimary,
                   onPlaylists: onPlaylists,
                   includeActions: !compact,
@@ -300,8 +302,8 @@ class _HeroCard extends StatelessWidget {
                 final coverStack = _HeroCoverStack(
                   cover: cover,
                   nextCover: nextCover,
-                  nextTitle: next?.title,
-                  canCycle: next != null,
+                  nextTitle: nextValue?.title,
+                  canCycle: nextValue != null,
                   coverShape: coverShape,
                   onCycle: onCycle,
                 );
@@ -314,8 +316,8 @@ class _HeroCard extends StatelessWidget {
                       Align(alignment: Alignment.center, child: coverStack),
                       const SizedBox(height: 20),
                       _HeroActions(
-                        isProgress: item?.progress != null,
-                        hasItem: item != null,
+                        isProgress: itemValue?.progress != null,
+                        hasItem: itemValue != null,
                         compact: true,
                         onPrimary: onPrimary,
                         onPlaylists: onPlaylists,

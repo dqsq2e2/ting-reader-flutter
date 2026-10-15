@@ -12,10 +12,10 @@ import '../../../shared/common/common_widgets.dart';
 import '../../../shared/common/media_widgets.dart';
 import '../../../shared/filter/display_filter_menu.dart';
 import '../book_delete_dialog.dart';
+import '../book_picker_dialog.dart';
 
 part 'series_detail_widgets.dart';
 part 'series_settings_dialog.dart';
-part 'series_book_picker_dialog.dart';
 
 class SeriesDetailPage extends StatefulWidget {
   const SeriesDetailPage({
@@ -100,7 +100,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       }
 
       setState(() {
-        _series = Series.fromJson(asMap(results[0].data));
+        final series = Series.fromJson(asMap(results[0].data));
+        _series = series;
         _sortBy = _normalizeSeriesSortBy(
           (settingValue('series_sort_by') ?? _sortBy).toString(),
         );
@@ -113,7 +114,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         _viewMode = settingValue('series_view_mode') == 'list'
             ? BookshelfViewMode.list
             : BookshelfViewMode.grid;
-        _selectedBookIds.retainAll(_series!.books.map((book) => book.id));
+        _selectedBookIds.retainAll(series.books.map((book) => book.id));
       });
     } catch (error) {
       if (mounted && version == _loadVersion) {
@@ -271,7 +272,7 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       return;
     }
     setState(() => _showFilterMenu = true);
-    _filterOverlay = OverlayEntry(
+    final overlay = OverlayEntry(
       builder: (context) {
         return Positioned.fill(
           child: Stack(
@@ -314,7 +315,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
         );
       },
     );
-    Overlay.of(context).insert(_filterOverlay!);
+    _filterOverlay = overlay;
+    Overlay.of(context).insert(overlay);
   }
 
   void _closeFilterMenu() {

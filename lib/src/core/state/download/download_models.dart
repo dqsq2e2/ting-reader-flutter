@@ -96,17 +96,18 @@ class LocalDownload {
   String get storageKey => downloadRecordKey(serverKey, chapterId);
   String get bookGroupKey => downloadRecordKey(serverKey, bookId);
 
-  Book toBook({Map<String, dynamic> fallbackMetadata = const {}}) =>
-      Book.fromJson({
-        ...(bookMetadata.isEmpty ? fallbackMetadata : bookMetadata),
-        'id': bookId,
-        'library_id': libraryId ?? '',
-        'title': bookTitle,
-        'can_write_metadata_files': false,
-        'cover_url': localCoverPath == null
-            ? coverUrl
-            : Uri.file(localCoverPath!).toString(),
-      });
+  Book toBook({Map<String, dynamic> fallbackMetadata = const {}}) {
+    final localCover = localCoverPath;
+    return Book.fromJson({
+      ...(bookMetadata.isEmpty ? fallbackMetadata : bookMetadata),
+      'id': bookId,
+      'library_id': libraryId ?? '',
+      'title': bookTitle,
+      'can_write_metadata_files': false,
+      'cover_url':
+          localCover == null ? coverUrl : Uri.file(localCover).toString(),
+    });
+  }
 
   Chapter get chapter => Chapter(
         id: chapterId,

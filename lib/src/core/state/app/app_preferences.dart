@@ -148,9 +148,9 @@ class _AppPreferences {
       '/api/system/time-zone',
       data: {'time_zone': normalized},
     );
-    final stored = asMap(response.data)['time_zone']?.toString();
-    final next = app_time_zone.isSupportedApplicationTimeZone(stored ?? '')
-        ? stored!
+    final stored = asMap(response.data)['time_zone']?.toString() ?? normalized;
+    final next = app_time_zone.isSupportedApplicationTimeZone(stored)
+        ? stored
         : normalized;
     final changed = await _setApplicationTimeZone(next);
     if (changed) _onChanged();

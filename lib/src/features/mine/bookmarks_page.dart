@@ -9,6 +9,7 @@ import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
 import '../../shared/cards/book_card.dart';
 import '../../shared/common/common_widgets.dart';
+import '../../shared/dialogs/text_input_dialog.dart';
 import 'activity_book_card.dart';
 
 class BookmarksPage extends StatefulWidget {
@@ -31,10 +32,13 @@ class _BookmarksPageState extends State<BookmarksPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load(1));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load(1);
+    });
   }
 
   Future<void> _load(int page) async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -285,25 +289,14 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
   }
 
   Future<void> _edit(Map<String, dynamic> item) async {
-    final controller =
-        TextEditingController(text: item['note']?.toString() ?? '');
-    final note = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(context.localeText('编辑书签备注', 'Edit bookmark note')),
-        content:
-            TextField(controller: controller, maxLength: 2000, maxLines: 3),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text(context.l10n.commonCancel)),
-          FilledButton(
-              onPressed: () => Navigator.pop(dialogContext, controller.text),
-              child: Text(context.localeText('保存', 'Save'))),
-        ],
-      ),
+    final note = await showTextInputDialog(
+      context,
+      title: context.localeText('编辑书签备注', 'Edit bookmark note'),
+      action: context.localeText('保存', 'Save'),
+      initialValue: item['note']?.toString() ?? '',
+      maxLength: 2000,
+      maxLines: 3,
     );
-    controller.dispose();
     if (note == null || !mounted) return;
     try {
       await AppScope.appOf(context)
@@ -553,7 +546,9 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
                 Row(children: [
                   Expanded(
                       child: Text(
-                          canAdd ? _bookmarkTime(player!.currentTime) : '',
+                          player != null && canAdd
+                              ? _bookmarkTime(player.currentTime)
+                              : '',
                           style: TextStyle(
                               color: context.mutedText, fontSize: 12))),
                   FilledButton.icon(

@@ -41,10 +41,11 @@ class _AppConnectionResolver {
   }) async {
     final normalizedSource = ApiClient.normalizeServerUrl(source);
     _checkActive();
-    if (!force && _redirectCache.containsKey(normalizedSource)) {
+    final cached = _redirectCache[normalizedSource];
+    if (!force && cached != null) {
       final result = RedirectResolution(
         sourceUrl: normalizedSource,
-        resolvedUrl: _redirectCache[normalizedSource]!,
+        resolvedUrl: cached,
         fromCache: true,
       );
       lastRedirectResolution = result;

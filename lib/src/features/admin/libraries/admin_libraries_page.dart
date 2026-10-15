@@ -299,8 +299,9 @@ class _LibraryCard extends StatelessWidget {
                           _LibraryInfoLine(
                             icon: Icons.folder_rounded,
                             text: library.libraryType == 'local'
-                                ? (library.url?.isNotEmpty ?? false
-                                    ? library.url!
+                                ? (library.url != null &&
+                                        library.url?.isNotEmpty == true
+                                    ? (library.url ?? '')
                                     : library.rootPath)
                                 : library.rootPath,
                           ),

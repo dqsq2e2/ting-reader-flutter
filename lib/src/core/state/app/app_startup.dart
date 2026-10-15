@@ -20,20 +20,21 @@ extension _AppStartup on AppState {
     }
 
     try {
-      _prefs = await SharedPreferences.getInstance();
+      final prefs = await SharedPreferences.getInstance();
+      _prefs = prefs;
       checkCancelled();
       _connections._loadRedirectCache();
       api.recoverBaseUrl = (_, requestCancelToken) =>
           recoverActiveUrl(cancelToken: requestCancelToken);
-      final storedServerUrl = _prefs!.getString('server_url');
-      final storedLocalServerUrl = _prefs!.getString('local_server_url');
-      final storedActiveUrl = _prefs!.getString('active_url');
+      final storedServerUrl = prefs.getString('server_url');
+      final storedLocalServerUrl = prefs.getString('local_server_url');
+      final storedActiveUrl = prefs.getString('active_url');
       serverUrl = storedServerUrl ?? serverUrl;
       localServerUrl = storedLocalServerUrl ?? localServerUrl;
       activeUrl = storedActiveUrl ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
       serverMode = _serverProfileModeFromPrefs();
-      fnId = _prefs!.getString(AppState._fnIdPrefsKey) ?? fnId;
+      fnId = prefs.getString(AppState._fnIdPrefsKey) ?? fnId;
       final persistedGatewayHost = _gatewayHostForProfile(
         server: serverUrl,
         fnId: fnId,
@@ -51,7 +52,7 @@ extension _AppStartup on AppState {
           : null;
       await _restoreSessionCredentials();
       needsGatewayLogin =
-          _prefs!.getBool(AppState._gatewayReloginRequiredPrefsKey) ?? false;
+          prefs.getBool(AppState._gatewayReloginRequiredPrefsKey) ?? false;
       final shouldRestoreGatewaySession = persistedGatewayHost != null &&
           (needsGatewayLogin ||
               (token?.trim().isNotEmpty ?? false) ||
@@ -64,10 +65,10 @@ extension _AppStartup on AppState {
       _notifyIfActive();
       api.setClientHeaders(await buildClientDeviceHeaders());
       checkCancelled();
-      final hasPersistedServerConfig = _prefs!.containsKey('server_url') ||
-          _prefs!.containsKey('local_server_url');
+      final hasPersistedServerConfig = prefs.containsKey('server_url') ||
+          prefs.containsKey('local_server_url');
 
-      final rawUser = _prefs!.getString('user');
+      final rawUser = prefs.getString('user');
       if (rawUser != null) {
         try {
           user = _requireAuthenticatedUser(jsonDecode(rawUser));
@@ -87,7 +88,7 @@ extension _AppStartup on AppState {
         // Migrate installations that lost the login marker before automatic
         // gateway re-authentication was persisted.
         needsGatewayLogin = true;
-        await _prefs!.setBool(AppState._gatewayReloginRequiredPrefsKey, true);
+        await prefs.setBool(AppState._gatewayReloginRequiredPrefsKey, true);
       }
 
       if (persistedGatewayHost != null) {
@@ -213,11 +214,12 @@ extension _AppStartup on AppState {
     bool requireGatewayLogin = true,
   }) async {
     try {
-      _prefs ??= await SharedPreferences.getInstance();
+      final prefs = _prefs ?? await SharedPreferences.getInstance();
+      _prefs = prefs;
       _connections._loadRedirectCache();
-      final storedServerUrl = _prefs!.getString('server_url');
-      final storedLocalServerUrl = _prefs!.getString('local_server_url');
-      final storedActiveUrl = _prefs!.getString('active_url');
+      final storedServerUrl = prefs.getString('server_url');
+      final storedLocalServerUrl = prefs.getString('local_server_url');
+      final storedActiveUrl = prefs.getString('active_url');
       _startupConnectionTarget = _firstNonEmptyUrl([
         storedActiveUrl,
         storedLocalServerUrl,
@@ -228,7 +230,7 @@ extension _AppStartup on AppState {
       activeUrl = storedActiveUrl ??
           (localServerUrl.isNotEmpty ? localServerUrl : serverUrl);
       serverMode = _serverProfileModeFromPrefs();
-      fnId = _prefs!.getString(AppState._fnIdPrefsKey) ?? fnId;
+      fnId = prefs.getString(AppState._fnIdPrefsKey) ?? fnId;
       await _restoreSessionCredentials();
       final persistedGatewayHost = _gatewayHostForProfile(
         server: serverUrl,

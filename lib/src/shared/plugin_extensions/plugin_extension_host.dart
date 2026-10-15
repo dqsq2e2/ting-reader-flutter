@@ -169,10 +169,10 @@ class _PluginExtensionHostState extends State<PluginExtensionHost>
                 onOpen: _openExtension,
               ),
             ),
-          if (_activeExtension != null)
+          if (_activeExtension case final extension?)
             Positioned.fill(
               child: _PluginExtensionPanel(
-                extension: _activeExtension!,
+                extension: extension,
                 compact: false,
                 running: _running,
                 message: _actionMessage,
@@ -291,7 +291,7 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot>
 
   void _showOverlay() {
     if (_overlayEntry == null) {
-      _overlayEntry = OverlayEntry(
+      final overlay = OverlayEntry(
         builder: (overlayContext) {
           final extension = _activeExtension;
           if (extension == null) return const SizedBox.shrink();
@@ -307,7 +307,8 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot>
           );
         },
       );
-      Overlay.of(context, rootOverlay: true).insert(_overlayEntry!);
+      _overlayEntry = overlay;
+      Overlay.of(context, rootOverlay: true).insert(overlay);
     } else {
       _refreshOverlay();
     }
@@ -335,14 +336,15 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot>
 
   @override
   Widget build(BuildContext context) {
+    final limitValue = widget.limit;
     final app = AppScope.appOf(context);
     final extensions = (_registry.bySlot[widget.slot] ?? const [])
         .where((extension) => !extension.adminOnly || app.isAdmin)
         .toList(growable: false);
-    final visible = widget.limit == null
+    final visible = limitValue == null
         ? extensions
         : extensions
-            .take(widget.limit!.clamp(0, extensions.length).toInt())
+            .take(limitValue.clamp(0, extensions.length).toInt())
             .toList();
 
     if (visible.isEmpty) {

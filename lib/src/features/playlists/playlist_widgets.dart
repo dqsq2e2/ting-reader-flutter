@@ -63,7 +63,7 @@ class _PlaylistCard extends StatelessWidget {
             ),
             child: Text(
               playlist.description?.isNotEmpty == true
-                  ? playlist.description!
+                  ? (playlist.description ?? '')
                   : context.localeText('$bookCount 本书', '$bookCount books'),
               maxLines: (iconSize == IconSizeSetting.small || compactOnMobile)
                   ? 1
@@ -173,7 +173,7 @@ class _PlaylistHero extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             playlist.description?.isNotEmpty == true
-                                ? playlist.description!
+                                ? (playlist.description ?? '')
                                 : context.localeText(
                                     '$itemCount 项',
                                     '$itemCount items',

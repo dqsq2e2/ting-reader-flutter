@@ -29,9 +29,76 @@ import '../shared/common/common_widgets.dart';
 import '../shared/plugin_extensions/plugin_extension_host.dart';
 import 'player/mini_player.dart';
 
+part 'shell_mobile_navigation.dart';
+
+part 'shell_desktop_navigation.dart';
+
 const _expandedSidebarWidth = 288.0;
 const _collapsedSidebarWidth = 80.0;
 const _desktopSidebarContentGap = 20.0;
+
+typedef _NavigationEntry = ({
+  AppDestination destination,
+  IconData icon,
+  String label,
+});
+
+List<_NavigationEntry> _navigationEntries(BuildContext context,
+    {bool admin = false}) {
+  final l10n = context.l10n;
+  return admin
+      ? [
+          (
+            destination: AppDestination.libraries,
+            icon: Icons.storage_rounded,
+            label: l10n.navLibraries
+          ),
+          (
+            destination: AppDestination.plugins,
+            icon: Icons.extension_rounded,
+            label: l10n.navPlugins
+          ),
+          (
+            destination: AppDestination.logs,
+            icon: Icons.terminal_rounded,
+            label: l10n.navLogs
+          ),
+          (
+            destination: AppDestination.users,
+            icon: Icons.group_rounded,
+            label: l10n.navUsers
+          ),
+        ]
+      : [
+          (
+            destination: AppDestination.home,
+            icon: Icons.home_rounded,
+            label: l10n.navHome
+          ),
+          (
+            destination: AppDestination.bookshelf,
+            icon: Icons.library_books_rounded,
+            label: l10n.navBookshelf
+          ),
+          (
+            destination: AppDestination.playlists,
+            icon: Icons.playlist_play_rounded,
+            label: l10n.navPlaylists
+          ),
+          (
+            destination: AppDestination.mine,
+            icon: Icons.person_rounded,
+            label: l10n.navMine
+          ),
+        ];
+}
+
+bool _navigationSelected(AppDestination target, AppDestination current) =>
+    target == AppDestination.mine
+        ? isMineDestination(current)
+        : target == AppDestination.bookshelf
+            ? current == target || current == AppDestination.search
+            : current == target;
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -224,9 +291,10 @@ class _AppShellState extends State<AppShell> {
     return AnimatedBuilder(
       animation: appState,
       builder: (context, _) {
-        if (appState.connectionError != null) {
+        final connectionErrorValue = appState.connectionError;
+        if (connectionErrorValue != null) {
           return _ConnectionScreen(
-            message: appState.connectionError!,
+            message: connectionErrorValue,
             onRetry: appState.validateConnection,
             onLogout: appState.logout,
           );
@@ -351,27 +419,30 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _page() {
+    final bookId = _bookId;
+    final playlistId = _playlistId;
+    final seriesId = _seriesId;
     if (AppScope.appOf(context).offlineMode) {
       return const DownloadsPage();
     }
-    if (_bookId != null) {
+    if (bookId != null) {
       return BookDetailPage(
-        bookId: _bookId!,
+        bookId: bookId,
         initialChapterId: _bookInitialChapterId,
         onBack: _backFromDetail,
       );
     }
-    if (_playlistId != null) {
+    if (playlistId != null) {
       return PlaylistDetailPage(
-        playlistId: _playlistId!,
+        playlistId: playlistId,
         onBack: () => _go(AppDestination.playlists),
         openBook: _openBook,
         openSeries: _openSeries,
       );
     }
-    if (_seriesId != null) {
+    if (seriesId != null) {
       return SeriesDetailPage(
-        seriesId: _seriesId!,
+        seriesId: seriesId,
         onBack: _backFromDetail,
         openBook: _openBook,
       );
@@ -488,1059 +559,6 @@ class _AppShellState extends State<AppShell> {
           },
         );
     }
-  }
-}
-
-class _DesktopSidebar extends StatelessWidget {
-  const _DesktopSidebar({
-    required this.go,
-    required this.current,
-    required this.collapsed,
-    required this.onToggleCollapsed,
-    required this.pluginPages,
-    required this.activePluginPageId,
-    required this.onOpenPluginPage,
-  });
-
-  final ValueChanged<AppDestination> go;
-  final AppDestination current;
-  final bool collapsed;
-  final VoidCallback onToggleCollapsed;
-  final List<ClientExtensionDescriptor> pluginPages;
-  final String? activePluginPageId;
-  final ValueChanged<ClientExtensionDescriptor> onOpenPluginPage;
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.appOf(context);
-    final user = appState.user;
-    final l10n = context.l10n;
-    final offline = appState.offlineMode;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      curve: Curves.easeOutCubic,
-      width: collapsed ? _collapsedSidebarWidth : _expandedSidebarWidth,
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        border: Border(right: BorderSide(color: context.faintBorder)),
-      ),
-      child: SafeArea(
-        right: false,
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: collapsed ? 12 : 16,
-            vertical: 16,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _SidebarHeader(
-                collapsed: collapsed,
-                onToggleCollapsed: onToggleCollapsed,
-              ),
-              Expanded(
-                child: CustomScrollView(
-                  slivers: [
-                    SliverList(
-                      delegate: SliverChildListDelegate([
-                        if (offline) ...[
-                          _GroupLabel(
-                            l10n.navOfflineMode,
-                            collapsed: collapsed,
-                          ),
-                          _NavTile(
-                            icon: Icons.download_done_rounded,
-                            label: l10n.navDownloads,
-                            selected: true,
-                            collapsed: collapsed,
-                            onTap: () => go(AppDestination.downloads),
-                          ),
-                        ] else ...[
-                          _GroupLabel(
-                            l10n.navMainMenu,
-                            collapsed: collapsed,
-                          ),
-                          _NavTile(
-                            icon: Icons.home_rounded,
-                            label: l10n.navHome,
-                            selected: current == AppDestination.home,
-                            collapsed: collapsed,
-                            onTap: () => go(AppDestination.home),
-                          ),
-                          _NavTile(
-                            icon: Icons.library_books_rounded,
-                            label: l10n.navBookshelf,
-                            selected: current == AppDestination.bookshelf ||
-                                current == AppDestination.search,
-                            collapsed: collapsed,
-                            onTap: () => go(AppDestination.bookshelf),
-                          ),
-                          _NavTile(
-                            icon: Icons.playlist_play_rounded,
-                            label: l10n.navPlaylists,
-                            selected: current == AppDestination.playlists,
-                            collapsed: collapsed,
-                            onTap: () => go(AppDestination.playlists),
-                          ),
-                          _NavTile(
-                            icon: Icons.person_rounded,
-                            label: l10n.navMine,
-                            selected: isMineDestination(current),
-                            collapsed: collapsed,
-                            onTap: () => go(AppDestination.mine),
-                          ),
-                          if (appState.isAdmin) ...[
-                            const SizedBox(height: 32),
-                            _GroupLabel(
-                              l10n.navAdmin,
-                              collapsed: collapsed,
-                            ),
-                            _NavTile(
-                              icon: Icons.storage_rounded,
-                              label: l10n.navLibraries,
-                              selected: current == AppDestination.libraries,
-                              collapsed: collapsed,
-                              onTap: () => go(AppDestination.libraries),
-                            ),
-                            _NavTile(
-                              icon: Icons.extension_rounded,
-                              label: l10n.navPlugins,
-                              selected: current == AppDestination.plugins,
-                              collapsed: collapsed,
-                              onTap: () => go(AppDestination.plugins),
-                            ),
-                            _NavTile(
-                              icon: Icons.terminal_rounded,
-                              label: l10n.navLogs,
-                              selected: current == AppDestination.logs,
-                              collapsed: collapsed,
-                              onTap: () => go(AppDestination.logs),
-                            ),
-                            _NavTile(
-                              icon: Icons.group_rounded,
-                              label: l10n.navUsers,
-                              selected: current == AppDestination.users,
-                              collapsed: collapsed,
-                              onTap: () => go(AppDestination.users),
-                            ),
-                          ],
-                          if (collapsed && pluginPages.isNotEmpty) ...[
-                            const SizedBox(height: 32),
-                            _GroupLabel(
-                              l10n.navPluginPages,
-                              collapsed: true,
-                            ),
-                            for (final extension in pluginPages)
-                              _PluginNavTile(
-                                extension: extension,
-                                selected:
-                                    current == AppDestination.pluginPage &&
-                                        activePluginPageId == extension.id,
-                                collapsed: true,
-                                onTap: () => onOpenPluginPage(extension),
-                              ),
-                          ],
-                        ],
-                      ]),
-                    ),
-                    if (!offline && !collapsed && pluginPages.isNotEmpty)
-                      SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const SizedBox(height: 32),
-                            _GroupLabel(
-                              l10n.navPluginPages,
-                              collapsed: false,
-                            ),
-                            for (final extension in pluginPages)
-                              _PluginNavTile(
-                                extension: extension,
-                                selected:
-                                    current == AppDestination.pluginPage &&
-                                        activePluginPageId == extension.id,
-                                collapsed: false,
-                                onTap: () => onOpenPluginPage(extension),
-                              ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              Divider(color: context.faintBorder, height: 18),
-              if (offline)
-                _DesktopLogoutButton(
-                  collapsed: collapsed,
-                  label: l10n.navReturnLogin,
-                  onPressed: appState.logout,
-                )
-              else
-                _DesktopAccountCard(
-                  collapsed: collapsed,
-                  username: user?.username ?? '',
-                  roleLabel: user?.isAdmin == true ? 'ADMINISTRATOR' : 'USER',
-                  onLogout: appState.logout,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarHeader extends StatelessWidget {
-  const _SidebarHeader({
-    required this.collapsed,
-    required this.onToggleCollapsed,
-  });
-
-  final bool collapsed;
-  final VoidCallback onToggleCollapsed;
-
-  @override
-  Widget build(BuildContext context) {
-    if (collapsed) {
-      return SizedBox(
-        height: 56,
-        child: Center(
-          child: Image.asset('assets/images/logo.png', width: 36, height: 36),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
-      child: SizedBox(
-        height: 56,
-        child: Row(
-          children: [
-            Image.asset('assets/images/logo.png', width: 36, height: 36),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Text(
-                'Ting Reader',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
-              ),
-            ),
-            _SidebarToggleButton(
-              collapsed: false,
-              onPressed: onToggleCollapsed,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SidebarToggleButton extends StatelessWidget {
-  const _SidebarToggleButton({
-    required this.collapsed,
-    required this.onPressed,
-  });
-
-  final bool collapsed;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final tooltip = collapsed
-        ? context.l10n.navExpandSidebar
-        : context.l10n.navCollapseSidebar;
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        button: true,
-        label: tooltip,
-        child: SizedBox.square(
-          dimension: 44,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onPressed,
-              customBorder: const CircleBorder(),
-              child: Center(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: context.cardColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: context.faintBorder),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: SizedBox.square(
-                    dimension: 32,
-                    child: Icon(
-                      collapsed
-                          ? Icons.chevron_right_rounded
-                          : Icons.chevron_left_rounded,
-                      size: 17,
-                      color: context.mutedText,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DesktopAccountCard extends StatelessWidget {
-  const _DesktopAccountCard({
-    required this.collapsed,
-    required this.username,
-    required this.roleLabel,
-    required this.onLogout,
-  });
-
-  final bool collapsed;
-  final String username;
-  final String roleLabel;
-  final Future<void> Function() onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    final avatar = CircleAvatar(
-      backgroundColor: AppColors.primary100,
-      foregroundColor: AppColors.primary700,
-      child: Text(
-        username.isNotEmpty ? username.substring(0, 1).toUpperCase() : 'U',
-        style: const TextStyle(fontWeight: FontWeight.w700),
-      ),
-    );
-    if (collapsed) {
-      return Column(
-        children: [
-          Tooltip(message: username, child: avatar),
-          const SizedBox(height: 4),
-          IconButton(
-            tooltip: context.l10n.navLogout,
-            onPressed: onLogout,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      );
-    }
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: context.isDark
-            ? AppColors.slate800.withValues(alpha: 0.55)
-            : AppColors.slate50,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          avatar,
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  username,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                Text(
-                  roleLabel,
-                  style: TextStyle(color: context.mutedText, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            tooltip: context.l10n.navLogout,
-            onPressed: onLogout,
-            icon: const Icon(Icons.logout_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DesktopLogoutButton extends StatelessWidget {
-  const _DesktopLogoutButton({
-    required this.collapsed,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final bool collapsed;
-  final String label;
-  final Future<void> Function() onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    if (collapsed) {
-      return IconButton(
-        tooltip: label,
-        onPressed: onPressed,
-        icon: const Icon(Icons.logout_rounded),
-      );
-    }
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: const Icon(Icons.logout_rounded),
-      label: Text(label),
-    );
-  }
-}
-
-class _PluginNavTile extends StatelessWidget {
-  const _PluginNavTile({
-    required this.extension,
-    required this.selected,
-    required this.collapsed,
-    required this.onTap,
-  });
-
-  final ClientExtensionDescriptor extension;
-  final bool selected;
-  final bool collapsed;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : context.mutedText;
-    final tile = Material(
-      color: selected ? AppColors.primary600 : Colors.transparent,
-      elevation: selected ? 8 : 0,
-      shadowColor: AppColors.primary500.withValues(alpha: 0.3),
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox(
-          height: 46,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: collapsed ? 0 : 16),
-            child: Row(
-              mainAxisAlignment: collapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                PluginExtensionIcon(
-                  extension: extension,
-                  size: 20,
-                  color: foreground,
-                ),
-                if (!collapsed) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      extension.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: foreground),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: collapsed ? Tooltip(message: extension.label, child: tile) : tile,
-    );
-  }
-}
-
-class _MobileHeader extends StatelessWidget {
-  const _MobileHeader({required this.openMenu});
-
-  final VoidCallback openMenu;
-
-  @override
-  Widget build(BuildContext context) {
-    final headerColor = Color.alphaBlend(
-      context.cardColor.withValues(alpha: 0.92),
-      Theme.of(context).scaffoldBackgroundColor,
-    );
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: headerColor,
-        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-        systemNavigationBarColor: Theme.of(context).scaffoldBackgroundColor,
-        systemNavigationBarIconBrightness:
-            isDark ? Brightness.light : Brightness.dark,
-        systemNavigationBarDividerColor: Colors.transparent,
-      ),
-      child: ColoredBox(
-        color: headerColor,
-        child: SafeArea(
-          bottom: false,
-          child: Container(
-            height: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: headerColor,
-              border: Border(bottom: BorderSide(color: context.faintBorder)),
-            ),
-            child: Row(
-              children: [
-                Image.asset('assets/images/logo.png', width: 36, height: 36),
-                const SizedBox(width: 10),
-                const Text(
-                  'Ting Reader',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: openMenu,
-                  icon: const Icon(Icons.menu_rounded),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MobileAdminOverlay extends StatelessWidget {
-  const _MobileAdminOverlay({
-    required this.go,
-    required this.current,
-    required this.onClose,
-    required this.pluginPages,
-    required this.activePluginPageId,
-    required this.onOpenPluginPage,
-  });
-
-  final ValueChanged<AppDestination> go;
-  final AppDestination current;
-  final VoidCallback onClose;
-  final List<ClientExtensionDescriptor> pluginPages;
-  final String? activePluginPageId;
-  final ValueChanged<ClientExtensionDescriptor> onOpenPluginPage;
-
-  @override
-  Widget build(BuildContext context) {
-    final topInset = MediaQuery.of(context).padding.top;
-    return Material(
-      color: Colors.transparent,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onClose,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
-                child: Container(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.46),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: 0,
-            bottom: 0,
-            child: _MobileDrawer(
-              go: go,
-              current: current,
-              onClose: onClose,
-              pluginPages: pluginPages,
-              activePluginPageId: activePluginPageId,
-              onOpenPluginPage: onOpenPluginPage,
-            ),
-          ),
-          Positioned(
-            right: 22,
-            top: topInset + 12,
-            child: Material(
-              color: context.cardColor.withValues(alpha: 0.92),
-              shape: const CircleBorder(),
-              child: IconButton(
-                tooltip: context.localeText('关闭', 'Close'),
-                icon: Icon(
-                  Icons.close_rounded,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-                onPressed: onClose,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MobileDrawer extends StatelessWidget {
-  const _MobileDrawer({
-    required this.go,
-    required this.current,
-    required this.onClose,
-    required this.pluginPages,
-    required this.activePluginPageId,
-    required this.onOpenPluginPage,
-  });
-
-  final ValueChanged<AppDestination> go;
-  final AppDestination current;
-  final VoidCallback onClose;
-  final List<ClientExtensionDescriptor> pluginPages;
-  final String? activePluginPageId;
-  final ValueChanged<ClientExtensionDescriptor> onOpenPluginPage;
-
-  @override
-  Widget build(BuildContext context) {
-    final appState = AppScope.appOf(context);
-    final user = appState.user;
-    final width = _drawerWidthFor(context);
-    final l10n = context.l10n;
-    if (appState.offlineMode) {
-      return Drawer(
-        width: width,
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 20, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _GroupLabel(l10n.navOfflineMode),
-                _MobileAdminTile(
-                  icon: Icons.download_done_rounded,
-                  label: l10n.navDownloads,
-                  selected: true,
-                  onTap: () {
-                    onClose();
-                    go(AppDestination.downloads);
-                  },
-                ),
-                const Spacer(),
-                _DrawerAccountCard(
-                  user: user,
-                  roleLabel: 'OFFLINE',
-                  onLogout: () async {
-                    onClose();
-                    await appState.logout();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Drawer(
-      width: width,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 32, 20, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: ListView(
-                  padding: EdgeInsets.zero,
-                  children: [
-                    if (appState.isAdmin) ...[
-                      _GroupLabel(l10n.navAdmin),
-                      _MobileAdminTile(
-                        icon: Icons.storage_rounded,
-                        label: l10n.navLibraries,
-                        selected: current == AppDestination.libraries,
-                        onTap: () {
-                          onClose();
-                          go(AppDestination.libraries);
-                        },
-                      ),
-                      _MobileAdminTile(
-                        icon: Icons.extension_rounded,
-                        label: l10n.navPlugins,
-                        selected: current == AppDestination.plugins,
-                        onTap: () {
-                          onClose();
-                          go(AppDestination.plugins);
-                        },
-                      ),
-                      _MobileAdminTile(
-                        icon: Icons.terminal_rounded,
-                        label: l10n.navLogs,
-                        selected: current == AppDestination.logs,
-                        onTap: () {
-                          onClose();
-                          go(AppDestination.logs);
-                        },
-                      ),
-                      _MobileAdminTile(
-                        icon: Icons.group_rounded,
-                        label: l10n.navUsers,
-                        selected: current == AppDestination.users,
-                        onTap: () {
-                          onClose();
-                          go(AppDestination.users);
-                        },
-                      ),
-                    ],
-                    if (pluginPages.isNotEmpty) ...[
-                      if (appState.isAdmin) const SizedBox(height: 22),
-                      _GroupLabel(l10n.navPluginPages),
-                      for (final extension in pluginPages)
-                        _MobilePluginTile(
-                          extension: extension,
-                          selected: current == AppDestination.pluginPage &&
-                              activePluginPageId == extension.id,
-                          onTap: () {
-                            onClose();
-                            onOpenPluginPage(extension);
-                          },
-                        ),
-                    ],
-                    if (!appState.isAdmin && pluginPages.isEmpty)
-                      EmptyState(
-                        icon: Icons.admin_panel_settings_outlined,
-                        title: l10n.navNoAdminEntry,
-                        message: l10n.navMainMenuInBottom,
-                      ),
-                  ],
-                ),
-              ),
-              _DrawerAccountCard(
-                user: user,
-                roleLabel: user?.isAdmin == true ? 'ADMINISTRATOR' : 'USER',
-                onLogout: () async {
-                  onClose();
-                  await appState.logout();
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  double _drawerWidthFor(BuildContext context) {
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    if (screenWidth < 392) {
-      return screenWidth * 0.92;
-    }
-    return 360;
-  }
-}
-
-class _MobileAdminTile extends StatelessWidget {
-  const _MobileAdminTile({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: selected ? AppColors.primary600 : Colors.transparent,
-        elevation: selected ? 8 : 0,
-        shadowColor: AppColors.primary500.withValues(alpha: 0.28),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  size: 24,
-                  color: selected ? Colors.white : context.mutedText,
-                ),
-                const SizedBox(width: 18),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? Colors.white : context.mutedText,
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MobilePluginTile extends StatelessWidget {
-  const _MobilePluginTile({
-    required this.extension,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ClientExtensionDescriptor extension;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final foreground = selected ? Colors.white : context.mutedText;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: selected ? AppColors.primary600 : Colors.transparent,
-        elevation: selected ? 8 : 0,
-        shadowColor: AppColors.primary500.withValues(alpha: 0.28),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              children: [
-                PluginExtensionIcon(
-                  extension: extension,
-                  size: 24,
-                  color: foreground,
-                ),
-                const SizedBox(width: 18),
-                Expanded(
-                  child: Text(
-                    extension.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(color: foreground, fontSize: 16),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DrawerAccountCard extends StatelessWidget {
-  const _DrawerAccountCard({
-    required this.user,
-    required this.roleLabel,
-    required this.onLogout,
-  });
-
-  final dynamic user;
-  final String roleLabel;
-  final Future<void> Function() onLogout;
-
-  @override
-  Widget build(BuildContext context) {
-    final username = (user?.username as String?) ?? '';
-    return Container(
-      padding: const EdgeInsets.only(top: 14),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: context.faintBorder)),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.isDark
-              ? AppColors.slate800.withValues(alpha: 0.55)
-              : AppColors.slate50,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              backgroundColor: AppColors.primary100,
-              foregroundColor: AppColors.primary700,
-              child: Text(
-                username.isNotEmpty
-                    ? username.substring(0, 1).toUpperCase()
-                    : 'U',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    username,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  Text(
-                    roleLabel,
-                    style: TextStyle(
-                      color: context.mutedText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: context.l10n.navLogout,
-              onPressed: onLogout,
-              icon: const Icon(Icons.logout_rounded),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomNav extends StatelessWidget {
-  const _BottomNav({
-    required this.current,
-    required this.go,
-  });
-
-  final AppDestination current;
-  final ValueChanged<AppDestination> go;
-
-  @override
-  Widget build(BuildContext context) {
-    final offline = AppScope.appOf(context).offlineMode;
-    final l10n = context.l10n;
-    return SafeArea(
-      top: false,
-      child: Container(
-        height: 64,
-        decoration: BoxDecoration(
-          color: context.cardColor.withValues(alpha: 0.94),
-          border: Border(top: BorderSide(color: context.faintBorder)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 14,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            _BottomItem(
-              icon: Icons.home_rounded,
-              label: l10n.navHome,
-              selected: current == AppDestination.home,
-              onTap: offline ? null : () => go(AppDestination.home),
-            ),
-            _BottomItem(
-              icon: Icons.library_books_rounded,
-              label: l10n.navBookshelf,
-              selected: current == AppDestination.bookshelf ||
-                  current == AppDestination.search,
-              onTap: offline ? null : () => go(AppDestination.bookshelf),
-            ),
-            if (offline)
-              _BottomItem(
-                icon: Icons.download_done_rounded,
-                label: l10n.navDownloads,
-                selected: true,
-                onTap: () => go(AppDestination.downloads),
-              ),
-            if (!offline)
-              _BottomItem(
-                icon: Icons.playlist_play_rounded,
-                label: l10n.navPlaylists,
-                selected: current == AppDestination.playlists,
-                onTap: () => go(AppDestination.playlists),
-              ),
-            if (!offline)
-              _BottomItem(
-                icon: Icons.person_rounded,
-                label: l10n.navMine,
-                selected: isMineDestination(current),
-                onTap: () => go(AppDestination.mine),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomItem extends StatelessWidget {
-  const _BottomItem({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final disabled = onTap == null;
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Opacity(
-          opacity: disabled ? 0.38 : 1,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.primary50 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: selected ? AppColors.primary600 : context.mutedText,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: selected ? AppColors.primary600 : context.mutedText,
-                  fontSize: 11,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 

@@ -34,11 +34,11 @@ class LogState extends ChangeNotifier {
   static const pageSize = 100;
   int get pageCount => (total / pageSize).ceil().clamp(1, 1 << 20);
   bool get _pluginLogs => pluginId != null || module == 'plugins';
-  String get _endpoint => pluginId != null
-      ? '/api/v1/plugins/${Uri.encodeComponent(pluginId!)}/logs'
-      : _pluginLogs
-          ? '/api/v1/plugin-logs'
-          : '/api/system/logs';
+  String get _endpoint {
+    final id = pluginId;
+    if (id != null) return '/api/v1/plugins/${Uri.encodeComponent(id)}/logs';
+    return _pluginLogs ? '/api/v1/plugin-logs' : '/api/system/logs';
+  }
 
   Map<String, dynamic> _query({bool paging = true, String? exportLevel}) => {
         if (paging) 'page': page,

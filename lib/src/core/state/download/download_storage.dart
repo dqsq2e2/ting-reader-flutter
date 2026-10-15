@@ -20,9 +20,12 @@ class DownloadStorage {
   String? _customDirectory;
   Directory? get directory => _directory;
   String? get customDirectory => _customDirectory;
-  File? get _indexFile => directory == null
-      ? null
-      : File('${directory!.path}${Platform.pathSeparator}downloads.json');
+  File? get _indexFile {
+    final root = directory;
+    return root == null
+        ? null
+        : File('${root.path}${Platform.pathSeparator}downloads.json');
+  }
 
   Future<void> initialize(void Function() checkActive) async {
     final preferences = await SharedPreferences.getInstance();
@@ -128,11 +131,14 @@ class DownloadStorage {
           ? path
           : null;
 
-  Future<int> fileSize(String? path) async =>
-      await existingFile(path) == null ? 0 : File(path!).length();
+  Future<int> fileSize(String? path) async {
+    final existing = await existingFile(path);
+    return existing == null ? 0 : File(existing).length();
+  }
 
   Future<void> deleteFile(String? path) async {
-    if (await existingFile(path) != null) await File(path!).delete();
+    final existing = await existingFile(path);
+    if (existing != null) await File(existing).delete();
   }
 
   void preparePaths(DownloadTask task, {required bool transcode}) {
@@ -140,10 +146,11 @@ class DownloadStorage {
     if (root == null) return;
     final extension =
         transcode ? 'mp3' : downloadPathExtension(task.chapterPath);
-    if (task.filePath != null && task.tempPath != null) {
+    final existingPath = task.filePath;
+    if (existingPath != null && task.tempPath != null) {
       if (task.status == DownloadStatus.completed ||
           !transcode ||
-          downloadPathExtension(task.filePath!) == extension) {
+          downloadPathExtension(existingPath) == extension) {
         return;
       }
       task.filePath = task.tempPath = null;
@@ -157,7 +164,13 @@ class DownloadStorage {
     task.tempPath ??= '${task.filePath}.part';
   }
 
-  Directory directoryForTask(DownloadTask task) => File(task.filePath!).parent;
+  Directory directoryForTask(DownloadTask task) {
+    final path = task.filePath;
+    if (path == null) {
+      throw StateError('Download paths must be prepared before transfer');
+    }
+    return File(path).parent;
+  }
 
   Set<String> bookDirectories(String groupKey,
           Iterable<LocalDownload> downloads, Iterable<DownloadTask> tasks) =>
@@ -168,7 +181,7 @@ class DownloadStorage {
         for (final task in tasks)
           if (task.bookGroupKey == groupKey &&
               task.filePath?.isNotEmpty == true)
-            File(task.filePath!).parent.path,
+            directoryForTask(task).path,
       };
 
   Future<String?> existingCover(Directory directory) async {

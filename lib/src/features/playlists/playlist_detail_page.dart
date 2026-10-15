@@ -74,9 +74,11 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         'items': items.map((item) => item.toRequestJson()).toList(),
       },
     );
+    final saved = Playlist.fromJson(asMap(res.data));
+    if (!mounted) return;
     setState(() {
-      _playlist = Playlist.fromJson(asMap(res.data));
-      _draftItems = _playlist!.effectiveItems;
+      _playlist = saved;
+      _draftItems = saved.effectiveItems;
     });
   }
 

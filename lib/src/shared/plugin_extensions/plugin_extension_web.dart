@@ -456,7 +456,10 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
           throw StateError('Windows WebView2 failed to write plugin cookie');
         }
       } else {
-        await cookieManager!.setCookie(cookie);
+        if (cookieManager == null) {
+          throw StateError('WebView cookie manager is missing');
+        }
+        await cookieManager.setCookie(cookie);
       }
     }
   }
@@ -636,12 +639,12 @@ JSON.stringify({
         ),
       );
     }
-    if (_error != null) {
+    if (_error case final errorText?) {
       return _PluginUnsupportedBody(
         title: context.localeText('Web UI 加载失败', 'Web UI failed'),
-        message: _error == _missingPluginUiEntryError
+        message: errorText == _missingPluginUiEntryError
             ? context.localeText('缺少插件 UI 入口。', 'Missing plugin UI entry.')
-            : _error!,
+            : errorText,
       );
     }
     if (controller == null) {

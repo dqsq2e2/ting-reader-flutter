@@ -251,7 +251,11 @@ int _parsePluginCssColor(Object? value) {
   final raw = value?.toString().trim() ?? '';
   final match = RegExp(r'^#([0-9a-fA-F]{6})$').firstMatch(raw);
   if (match == null) return 0xfff8fafc;
-  return 0xff000000 | int.parse(match.group(1)!, radix: 16);
+  return 0xff000000 |
+      int.parse(
+          match.group(1) ??
+              (throw const FormatException('Missing matched color')),
+          radix: 16);
 }
 
 String _pluginInitPayloadJson({
