@@ -736,7 +736,12 @@ const Map<String, dynamic> _defaultLibraryScraperConfig = {
   'extract_audio_cover': true,
   'extract_extra_chapters': true,
   'auto_generate_series': true,
-  'metadata_priority': ['filename', 'local_metadata', 'audio_metadata', 'scraper'],
+  'metadata_priority': [
+    'filename',
+    'local_metadata',
+    'audio_metadata',
+    'scraper'
+  ],
   'nfo_writing_enabled': false,
   'metadata_writing_enabled': false,
   'webdav_metadata_writing_enabled': false,
