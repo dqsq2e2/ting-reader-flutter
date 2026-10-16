@@ -273,8 +273,7 @@ extension _AppGateway on AppState {
         persistedActiveUri != null &&
         (persistedActiveUri.scheme == 'http' ||
             persistedActiveUri.scheme == 'https') &&
-        (persistedActiveUri.path == '/app/ting-reader' ||
-            persistedActiveUri.path.startsWith('/app/ting-reader/')) &&
+        FnosGateway.isSupportedAppPath(persistedActiveUri.path) &&
         !FnosGateway.isGatewayHostForFnId(
           gatewayHost,
           persistedActiveUri.host,
@@ -317,7 +316,10 @@ extension _AppGateway on AppState {
         FnosGateway.gatewayHostFromAppUrl(activeUrl, gatewayHost) ??
             FnosGateway.gatewayHostFromAppUrl(serverUrl, gatewayHost) ??
             gatewayHost;
-    activeUrl = FnosGateway.appUriForHost(activeGatewayHost).toString();
+    final appPath =
+        FnosGateway.appPathFromUrl(activeUrl) ?? FnosGateway.defaultAppPath;
+    activeUrl =
+        FnosGateway.appUriForHostAndPath(activeGatewayHost, appPath).toString();
     serverUrl = FnosGateway.originUriForHost(activeGatewayHost).toString();
     api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);
   }
@@ -437,9 +439,9 @@ extension _AppGateway on AppState {
     final previousCookie = gatewayCookie;
     final nextCookie = FnConnectClient.cookieHeader(
       sessionToken,
-      relay: candidate.isRelay,
+      relay: verification.candidate.isRelay,
     );
-    activeUrl = candidate.appBaseUrl;
+    activeUrl = verification.candidate.appBaseUrl;
     serverMode = ServerProfileMode.fnosGateway;
     gatewayCookie = nextCookie;
     api.configure(baseUrl: activeUrl, token: token, cookie: gatewayCookie);

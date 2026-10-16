@@ -2,6 +2,10 @@
 class FnosGateway {
   const FnosGateway._();
 
+  static const defaultAppPath = '/app/ting-reader';
+  static const dockerAppPath = '/app/ting-reader-docker';
+  static const appPaths = <String>[defaultAppPath, dockerAppPath];
+
   static const _gatewaySuffixes = <String>[
     '.fnos.net',
     '.5ddd.com',
@@ -82,7 +86,29 @@ class FnosGateway {
   }
 
   static Uri appUriForHost(String host) {
-    return Uri.https(_normalizeGatewayHost(host), '/app/ting-reader');
+    return appUriForHostAndPath(host, defaultAppPath);
+  }
+
+  static Uri appUriForHostAndPath(String host, String appPath) {
+    final normalizedPath = appPath.startsWith('/') ? appPath : '/$appPath';
+    return Uri.https(_normalizeGatewayHost(host), normalizedPath);
+  }
+
+  static bool isSupportedAppPath(String path) {
+    return appPaths.any(
+      (appPath) => path == appPath || path.startsWith('$appPath/'),
+    );
+  }
+
+  static String? appPathFromUrl(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl.trim());
+    if (uri == null) return null;
+    for (final appPath in appPaths) {
+      if (uri.path == appPath || uri.path.startsWith('$appPath/')) {
+        return appPath;
+      }
+    }
+    return null;
   }
 
   static bool isGatewayHostForFnId(String rawFnId, String rawHost) {
@@ -96,7 +122,7 @@ class FnosGateway {
     final uri = Uri.tryParse(rawUrl.trim());
     if (uri == null || uri.host.isEmpty) return null;
     final path = uri.path;
-    if (path != '/app/ting-reader' && !path.startsWith('/app/ting-reader/')) {
+    if (!isSupportedAppPath(path)) {
       return null;
     }
     return isGatewayHostForFnId(rawFnId, uri.host) ? uri.host : null;

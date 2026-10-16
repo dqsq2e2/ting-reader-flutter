@@ -696,58 +696,72 @@ class FnConnectClient {
         final timeout = candidate.isRelay
             ? const Duration(seconds: 10)
             : const Duration(seconds: 3);
-        try {
-          final response = await dio.get<dynamic>(
-            '${candidate.appBaseUrl}/api/health',
-            cancelToken: cancelToken,
-            options: Options(
-              connectTimeout: timeout,
-              receiveTimeout: timeout,
-              sendTimeout: timeout,
-              headers: {
-                'Cookie': cookieHeader(token, relay: candidate.isRelay),
-                ...accessCodeHeaders,
-              },
-            ),
-          );
-          final status = response.statusCode ?? 0;
-          final invalidToken = _isInvalidToken(response.data);
-          final reachable = status >= 200 &&
-              status < 300 &&
-              !invalidToken &&
-              response.data is Map &&
-              const {'healthy', 'unhealthy'}.contains(response.data['status']);
-          return FnConnectCandidateResult(
-            candidate: candidate,
-            reachable: reachable,
-            latency: DateTime.now().difference(started),
-            error: reachable
-                ? null
-                : invalidToken
-                    ? 'invalid token'
-                    : 'HTTP $status',
-            errorKind: reachable
-                ? null
-                : invalidToken
-                    ? FnConnectProbeErrorKind.invalidToken
-                    : FnConnectProbeErrorKind.httpStatus,
-          );
-        } catch (error) {
-          if (error is DioException &&
-              CancelToken.isCancel(error) &&
-              (cancelToken?.isCancelled ?? false)) {
-            rethrow;
+        FnConnectCandidateResult? lastFailure;
+        for (final appPath in FnosGateway.appPaths) {
+          try {
+            final response = await dio.get<dynamic>(
+              '${candidate.rootUrl}$appPath/api/health',
+              cancelToken: cancelToken,
+              options: Options(
+                connectTimeout: timeout,
+                receiveTimeout: timeout,
+                sendTimeout: timeout,
+                headers: {
+                  'Cookie': cookieHeader(token, relay: candidate.isRelay),
+                  ...accessCodeHeaders,
+                },
+              ),
+            );
+            final status = response.statusCode ?? 0;
+            final invalidToken = _isInvalidToken(response.data);
+            final reachable = status >= 200 &&
+                status < 300 &&
+                !invalidToken &&
+                response.data is Map &&
+                const {'healthy', 'unhealthy'}
+                    .contains(response.data['status']);
+            final result = FnConnectCandidateResult(
+              candidate: candidate.withAppPath(appPath),
+              reachable: reachable,
+              latency: DateTime.now().difference(started),
+              error: reachable
+                  ? null
+                  : invalidToken
+                      ? 'invalid token'
+                      : 'HTTP $status',
+              errorKind: reachable
+                  ? null
+                  : invalidToken
+                      ? FnConnectProbeErrorKind.invalidToken
+                      : FnConnectProbeErrorKind.httpStatus,
+            );
+            if (reachable || invalidToken) return result;
+            lastFailure = result;
+          } catch (error) {
+            if (error is DioException &&
+                CancelToken.isCancel(error) &&
+                (cancelToken?.isCancelled ?? false)) {
+              rethrow;
+            }
+            lastFailure = FnConnectCandidateResult(
+              candidate: candidate.withAppPath(appPath),
+              reachable: false,
+              latency: DateTime.now().difference(started),
+              error: error is DioException
+                  ? (error.message ?? error.type.name)
+                  : error.toString(),
+              errorKind: _classifyProbeError(error),
+            );
           }
-          return FnConnectCandidateResult(
-            candidate: candidate,
-            reachable: false,
-            latency: DateTime.now().difference(started),
-            error: error is DioException
-                ? (error.message ?? error.type.name)
-                : error.toString(),
-            errorKind: _classifyProbeError(error),
-          );
         }
+        return lastFailure ??
+            FnConnectCandidateResult(
+              candidate: candidate,
+              reachable: false,
+              latency: DateTime.now().difference(started),
+              error: 'No application route',
+              errorKind: FnConnectProbeErrorKind.httpStatus,
+            );
       }),
     ).whenComplete(() {
       _probeClients.remove(dio);

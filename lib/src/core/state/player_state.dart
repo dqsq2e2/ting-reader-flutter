@@ -28,7 +28,11 @@ part 'player/player_gateway.dart';
 part 'player/player_source.dart';
 
 class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
-  PlayerState(this.appState, this.downloadState) {
+  PlayerState(
+    this.appState,
+    this.downloadState, {
+    Stream<audio_session.AudioInterruptionEvent>? interruptionEvents,
+  }) : _interruptionEvents = interruptionEvents {
     WidgetsBinding.instance.addObserver(this);
     appState.onGatewayLoginRequired = _pauseForGatewayReauthentication;
     appState.onGatewayLoginRestored = _restoreAfterGatewayReauthentication;
@@ -65,7 +69,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _playingSub = _audio.playingStream.listen((playing) {
       isPlaying = playing;
       if (playing) {
-        _cancelFocusRecovery(clearResume: true);
+        // A play request can publish true before native focus acquisition
+        // completes. It must not erase a newer interruption's resume intent.
+        if (!_focusInterrupted && !_focusResumeInFlight) {
+          _cancelFocusRecovery(clearResume: true);
+        }
         _startProgressTimer();
       } else {
         _stopProgressTimers();
@@ -103,6 +111,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   final AppState appState;
   final DownloadState downloadState;
+  final Stream<audio_session.AudioInterruptionEvent>? _interruptionEvents;
   late final audio.AudioPlayer _audio;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
@@ -117,6 +126,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _focusRecoveryTimer;
   bool _focusRecoveryInFlight = false;
   int _inactiveAudioChecks = 0;
+  int _focusGeneration = 0;
+  bool _focusInterrupted = false;
+  bool _focusResumeInFlight = false;
+  bool _focusResumeQueued = false;
+  Future<void> _focusPause = Future<void>.value();
   late final _PlayerProgress _progress = _PlayerProgress(
     appState: appState,
     snapshot: () {

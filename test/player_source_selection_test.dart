@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:audio_service_platform_interface/audio_service_platform_interface.dart';
 import 'package:audio_service_platform_interface/method_channel_audio_service.dart';
 import 'package:dio/dio.dart';
@@ -112,6 +113,11 @@ class _NativeAudio {
   final _channels = <MethodChannel>[];
   MethodChannel? _events;
   bool failFirstLoad = false;
+  bool holdPlayback = false;
+  int playCount = 0;
+  int pauseCount = 0;
+  Future<void>? pauseGate;
+  final _playbacks = <Completer<void>>[];
   Duration reportedDuration = const Duration(seconds: 636);
   static const _main = MethodChannel('com.ryanheise.just_audio.methods');
   static const _codec = StandardMethodCodec();
@@ -132,6 +138,18 @@ class _NativeAudio {
             .setMockMethodCallHandler(data, (_) async => null);
         binding.defaultBinaryMessenger.setMockMethodCallHandler(methods,
             (request) async {
+          if (request.method == 'play') {
+            playCount++;
+            if (holdPlayback) {
+              final playback = Completer<void>();
+              _playbacks.add(playback);
+              await playback.future;
+            }
+          } else if (request.method == 'pause') {
+            pauseCount++;
+            await pauseGate;
+            finishPlayback();
+          }
           if (request.method == 'load') {
             final args = request.arguments as Map;
             sources.add(args['audioSource'] as Map);
@@ -154,6 +172,13 @@ class _NativeAudio {
       }
       return <String, dynamic>{};
     });
+  }
+
+  void finishPlayback() {
+    for (final playback in _playbacks) {
+      playback.complete();
+    }
+    _playbacks.clear();
   }
 
   Uri get activeUri {
@@ -184,6 +209,7 @@ class _NativeAudio {
   }
 
   void uninstall() {
+    finishPlayback();
     for (final channel in [_main, ..._channels]) {
       binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
     }
@@ -264,6 +290,7 @@ void main() {
   late _PlaybackApp app;
   late _Downloads downloads;
   late PlayerState player;
+  late StreamController<AudioInterruptionEvent> interruptions;
   bool playerDisposed = false;
   final notifications = _NativeNotifications(binding);
   const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
@@ -314,9 +341,112 @@ void main() {
       ..offlineMode = true;
     app.api.configure(baseUrl: app.activeUrl, token: app.token);
     downloads = _Downloads(app);
-    player = PlayerState(app, downloads);
+    interruptions = StreamController<AudioInterruptionEvent>.broadcast();
+    player =
+        PlayerState(app, downloads, interruptionEvents: interruptions.stream);
     JustAudioBackground.setAudioFocusEnabled(false);
     notifications.clear();
+  });
+
+  Future<void> startFocusPlayback() async {
+    app.settings = {'ignore_audio_focus': false};
+    native.holdPlayback = true;
+    final item = chapter('/data/audiobooks/chapter.mp3');
+    unawaited(player.playChapter(book, [item], item));
+    await waitForPlayback(() => native.playCount == 1 && player.isPlaying);
+  }
+
+  void interrupt(bool begin) => interruptions
+      .add(AudioInterruptionEvent(begin, AudioInterruptionType.pause));
+
+  test('repeated notification interruptions resume every time', () async {
+    await startFocusPlayback();
+    for (var cycle = 1; cycle <= 8; cycle++) {
+      interrupt(true);
+      await waitForPlayback(
+          () => native.pauseCount == cycle && !player.isPlaying);
+      interrupt(false);
+      await waitForPlayback(
+          () => native.playCount == cycle + 1 && player.isPlaying);
+    }
+    expect(player.error, isNull);
+  });
+
+  test('focus gain waits for the native pause to finish', () async {
+    await startFocusPlayback();
+    final pause = Completer<void>();
+    native.pauseGate = pause.future;
+    addTearDown(() {
+      if (!pause.isCompleted) pause.complete();
+    });
+    interrupt(true);
+    await waitForPlayback(() => native.pauseCount == 1);
+    interrupt(false);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(native.playCount, 1);
+    pause.complete();
+    await waitForPlayback(() => native.playCount == 2 && player.isPlaying);
+  });
+
+  test('new interruption invalidates a queued gain without losing resume',
+      () async {
+    await startFocusPlayback();
+    final pause = Completer<void>();
+    native.pauseGate = pause.future;
+    addTearDown(() {
+      if (!pause.isCompleted) pause.complete();
+    });
+    interrupt(true);
+    await waitForPlayback(() => native.pauseCount == 1);
+    interrupt(false);
+    await Future<void>.delayed(Duration.zero);
+    interrupt(true);
+    await Future<void>.delayed(Duration.zero);
+    pause.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(native.playCount, 1);
+    expect(player.isPlaying, isFalse);
+    interrupt(false);
+    await waitForPlayback(() => native.playCount == 2 && player.isPlaying);
+  });
+
+  for (final cancel in ['pause', 'mix', 'dispose']) {
+    test('$cancel cancels an outstanding focus recovery', () async {
+      await startFocusPlayback();
+      final pause = Completer<void>();
+      native.pauseGate = pause.future;
+      addTearDown(() {
+        if (!pause.isCompleted) pause.complete();
+      });
+      interrupt(true);
+      await waitForPlayback(() => native.pauseCount == 1);
+      interrupt(false);
+      await Future<void>.delayed(Duration.zero);
+      switch (cancel) {
+        case 'pause':
+          await player.pause();
+        case 'mix':
+          await player.setIgnoreAudioFocus(true);
+        case 'dispose':
+          player.dispose();
+          playerDisposed = true;
+      }
+      pause.complete();
+      interrupt(false);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(native.playCount, 1);
+    });
+  }
+
+  test('mix mode ignores notification interruptions', () async {
+    await startFocusPlayback();
+    await player.setIgnoreAudioFocus(true);
+    interrupt(true);
+    interrupt(false);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(native.pauseCount, 0);
+    expect(native.playCount, 1);
+    expect(player.isPlaying, isTrue);
   });
 
   test('WMA transcode keeps chapter duration in player and notification',
@@ -755,6 +885,7 @@ void main() {
 
   tearDown(() async {
     if (!playerDisposed) player.dispose();
+    await interruptions.close();
     await Future<void>.delayed(Duration.zero);
     native.uninstall();
     downloads.dispose();

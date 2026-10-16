@@ -143,6 +143,7 @@ class FnConnectCandidate {
     required this.group,
     required this.isRelay,
     this.ipLabel,
+    this.appPath = FnosGateway.defaultAppPath,
   });
 
   final String rootUrl;
@@ -151,7 +152,18 @@ class FnConnectCandidate {
   final bool isRelay;
   final String? ipLabel;
 
-  String get appBaseUrl => '$rootUrl/app/ting-reader';
+  final String appPath;
+
+  String get appBaseUrl => '$rootUrl$appPath';
+
+  FnConnectCandidate withAppPath(String path) => FnConnectCandidate(
+        rootUrl: rootUrl,
+        description: description,
+        group: group,
+        isRelay: isRelay,
+        ipLabel: ipLabel,
+        appPath: path,
+      );
 }
 
 /// 候选链路探测失败的归类，用于 UI 展示简短的中英文原因文案，

@@ -233,18 +233,34 @@ extension _AppAuthentication on AppState {
       }
 
       serverMode = ServerProfileMode.fnosGateway;
-      activeUrl = FnosGateway.appUriForHost(gatewayHost).toString();
-      api.configure(
-        baseUrl: activeUrl,
-        token: null,
-        cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
-      );
-      // 不再提供 WebView 登录回退：网关会话失效时直接把原始错误抛给调用方，
-      // 让登录问题暴露出来，而不是被内嵌登录页掩盖。
-      return _loginToTingReader(
-        username,
-        password,
-        cancelToken: cancelToken,
+      Object? lastError;
+      for (final appPath in FnosGateway.appPaths) {
+        activeUrl =
+            FnosGateway.appUriForHostAndPath(gatewayHost, appPath).toString();
+        api.configure(
+          baseUrl: activeUrl,
+          token: null,
+          cookie: resolvedGatewayCookie.isEmpty ? null : resolvedGatewayCookie,
+        );
+        try {
+          // The native FPK route is the default. Docker FPK is tried only
+          // when the default route is unavailable.
+          return await _loginToTingReader(
+            username,
+            password,
+            cancelToken: cancelToken,
+          );
+        } catch (error) {
+          lastError = error;
+          if (!_isGatewayAppRouteUnavailable(error) ||
+              appPath == FnosGateway.appPaths.last) {
+            rethrow;
+          }
+        }
+      }
+      Error.throwWithStackTrace(
+        lastError ?? const _GatewaySessionExpired(),
+        StackTrace.current,
       );
     }
 
@@ -463,6 +479,15 @@ extension _AppAuthentication on AppState {
             reason: 'Login cancelled',
           );
     }
+  }
+
+  bool _isGatewayAppRouteUnavailable(Object error) {
+    if (error is _GatewaySessionExpired) return true;
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      return status == 404 || status == 405;
+    }
+    return false;
   }
 
   User _requireAuthenticatedUser(Object? value) {

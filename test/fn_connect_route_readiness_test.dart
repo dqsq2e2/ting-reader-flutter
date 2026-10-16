@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/src/core/auth/fn_connect_client.dart';
+import 'package:ting_reader_flutter/src/core/auth/fnos_gateway_auth.dart';
 import 'package:ting_reader_flutter/src/core/auth/fnos_ws_transport.dart';
 
 class _Client extends FnConnectClient {
@@ -193,6 +194,44 @@ void main() {
       token: 'fresh',
     );
     expect(result.single.reachable, isTrue);
+  });
+
+  test(
+      'falls back to the Docker FPK route after the native route is unavailable',
+      () async {
+    final requestedPaths = <String>[];
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      requestedPaths.add(request.uri.path);
+      if (request.uri.path == '/app/ting-reader-docker/api/health') {
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(jsonEncode({'status': 'healthy'}));
+      } else {
+        request.response.statusCode = HttpStatus.notFound;
+      }
+      await request.response.close();
+    });
+
+    final candidate = FnConnectCandidate(
+      rootUrl: 'http://127.0.0.1:${server.port}',
+      description: 'test',
+      group: FnConnectCandidateGroup.lan,
+      isRelay: false,
+    );
+    final result = await FnConnectClient().probeCandidates(
+      candidates: [candidate],
+      token: 'fresh',
+    );
+
+    expect(requestedPaths, [
+      '/app/ting-reader/api/health',
+      '/app/ting-reader-docker/api/health',
+    ]);
+    expect(result.single.reachable, isTrue);
+    expect(result.single.candidate.appPath, FnosGateway.dockerAppPath);
+    expect(result.single.candidate.appBaseUrl,
+        '${candidate.rootUrl}${FnosGateway.dockerAppPath}');
   });
 
   test('waits for complete credentials when trusting a new device', () {

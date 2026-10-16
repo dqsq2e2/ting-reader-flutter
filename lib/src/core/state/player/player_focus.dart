@@ -82,7 +82,8 @@ extension _PlayerAudioFocus on PlayerState {
       final session = await audio_session.AudioSession.instance;
       if (_disposed) return;
       _interruptionSub =
-          session.interruptionEventStream.listen(_handleInterruption);
+          (_interruptionEvents ?? session.interruptionEventStream)
+              .listen(_handleInterruption);
       _noisySub = session.becomingNoisyEventStream.listen((_) {
         _pauseForDisconnectedOutput();
       });
@@ -112,11 +113,22 @@ extension _PlayerAudioFocus on PlayerState {
   }
 
   void _handleInterruption(audio_session.AudioInterruptionEvent event) {
-    if (ignoreAudioFocus) return;
+    if (_disposed || ignoreAudioFocus) return;
     if (event.begin) {
-      if (isPlaying || _audio.playing) {
+      _focusGeneration++;
+      _focusInterrupted = true;
+      _focusResumeQueued = false;
+      if (isPlaying || _audio.playing || _resumeAfterInterruption) {
         _resumeAfterInterruption = true;
-        unawaited(_audio.pause());
+        // Pause immediately, and wait for all outstanding native pauses before
+        // resuming. A slow pause from notification A must not stop resume B.
+        _focusPause = Future.wait<void>([_focusPause, _audio.pause()])
+            .then<void>((_) {})
+            .catchError((Object failure) {
+          if (_disposed) return;
+          error = ApiError.messageFor(failure);
+          _notifyIfActive();
+        });
         unawaited(sendProgress());
       }
       if (_resumeAfterInterruption &&
@@ -126,6 +138,7 @@ extension _PlayerAudioFocus on PlayerState {
       }
       return;
     }
+    _focusInterrupted = false;
     if (_resumeAfterInterruption &&
         event.type != audio_session.AudioInterruptionType.unknown) {
       unawaited(_resumeAfterFocusReturned());
@@ -163,6 +176,7 @@ extension _PlayerAudioFocus on PlayerState {
       // Avoid stealing focus during a short buffering gap in the other app.
       _inactiveAudioChecks++;
       if (_inactiveAudioChecks < 2) return;
+      _focusInterrupted = false;
       await _resumeAfterFocusReturned();
     } catch (_) {
       // Keep waiting. Transient interruptions still recover from their normal
@@ -173,20 +187,65 @@ extension _PlayerAudioFocus on PlayerState {
   }
 
   Future<void> _resumeAfterFocusReturned() async {
-    if (!_resumeAfterInterruption || ignoreAudioFocus) return;
-    if (!await _playWithSession()) return;
-    _resumeAfterInterruption = false;
-    _cancelFocusRecovery();
+    if (_disposed ||
+        !_resumeAfterInterruption ||
+        ignoreAudioFocus ||
+        _focusInterrupted) {
+      return;
+    }
+    _focusResumeQueued = true;
+    if (_focusResumeInFlight) return;
+    _focusResumeInFlight = true;
+    try {
+      while (_focusResumeQueued && !_disposed && _resumeAfterInterruption) {
+        _focusResumeQueued = false;
+        final generation = _focusGeneration;
+        bool stillAllowed() =>
+            !_disposed &&
+            !ignoreAudioFocus &&
+            !_focusInterrupted &&
+            _resumeAfterInterruption &&
+            generation == _focusGeneration;
+        await _focusPause;
+        if (!stillAllowed()) continue;
+        final started = await _playWithSession(
+          stillAllowed: stillAllowed,
+          waitForCompletion: false,
+        );
+        if (!stillAllowed()) continue;
+        if (started) {
+          _resumeAfterInterruption = false;
+          _cancelFocusRecovery();
+        } else if (defaultTargetPlatform == TargetPlatform.android) {
+          _startPermanentFocusRecovery();
+        }
+      }
+    } catch (failure) {
+      if (!_disposed) {
+        error = ApiError.messageFor(failure);
+        _notifyIfActive();
+      }
+    } finally {
+      _focusResumeInFlight = false;
+    }
   }
 
   void _cancelFocusRecovery({bool clearResume = false}) {
     _focusRecoveryTimer?.cancel();
     _focusRecoveryTimer = null;
     _inactiveAudioChecks = 0;
-    if (clearResume) _resumeAfterInterruption = false;
+    if (clearResume) {
+      _focusGeneration++;
+      _focusInterrupted = false;
+      _focusResumeQueued = false;
+      _resumeAfterInterruption = false;
+    }
   }
 
-  Future<bool> _playWithSession() async {
+  Future<bool> _playWithSession({
+    bool Function()? stillAllowed,
+    bool waitForCompletion = true,
+  }) async {
     if (_disposed) return false;
     if (_gatewayReauthenticationPending) {
       if (appState.needsGatewayLogin) return false;
@@ -201,10 +260,21 @@ extension _PlayerAudioFocus on PlayerState {
       return false;
     }
     await _audioSessionReady;
-    if (_disposed) return false;
+    if (_disposed || stillAllowed?.call() == false) return false;
     if (!await _activateAudioSessionForPlayback()) return false;
-    if (_disposed) return false;
-    await _audio.play();
+    if (_disposed || stillAllowed?.call() == false) return false;
+    final playback = _audio.play();
+    if (waitForCompletion) {
+      await playback;
+    } else {
+      // just_audio's play Future represents the whole playback lifetime,
+      // including its next interruption, rather than playback starting.
+      unawaited(playback.catchError((Object failure) {
+        if (_disposed) return;
+        error = ApiError.messageFor(failure);
+        _notifyIfActive();
+      }));
+    }
     return true;
   }
 }

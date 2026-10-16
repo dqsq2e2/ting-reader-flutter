@@ -416,6 +416,7 @@ class _PlayerAudioHandler extends BaseAudioHandler
   );
   AudioSourceMessage? _source;
   bool _playing = false;
+  int _playRequestGeneration = 0;
   double _speed = 1.0;
   _Seeker? _seeker;
   AudioServiceRepeatMode _repeatMode = AudioServiceRepeatMode.none;
@@ -748,6 +749,7 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> play() async {
+    final generation = ++_playRequestGeneration;
     if (_audioFocusEnabled) {
       try {
         final session = await AudioSession.instance;
@@ -756,14 +758,18 @@ class _PlayerAudioHandler extends BaseAudioHandler
         return;
       }
     }
+    if (generation != _playRequestGeneration) return;
+    final player = await _player;
+    if (generation != _playRequestGeneration) return;
     _updatePosition();
     _playing = true;
     _broadcastState();
-    await (await _player).play(PlayRequest());
+    await player.play(PlayRequest());
   }
 
   @override
   Future<void> pause() async {
+    _playRequestGeneration++;
     _updatePosition();
     _playing = false;
     _broadcastState();
@@ -909,6 +915,7 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> stop() async {
+    _playRequestGeneration++;
     if (_justAudioEvent.processingState == ProcessingStateMessage.idle) {
       return;
     }
