@@ -102,6 +102,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
   ];
 
   static const _prioritySources = [
+    _ScraperSourceChoice(id: 'filename', name: 'filename'),
     _ScraperSourceChoice(id: 'local_metadata', name: 'local_metadata'),
     _ScraperSourceChoice(id: 'audio_metadata', name: 'audio_metadata'),
     _ScraperSourceChoice(id: 'scraper', name: 'scraper'),
@@ -136,7 +137,13 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
   List<String> _stringListFor(_ScraperConfigTab tab) {
     final config = _config();
     final raw = config[tab.key];
-    if (raw is List) return raw.map((value) => value.toString()).toList();
+    if (raw is List && raw.isNotEmpty) {
+      final values = raw.map((value) => value.toString()).toList();
+      if (tab.id == 'priority' && !values.contains('filename')) {
+        values.insert(0, 'filename');
+      }
+      return values;
+    }
     if (tab.id == 'priority') {
       return _prioritySources.map((source) => source.id).toList();
     }
@@ -194,9 +201,9 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
     final metadata = _boolValue('metadata_writing_enabled', false);
     final webdavMetadataWriting =
         _boolValue('webdav_metadata_writing_enabled', false);
-    final preferTitle = _boolValue('use_filename_as_title', true);
     final extractCover = _boolValue('extract_audio_cover', true);
     final extractExtraChapters = _boolValue('extract_extra_chapters', true);
+    final autoGenerateSeries = _boolValue('auto_generate_series', true);
     final watcherEnabled = !_boolValue('disable_watcher', false);
     final cloudMode = _boolValue('cloud_mode', false);
     final tab = _currentTab;
@@ -248,6 +255,18 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
             ),
             child: Column(
               children: [
+                if (widget.libraryType == 'local' ||
+                    widget.libraryType == 'webdav')
+                  _ConfigSwitchRow(
+                    title: context.localeText(
+                        '自动生成系列', 'Automatically create series'),
+                    subtitle: context.localeText(
+                        '扫描时根据文件夹名自动创建并关联系列；关闭后保留已有系列，metadata.json 中的系列信息仍照常导入',
+                        'Create and link series from folder names during scans. Disabling this keeps existing series; series declared in metadata.json are still imported.'),
+                    value: autoGenerateSeries,
+                    onChanged: (value) =>
+                        _setBool('auto_generate_series', value),
+                  ),
                 if (widget.libraryType == 'webdav')
                   _ConfigSwitchRow(
                     title: context.l10n.libraryWriteMetadataToWebdav,
@@ -277,15 +296,6 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
                         _setBool('metadata_writing_enabled', value),
                   ),
                 ],
-                _ConfigSwitchRow(
-                  title: context.localeText(
-                      '优先使用文件/文件夹名作为标题', 'Prefer file/folder title'),
-                  subtitle: context.localeText('忽略优先级配置，强制使用路径名称',
-                      'Ignore source priority and use the path name'),
-                  value: preferTitle,
-                  onChanged: (value) =>
-                      _setBool('use_filename_as_title', value),
-                ),
                 _ConfigSwitchRow(
                   title: context.localeText('提取音频封面', 'Extract audio cover'),
                   subtitle: context.localeText('系统或插件将尝试从音频文件中提取封面',
@@ -383,6 +393,8 @@ String _scraperTabLabel(BuildContext context, _ScraperConfigTab tab) {
 String _scraperSourceChoiceName(
     BuildContext context, _ScraperSourceChoice source) {
   switch (source.id) {
+    case 'filename':
+      return context.localeText('文件/文件夹名', 'File/folder names');
     case 'local_metadata':
       return context.localeText(
           '本地元数据 (JSON/NFO)', 'Local metadata (JSON/NFO)');
