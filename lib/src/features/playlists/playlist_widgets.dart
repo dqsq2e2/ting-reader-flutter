@@ -3,89 +3,63 @@ part of 'playlists_page.dart';
 class _PlaylistCard extends StatelessWidget {
   const _PlaylistCard({
     required this.playlist,
-    required this.iconSize,
     required this.coverSeed,
     required this.onTap,
-    this.compactOnMobile = false,
   });
 
   final Playlist playlist;
-  final IconSizeSetting iconSize;
   final int coverSeed;
   final VoidCallback onTap;
-  final bool compactOnMobile;
 
   @override
   Widget build(BuildContext context) {
-    final coverShape = _playlistCoverShape(context);
-    final padding = switch (iconSize) {
-      IconSizeSetting.small => compactOnMobile ? 12.0 : 12.0,
-      IconSizeSetting.medium => compactOnMobile ? 12.0 : 16.0,
-      IconSizeSetting.large => compactOnMobile ? 12.0 : 20.0,
-    };
-    final titleSize = switch (iconSize) {
-      IconSizeSetting.small => compactOnMobile ? 13.0 : 14.0,
-      IconSizeSetting.medium => compactOnMobile ? 13.0 : 18.0,
-      IconSizeSetting.large => compactOnMobile ? 13.0 : 20.0,
-    };
     final bookCount = _playlistBookCount(playlist);
-    return TingCard(
-      radius: 20,
-      padding: EdgeInsets.all(padding),
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _PlaylistCoverGrid(
-            playlist: playlist,
-            coverShape: coverShape,
-            coverSeed: coverSeed,
-          ),
-          SizedBox(height: compactOnMobile ? 10 : 14),
-          Text(
-            localizedPlaylistTitle(context, playlist),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.primary600,
-              fontSize: titleSize,
-              fontWeight: FontWeight.w700,
-              height: 1.15,
-            ),
-          ),
-          SizedBox(height: compactOnMobile ? 4 : 6),
-          ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: (iconSize == IconSizeSetting.small || compactOnMobile)
-                  ? 0
-                  : 40,
-            ),
-            child: Text(
-              playlist.description?.isNotEmpty == true
-                  ? (playlist.description ?? '')
-                  : context.localeText('$bookCount 本书', '$bookCount books'),
-              maxLines: (iconSize == IconSizeSetting.small || compactOnMobile)
-                  ? 1
-                  : 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.secondaryText,
-                fontSize: 14,
-                height: 1.45,
+    final description = playlist.description?.trim() ?? '';
+    return Semantics(
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _PlaylistCoverStack(
+                playlist: playlist,
+                coverShape: _playlistCoverShape(context),
+                coverSeed: coverSeed,
               ),
-            ),
+              Text(
+                localizedPlaylistTitle(context, playlist),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: context.primaryText,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                context.localeText('$bookCount 本书', '$bookCount books'),
+                style: TextStyle(color: context.secondaryText, fontSize: 12),
+              ),
+              if (description.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: context.mutedText, fontSize: 12),
+                ),
+              ],
+            ],
           ),
-          SizedBox(height: compactOnMobile ? 6 : 10),
-          Text(
-            context.localeText('$bookCount 本书', '$bookCount books'),
-            style: TextStyle(
-              color: context.mutedText,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -114,122 +88,115 @@ class _PlaylistHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const color = AppColors.primary600;
+    final description = playlist.description?.trim() ?? '';
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 620;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Flex(
-              direction: compact ? Axis.vertical : Axis.horizontal,
-              crossAxisAlignment: compact
-                  ? CrossAxisAlignment.start
-                  : CrossAxisAlignment.center,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: compact ? 58 : 64,
-                      height: compact ? 58 : 64,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: color.withValues(alpha: 0.18),
-                            blurRadius: 18,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.playlist_play_rounded,
-                        color: Colors.white,
-                        size: 30,
-                      ),
+        return Container(
+          padding: EdgeInsets.all(compact ? 16 : 24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: context.faintBorder),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: context.isDark
+                  ? [AppColors.slate900, AppColors.slate800]
+                  : [AppColors.primary50, Colors.white, AppColors.slate50],
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  SizedBox(
+                    width: compact ? 100 : 160,
+                    child: _PlaylistCoverStack(
+                      playlist: playlist,
+                      coverShape: _playlistCoverShape(context),
+                      coverSeed: 0,
                     ),
-                    const SizedBox(width: 14),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: compact
-                            ? constraints.maxWidth - 72
-                            : math.max(240, constraints.maxWidth * 0.36),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            localizedPlaylistTitle(context, playlist),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: compact ? 26 : 30,
-                              fontWeight: FontWeight.w700,
-                              height: 1.15,
-                            ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          localizedPlaylistTitle(context, playlist),
+                          style: TextStyle(
+                            color: context.primaryText,
+                            fontSize: compact ? 22 : 30,
+                            fontWeight: FontWeight.w700,
+                            height: 1.2,
                           ),
-                          const SizedBox(height: 4),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          context.localeText(
+                            '${_playlistBookCount(playlist)} 本书 · $itemCount 项',
+                            '${_playlistBookCount(playlist)} books · $itemCount items',
+                          ),
+                          style: const TextStyle(
+                              color: AppColors.primary600, fontSize: 12),
+                        ),
+                        if (description.isNotEmpty) ...[
+                          const SizedBox(height: 8),
                           Text(
-                            playlist.description?.isNotEmpty == true
-                                ? (playlist.description ?? '')
-                                : context.localeText(
-                                    '$itemCount 项',
-                                    '$itemCount items',
-                                  ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                            description,
                             style: TextStyle(
                               color: context.secondaryText,
-                              fontSize: compact ? 14 : 15,
+                              fontSize: 14,
+                              height: 1.5,
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ],
-                ),
-                if (!compact) const Spacer(),
-                SizedBox(height: compact ? 16 : 0, width: compact ? 0 : 18),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: managing
-                      ? [
-                          _SoftActionButton(
-                            label: context.localeText('取消', 'Cancel'),
-                            icon: Icons.close_rounded,
-                            onPressed: onCancelManage,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: managing
+                    ? [
+                        _SoftActionButton(
+                          label: context.localeText('取消', 'Cancel'),
+                          icon: Icons.close_rounded,
+                          onPressed: onCancelManage,
+                        ),
+                        PrimaryButton(
+                          label: context.localeText('保存书单', 'Save Playlist'),
+                          icon: Icons.save_rounded,
+                          onPressed: onSaveManage,
+                        ),
+                      ]
+                    : [
+                        _SoftActionButton(
+                          label: context.localeText('编辑信息', 'Edit Info'),
+                          icon: Icons.edit_rounded,
+                          onPressed: onEdit,
+                        ),
+                        PrimaryButton(
+                          label: context.localeText('管理内容', 'Manage Content'),
+                          icon: Icons.add_rounded,
+                          onPressed: onManage,
+                        ),
+                        IconButton(
+                          tooltip: context.localeText('删除', 'Delete'),
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          onPressed: onDelete,
+                          style: IconButton.styleFrom(
+                            foregroundColor: context.mutedText,
                           ),
-                          PrimaryButton(
-                            label: context.localeText('保存书单', 'Save Playlist'),
-                            icon: Icons.save_rounded,
-                            onPressed: onSaveManage,
-                          ),
-                        ]
-                      : [
-                          _SoftActionButton(
-                            label: context.localeText('编辑信息', 'Edit Info'),
-                            icon: Icons.edit_rounded,
-                            onPressed: onEdit,
-                          ),
-                          PrimaryButton(
-                            label: context.localeText('管理内容', 'Manage Content'),
-                            icon: Icons.add_rounded,
-                            onPressed: onManage,
-                          ),
-                          _SoftActionButton(
-                            label: context.localeText('删除', 'Delete'),
-                            icon: Icons.delete_outline_rounded,
-                            danger: true,
-                            onPressed: onDelete,
-                          ),
-                        ],
-                ),
-              ],
-            ),
-          ],
+                        ),
+                      ],
+              ),
+            ],
+          ),
         );
       },
     );
@@ -241,33 +208,26 @@ class _SoftActionButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
-    this.danger = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onPressed;
-  final bool danger;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = danger ? Colors.red : context.secondaryText;
     return TextButton.icon(
       onPressed: onPressed,
       icon: Icon(icon, size: 18),
       label: Text(label),
       style: TextButton.styleFrom(
-        foregroundColor: foreground,
-        backgroundColor: danger
-            ? Colors.red.withValues(alpha: context.isDark ? 0.14 : 0.08)
-            : (context.isDark ? AppColors.slate800 : Colors.white),
+        foregroundColor: context.secondaryText,
+        backgroundColor: context.isDark ? AppColors.slate800 : Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(
-            color: danger
-                ? Colors.red.withValues(alpha: 0.12)
-                : context.faintBorder,
+            color: context.faintBorder,
           ),
         ),
       ),
@@ -350,29 +310,26 @@ class _PlaylistSearchPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return TingCard(
-      radius: 18,
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
             decoration: InputDecoration(
               prefixIcon: const Icon(Icons.search_rounded),
               hintText: hint,
             ),
             onChanged: onChanged,
           ),
-          const SizedBox(height: 12),
-          Text(
-            countText,
-            style: TextStyle(
-              color: context.secondaryText,
-              fontSize: 13,
-            ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          countText,
+          style: TextStyle(
+            color: context.secondaryText,
+            fontSize: 12,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

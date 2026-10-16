@@ -324,7 +324,7 @@ class _ScraperConfigPanelState extends State<_ScraperConfigPanel> {
                     ),
                   ),
                 _ConfigSwitchRow(
-                  title: context.localeText('网盘模式（减少远程音频探测）', 'Cloud mode'),
+                  title: context.localeText('网盘模式', 'Cloud mode'),
                   subtitle: context.localeText('优先使用元数据文件，减少远程音频读取',
                       'Prefer metadata files and reduce remote audio reads'),
                   value: cloudMode,

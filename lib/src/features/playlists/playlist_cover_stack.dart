@@ -98,17 +98,17 @@ List<_PlaylistCover> _collectPlaylistCoverCandidates(
 List<_PlaylistCover> _collectPlaylistCovers(
   AppState appState,
   Playlist playlist, {
-  int limit = 1,
+  int limit = 3,
   int? seed,
 }) {
-  final candidates = _collectPlaylistCoverCandidates(appState, playlist);
+  final seen = <String>{};
+  final candidates = _collectPlaylistCoverCandidates(appState, playlist)
+      .where((cover) => seen.add(cover.url.isEmpty ? cover.id : cover.url))
+      .toList();
   if (candidates.isEmpty) return const [];
-  if (limit <= 1) {
-    return [
-      candidates[_playlistCoverIndex(playlist.id, seed ?? 0, candidates.length)]
-    ];
-  }
-  return candidates.take(limit).toList();
+  final start = _playlistCoverIndex(playlist.id, seed ?? 0, candidates.length);
+  return List.generate(math.min(limit, candidates.length),
+      (index) => candidates[(start + index) % candidates.length]);
 }
 
 int _playlistCoverIndex(String playlistId, int seed, int count) {
@@ -120,8 +120,8 @@ int _playlistCoverIndex(String playlistId, int seed, int count) {
   return hash % count;
 }
 
-class _PlaylistCoverGrid extends StatelessWidget {
-  const _PlaylistCoverGrid({
+class _PlaylistCoverStack extends StatelessWidget {
+  const _PlaylistCoverStack({
     required this.playlist,
     required this.coverShape,
     required this.coverSeed,
@@ -141,35 +141,65 @@ class _PlaylistCoverGrid extends StatelessWidget {
     );
     return AspectRatio(
       aspectRatio: coverAspectRatio(coverShape),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: AppColors.primary600
-                .withValues(alpha: context.isDark ? 0.18 : 0.10),
-          ),
-          child: covers.isEmpty
-              ? const Icon(
-                  Icons.playlist_play_rounded,
-                  color: AppColors.primary600,
-                  size: 38,
-                )
-              : covers.length == 1
-                  ? _PlaylistCoverTile(cover: covers.first)
-                  : GridView.builder(
-                      padding: EdgeInsets.zero,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 1,
-                        crossAxisSpacing: 1,
-                      ),
-                      itemCount: covers.length,
-                      itemBuilder: (context, index) =>
-                          _PlaylistCoverTile(cover: covers[index]),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
+          final radius = (width * 0.065).clamp(6.0, 16.0);
+          Widget layer(_PlaylistCover? cover, {bool front = false}) {
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color:
+                    context.isDark ? AppColors.slate800 : AppColors.primary50,
+                borderRadius: BorderRadius.circular(radius),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: front ? 0.14 : 0.07),
+                    blurRadius: front ? 18 : 10,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(radius),
+                child: cover == null
+                    ? Center(
+                        child: Icon(Icons.playlist_play_rounded,
+                            color: AppColors.primary400, size: width * 0.25),
+                      )
+                    : _PlaylistCoverTile(cover: cover),
+              ),
+            );
+          }
+
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+                width * 0.12, height * 0.06, width * 0.12, height * 0.18),
+            child: Stack(
+              clipBehavior: Clip.none,
+              fit: StackFit.expand,
+              children: [
+                if (covers.isNotEmpty)
+                  Transform.translate(
+                    offset: Offset(-width * 0.05, height * 0.04),
+                    child: Transform.rotate(
+                      angle: -0.14,
+                      child: layer(covers.length > 2 ? covers[2] : null),
                     ),
-        ),
+                  ),
+                if (covers.length > 1)
+                  Transform.translate(
+                    offset: Offset(width * 0.065, height * 0.06),
+                    child: Transform.rotate(
+                      angle: 0.14,
+                      child: layer(covers[1]),
+                    ),
+                  ),
+                layer(covers.firstOrNull, front: true),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

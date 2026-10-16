@@ -304,75 +304,33 @@ class _PlaylistContentCard extends StatelessWidget {
     final bookValue = item.book;
     final seriesValue = item.series;
     final coverShape = _playlistCoverShape(context);
-    final isSeries = item.itemType == 'series';
-    final title = isSeries
-        ? (seriesValue == null
-            ? context.localeText('未知系列', 'Unknown Series')
-            : localizedSeriesTitle(context, seriesValue))
-        : (bookValue == null
-            ? context.localeText('未知书籍', 'Unknown Book')
-            : localizedBookTitle(context, bookValue));
-    final subtitle = isSeries
-        ? context.localeText(
-            '${seriesValue?.author ?? '未知作者'} · ${seriesValue?.books.length ?? 0} 本',
-            '${seriesValue?.author ?? 'Unknown Author'} · ${seriesValue?.books.length ?? 0} books',
-          )
-        : (bookValue?.author ??
-            bookValue?.narrator ??
-            context.localeText('未知作者', 'Unknown Author'));
-    final cover = isSeries
-        ? (seriesValue == null ? '' : _seriesFirstCover(context, seriesValue))
-        : (bookValue == null
-            ? ''
-            : bookCoverUrl(AppScope.appOf(context), bookValue));
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    if (item.itemType == 'series' && seriesValue != null) {
+      return SeriesCard(
+        series: seriesValue,
+        coverShape: coverShape,
+        onTap: onTap,
+      );
+    }
+    if (item.itemType == 'book' && bookValue != null) {
+      return BookCard(
+        book: bookValue,
+        coverShape: coverShape,
+        onTap: onTap,
+      );
+    }
+    return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
-            children: [
-              AspectRatio(
-                aspectRatio: coverAspectRatio(coverShape),
-                child: CoverImage(
-                  url: cover,
-                  radius: 6,
-                  placeholderIcon:
-                      isSeries ? Icons.layers_rounded : Icons.menu_book_rounded,
-                ),
-              ),
-              if (isSeries)
-                Positioned(
-                  left: 8,
-                  top: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary600,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      context.localeText('系列', 'Series'),
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
-                    ),
-                  ),
-                ),
-            ],
+          AspectRatio(
+            aspectRatio: coverAspectRatio(coverShape),
+            child: const CoverImage(url: '', radius: 6),
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 8),
           Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            context.localeText('作品暂不可用', 'Item unavailable'),
             style: TextStyle(color: context.secondaryText, fontSize: 12),
           ),
         ],

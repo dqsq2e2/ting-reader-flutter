@@ -29,10 +29,15 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
   String _manageQuery = '';
   String _manageType = 'book';
 
+  bool _initialized = false;
+
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _load();
+    }
   }
 
   @override
@@ -50,6 +55,7 @@ class _PlaylistDetailPageState extends State<PlaylistDetailPage> {
         api.get('/api/books'),
         api.get('/api/v1/series'),
       ]);
+      if (!mounted) return;
       setState(() {
         _playlist = Playlist.fromJson(asMap(results[0].data));
         _books = asMapList(results[1].data).map(Book.fromJson).toList();

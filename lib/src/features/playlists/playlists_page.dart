@@ -14,7 +14,7 @@ import '../../shared/common/common_widgets.dart';
 import '../../shared/common/media_widgets.dart';
 import '../../shared/filter/display_filter_menu.dart';
 
-part 'playlist_cover_grid.dart';
+part 'playlist_cover_stack.dart';
 part 'playlist_detail_page.dart';
 part 'playlist_selection_widgets.dart';
 part 'playlist_widgets.dart';
@@ -43,11 +43,15 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   final LayerLink _filterMenuLink = LayerLink();
   OverlayEntry? _filterOverlay;
   bool _showFilterMenu = false;
+  bool _initialized = false;
 
   @override
-  void initState() {
-    super.initState();
-    _load();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _initialized = true;
+      _load();
+    }
   }
 
   @override
@@ -62,6 +66,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       final appState = AppScope.appOf(context);
       final settings = asMap(appState.settings['settings_json']);
       final res = await appState.api.get('/api/playlists');
+      if (!mounted) return;
       setState(() {
         _playlists = asMapList(res.data).map(Playlist.fromJson).toList();
         _playlistCoverSeed = DateTime.now().microsecondsSinceEpoch;
@@ -148,7 +153,6 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
         else ...[
           LayoutBuilder(
             builder: (context, constraints) {
-              final compact = constraints.maxWidth < 640;
               final searchBox = _PlaylistSearchBox(
                 hint: context.localeText(
                   '搜索书单名称或描述',
@@ -163,19 +167,6 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
                   onPressed: _toggleFilterMenu,
                 ),
               );
-              if (compact) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    searchBox,
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: filterButton,
-                    ),
-                  ],
-                );
-              }
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -196,37 +187,21 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
           else
             LayoutBuilder(
               builder: (context, constraints) {
-                final mobile = constraints.maxWidth < 640;
-                final spacing = _playlistGridGap(_iconSize);
-                final minCardWidth = mobile
-                    ? _playlistMobileCardMinWidth(_iconSize)
-                    : _playlistDesktopCardWidth(_iconSize);
-                final possibleColumns = math.max(
-                  1,
-                  ((constraints.maxWidth + spacing) / (minCardWidth + spacing))
-                      .floor(),
-                );
-                final columns = mobile
-                    ? math.max(
-                        1,
-                        math.min(possibleColumns, visiblePlaylists.length),
-                      )
-                    : possibleColumns;
-                final width = mobile
-                    ? (constraints.maxWidth - spacing * (columns - 1)) / columns
-                    : math.min(minCardWidth, constraints.maxWidth);
+                final spacing = gridSpacing(_iconSize);
+                final columns =
+                    gridColumnsForWidth(constraints.maxWidth, _iconSize);
+                final width =
+                    (constraints.maxWidth - spacing * (columns - 1)) / columns;
                 return Wrap(
                   spacing: spacing,
-                  runSpacing: spacing,
+                  runSpacing: spacing + 12,
                   children: [
                     for (final playlist in visiblePlaylists)
                       SizedBox(
                         width: width,
                         child: _PlaylistCard(
                           playlist: playlist,
-                          iconSize: _iconSize,
                           coverSeed: _playlistCoverSeed,
-                          compactOnMobile: mobile,
                           onTap: () => widget.openPlaylist(playlist.id),
                         ),
                       ),
@@ -346,30 +321,6 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
       'title' || 'count' || 'updated_at' => value,
       'created_at' => 'updated_at',
       _ => 'updated_at',
-    };
-  }
-
-  double _playlistGridGap(IconSizeSetting size) {
-    return switch (size) {
-      IconSizeSetting.small => 12,
-      IconSizeSetting.medium => 16,
-      IconSizeSetting.large => 24,
-    };
-  }
-
-  double _playlistDesktopCardWidth(IconSizeSetting size) {
-    return switch (size) {
-      IconSizeSetting.small => 170,
-      IconSizeSetting.medium => 300,
-      IconSizeSetting.large => 440,
-    };
-  }
-
-  double _playlistMobileCardMinWidth(IconSizeSetting size) {
-    return switch (size) {
-      IconSizeSetting.small => 132,
-      IconSizeSetting.medium => 156,
-      IconSizeSetting.large => 180,
     };
   }
 }
