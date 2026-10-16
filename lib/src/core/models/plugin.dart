@@ -1,4 +1,5 @@
 import '_helpers.dart';
+import '../api/api_error.dart';
 
 class PluginItem {
   const PluginItem({
@@ -22,6 +23,7 @@ class PluginItem {
     this.capabilities = const [],
     this.supportedExtensions = const [],
     this.configSchema,
+    this.error,
   });
 
   final String id;
@@ -44,6 +46,7 @@ class PluginItem {
   final List<PluginCapability> capabilities;
   final List<String> supportedExtensions;
   final Map<String, dynamic>? configSchema;
+  final ApiError? error;
 
   factory PluginItem.fromJson(Map<String, dynamic> json) {
     final rawConfig = json['config_schema'];
@@ -72,6 +75,7 @@ class PluginItem {
       configSchema: rawConfig is Map
           ? rawConfig.map((key, value) => MapEntry(key.toString(), value))
           : null,
+      error: json['error'] == null ? null : ApiError.from(json['error']),
     );
   }
 }

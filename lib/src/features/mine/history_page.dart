@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/models/_helpers.dart' show readDouble, readInt, readString;
 import '../../core/theme/app_theme.dart';
@@ -97,8 +98,8 @@ class _HistoryPageState extends State<HistoryPage> {
       });
     } catch (error) {
       if (mounted) {
-        _message(context.localeText(
-            '加载历史失败：$error', 'Failed to load history: $error'));
+        _message(context.localeText('加载历史失败：${ApiError.messageFor(error)}',
+            'Failed to load history: ${ApiError.messageFor(error)}'));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -125,8 +126,8 @@ class _HistoryPageState extends State<HistoryPage> {
       });
     } catch (error) {
       if (mounted) {
-        _message(context.localeText(
-            '加载章节失败：$error', 'Failed to load chapters: $error'));
+        _message(context.localeText('加载章节失败：${ApiError.messageFor(error)}',
+            'Failed to load chapters: ${ApiError.messageFor(error)}'));
       }
     } finally {
       if (mounted) setState(() => _loadingChapters.remove(bookId));
@@ -237,8 +238,8 @@ class _HistoryPageState extends State<HistoryPage> {
       await _load(page: 1);
     } catch (error) {
       if (mounted) {
-        _message(context.localeText(
-            '清除历史失败：$error', 'Failed to clear history: $error'));
+        _message(context.localeText('清除历史失败：${ApiError.messageFor(error)}',
+            'Failed to clear history: ${ApiError.messageFor(error)}'));
       }
     } finally {
       if (mounted) setState(() => _deleting = false);

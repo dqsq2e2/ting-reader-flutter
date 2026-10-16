@@ -179,7 +179,23 @@ String buildPluginTopLevelSecureBridgeScript({
       bridge_token: bridgeToken
     })));
   }
+  function createRequestError(payload, fallback) {
+    var body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+    var error = new Error(typeof body.message === "string" && body.message || fallback || "Request failed");
+    error.name = "TingReaderError";
+    error.code = typeof body.error === "string" ? body.error : "InternalError";
+    error.details = body.details && typeof body.details === "object" && !Array.isArray(body.details)
+      ? body.details : { retryable: false };
+    error.retryable = error.details.retryable === true;
+    error.trace_id = typeof body.trace_id === "string" ? body.trace_id : undefined;
+    error.status = typeof body.status === "number" ? body.status : undefined;
+    error.body = { error: error.code, message: error.message, details: error.details };
+    if (error.trace_id) error.body.trace_id = error.trace_id;
+    if (error.status) error.body.status = error.status;
+    return error;
+  }
   const secureBridge = Object.freeze({
+    createError: createRequestError,
     postMessage: function(message) {
       if (!message || typeof message !== "object" ||
           message.type !== "ting-plugin:request") return;

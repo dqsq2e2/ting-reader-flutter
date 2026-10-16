@@ -66,6 +66,16 @@ class _FolderPickerDialogState extends State<_FolderPickerDialog> {
       setState(() {
         _folders = asMapList(res.data).map(_FolderEntry.fromJson).toList();
       });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _folders = []);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ApiError.messageFor(error,
+              fallback:
+                  context.localeText('无法读取文件夹', 'Could not load folders'))),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }

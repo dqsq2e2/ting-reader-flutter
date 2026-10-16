@@ -150,7 +150,8 @@ class _ChapterSectionState extends State<_ChapterSection> {
     } catch (error) {
       if (mounted) {
         _showDownloadMessage(context.localeText(
-            '加入下载失败：$error', 'Failed to add download: $error'));
+            '加入下载失败：${ApiError.messageFor(error)}',
+            'Failed to add download: ${ApiError.messageFor(error)}'));
       }
     }
   }
@@ -176,8 +177,9 @@ class _ChapterSectionState extends State<_ChapterSection> {
         if (result.outcome == DownloadRequestOutcome.queued) queued++;
       } catch (err) {
         if (!mounted) return;
-        _showDownloadMessage(
-            context.localeText('加入下载失败：$err', 'Failed to add download: $err'));
+        _showDownloadMessage(context.localeText(
+            '加入下载失败：${ApiError.messageFor(err)}',
+            'Failed to add download: ${ApiError.messageFor(err)}'));
         break;
       }
     }

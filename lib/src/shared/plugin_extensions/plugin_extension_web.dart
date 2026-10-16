@@ -279,7 +279,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
     } catch (error) {
       setState(() {
         _controller = null;
-        _error = error.toString();
+        _error = ApiError.messageFor(error);
         _unsupported = false;
       });
       return;
@@ -396,7 +396,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       }
     } catch (error) {
       if (!mounted || generation != _loadGeneration) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = ApiError.messageFor(error));
     }
   }
 
@@ -524,7 +524,7 @@ class _PluginWebContainerState extends State<_PluginWebContainer> {
       await _postBridgeResponse(
         request,
         ok: false,
-        error: error.toString(),
+        error: ApiError.capture(error),
       );
       debugPrint(
         '[plugin-webview] bridge response method=${request.method} ok=0',
@@ -564,7 +564,13 @@ JSON.stringify({
     switch (request.method) {
       case 'capability.invoke':
         if (!widget.extension.allowsCapabilityInvoke) {
-          throw StateError('Capability invocation is disabled for this view');
+          throw ApiError.local(
+            code: 'PermissionDenied',
+            message: 'Capability invocation is disabled for this view',
+            reason: 'capability_denied',
+            operation: request.method,
+            status: 403,
+          );
         }
         final params = request.params is Map
             ? Map<String, dynamic>.from(request.params as Map)
@@ -575,7 +581,13 @@ JSON.stringify({
                 ? widget.extension.capability.id
                 : declaredCapabilityId;
         if (!widget.extension.allowedCapabilityIds.contains(capabilityId)) {
-          throw StateError('Capability is not allowed for this view');
+          throw ApiError.local(
+            code: 'PermissionDenied',
+            message: 'Capability is not allowed for this view',
+            reason: 'capability_denied',
+            operation: request.method,
+            status: 403,
+          );
         }
         return pluginCapabilities.invokePluginCapability<Object?>(
           pluginId: widget.extension.pluginId,
@@ -590,10 +602,22 @@ JSON.stringify({
             : const <String, dynamic>{};
         final method = params['method']?.toString();
         if (method == null || method.trim().isEmpty) {
-          throw StateError('Missing host method');
+          throw ApiError.local(
+            code: 'InvalidRequest',
+            message: 'Missing host method',
+            reason: 'missing_field',
+            operation: request.method,
+            status: 400,
+          );
         }
         if (!widget.extension.allowedHostMethods.contains(method)) {
-          throw StateError('Host method is not allowed for this view');
+          throw ApiError.local(
+            code: 'PermissionDenied',
+            message: 'Host method is not allowed for this view',
+            reason: 'capability_denied',
+            operation: request.method,
+            status: 403,
+          );
         }
         return pluginCapabilities.invokePluginHost<Object?>(
           pluginId: widget.extension.pluginId,
@@ -603,7 +627,13 @@ JSON.stringify({
           params: params['params'] ?? const {},
         );
       default:
-        throw StateError('Unknown bridge method: ${request.method}');
+        throw ApiError.local(
+          code: 'InvalidRequest',
+          message: 'Unknown bridge method: ${request.method}',
+          reason: 'unsupported_value',
+          operation: request.method,
+          status: 400,
+        );
     }
   }
 
@@ -611,7 +641,7 @@ JSON.stringify({
     _PluginBridgeRequest request, {
     required bool ok,
     Object? result,
-    String? error,
+    ApiError? error,
   }) async {
     final controller = _controller;
     if (controller == null) return;
@@ -622,7 +652,7 @@ JSON.stringify({
       'bridge_token': request.bridgeToken,
       'ok': ok,
       if (ok) 'result': result,
-      if (!ok) 'error': error,
+      if (!ok) 'error': error?.toJson(),
     });
     await controller.runJavaScript('window.__tingPluginRespond($payload);');
   }

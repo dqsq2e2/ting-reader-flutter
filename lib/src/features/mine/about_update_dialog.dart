@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/services/client_update_service.dart';
 import '../../core/theme/app_theme.dart';
@@ -111,8 +112,8 @@ class _AboutPageState extends State<AboutPage> {
       }
     } catch (error) {
       _showLocalizedSnack(
-        '检查服务端更新失败: $error',
-        'Failed to check server update: $error',
+        '检查服务端更新失败: ${ApiError.messageFor(error)}',
+        'Failed to check server update: ${ApiError.messageFor(error)}',
       );
     } finally {
       if (mounted) setState(() => _checkingBackend = false);
@@ -177,8 +178,8 @@ class _AboutPageState extends State<AboutPage> {
     } catch (error) {
       if (mounted) setState(() => _downloadingClient = false);
       _showLocalizedSnack(
-        '检查客户端更新失败: $error',
-        'Failed to check client update: $error',
+        '检查客户端更新失败: ${ApiError.messageFor(error)}',
+        'Failed to check client update: ${ApiError.messageFor(error)}',
       );
     } finally {
       if (mounted) setState(() => _checkingClient = false);

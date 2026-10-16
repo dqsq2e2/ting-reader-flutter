@@ -590,9 +590,12 @@ class _WebhookDialogState extends State<_WebhookDialog> {
           Text(
             success
                 ? context.l10n.notificationsSendSuccess(result.status)
-                : (result.error?.isNotEmpty == true
-                    ? (result.error ?? '')
-                    : context.l10n.notificationsSendFailed(result.status)),
+                : ApiError.messageFor(
+                    result.error ??
+                        context.l10n.notificationsSendFailed(result.status),
+                    fallback:
+                        context.l10n.notificationsSendFailed(result.status),
+                  ),
             style: TextStyle(color: color, fontSize: 13),
           ),
           if (result.responseBody.isNotEmpty) ...[

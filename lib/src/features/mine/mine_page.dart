@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
@@ -151,7 +152,8 @@ class _MyPageState extends State<MyPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(context.l10n.mineUpdateFailed(error.toString()))),
+            content: Text(
+                context.l10n.mineUpdateFailed(ApiError.messageFor(error)))),
       );
     } finally {
       if (mounted) setState(() => _savingAccount = false);

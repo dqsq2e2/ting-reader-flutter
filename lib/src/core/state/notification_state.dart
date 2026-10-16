@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 
 class NotificationState extends ChangeNotifier {
@@ -46,7 +47,9 @@ class NotificationState extends ChangeNotifier {
             .map(NotificationEventOption.fromJson)
             .toList();
       } catch (failure) {
-        if (!_disposed && !token.isCancelled) error = failure.toString();
+        if (!_disposed && !token.isCancelled) {
+          error = ApiError.messageFor(failure);
+        }
       } finally {
         if (!_disposed && identical(_loadToken, token)) {
           loading = false;
@@ -84,7 +87,7 @@ class NotificationState extends ChangeNotifier {
           return _disposed
               ? null
               : WebhookTestResult(
-                  success: false, status: 0, error: failure.toString());
+                  success: false, status: 0, error: ApiError.capture(failure));
         }
       });
 

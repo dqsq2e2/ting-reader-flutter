@@ -11,6 +11,7 @@ import 'package:just_audio_background/just_audio_background.dart'
     as audio_background;
 
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/urls.dart';
@@ -177,7 +178,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         await pause();
       } catch (failure) {
         if (!_disposed) {
-          error = failure.toString();
+          error = ApiError.messageFor(failure);
           _notifyIfActive();
         }
       }

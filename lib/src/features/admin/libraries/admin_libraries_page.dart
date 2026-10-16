@@ -31,9 +31,11 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
       final list =
           data is Map ? asMapList(asMap(data)['libraries']) : asMapList(data);
       setState(() => _items = list.map(Library.fromJson).toList());
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        _showSnack(context.localeText('获取存储库失败', 'Failed to load libraries'));
+        _showSnack(ApiError.messageFor(error,
+            fallback:
+                context.localeText('获取存储库失败', 'Failed to load libraries')));
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -51,9 +53,10 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
       _showSnack(mode == 'full'
           ? context.localeText('全量同步任务已启动', 'Full sync started')
           : context.localeText('增量同步任务已启动', 'Incremental sync started'));
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _showSnack(context.localeText('同步启动失败', 'Failed to start sync'));
+      _showSnack(ApiError.messageFor(error,
+          fallback: context.localeText('同步启动失败', 'Failed to start sync')));
     } finally {
       if (mounted) setState(() => _scanningId = null);
     }
@@ -73,9 +76,10 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
       messenger.showSnackBar(SnackBar(
           content: Text(context.localeText('存储库已删除', 'Library deleted'))));
       await _load();
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _showSnack(context.localeText('删除失败', 'Delete failed'));
+      _showSnack(ApiError.messageFor(error,
+          fallback: context.localeText('删除失败', 'Delete failed')));
     }
   }
 

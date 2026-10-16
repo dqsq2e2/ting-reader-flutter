@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/formatters.dart';
@@ -334,7 +335,9 @@ class BookDetailState extends ChangeNotifier {
           target: initialChapter,
           preferLast: groupsDescending && initialChapter == null);
     } catch (failure) {
-      if (!_disposed && !token.isCancelled) error = failure.toString();
+      if (!_disposed && !token.isCancelled) {
+        error = ApiError.messageFor(failure);
+      }
     } finally {
       if (identical(_loadToken, token) && !_disposed) {
         loading = false;
@@ -374,7 +377,9 @@ class BookDetailState extends ChangeNotifier {
       chapters = page.chapters;
       return page;
     } catch (failure) {
-      if (!_disposed && revision == _pageRevision) error = failure.toString();
+      if (!_disposed && revision == _pageRevision) {
+        error = ApiError.messageFor(failure);
+      }
       return null;
     } finally {
       if (!_disposed && revision == _pageRevision) {
@@ -582,7 +587,9 @@ class BookshelfState extends ChangeNotifier {
       books = asMapList(results[0].data).map(Book.fromJson).toList();
       series = asMapList(results[1].data).map(Series.fromJson).toList();
     } catch (failure) {
-      if (!_disposed && !token.isCancelled) error = failure.toString();
+      if (!_disposed && !token.isCancelled) {
+        error = ApiError.messageFor(failure);
+      }
     } finally {
       if (!_disposed && identical(_loadToken, token)) {
         loading = false;

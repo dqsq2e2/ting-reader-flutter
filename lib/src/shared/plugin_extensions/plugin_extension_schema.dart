@@ -116,7 +116,7 @@ class _PluginSchemaFormState extends State<_PluginSchemaForm> {
       if (!mounted) return;
       setState(() {
         _failed = true;
-        _message = error.toString();
+        _message = ApiError.messageFor(error);
       });
     } finally {
       if (mounted) setState(() => _running = false);

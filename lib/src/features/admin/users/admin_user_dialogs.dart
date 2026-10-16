@@ -308,7 +308,7 @@ class _UserFormDialogState extends State<_UserFormDialog> {
   }
 
   String _extractError(Object error) {
-    final text = error.toString();
+    final text = ApiError.messageFor(error, fallback: '');
     return text.isEmpty ? context.localeText('操作失败', 'Operation failed') : text;
   }
 

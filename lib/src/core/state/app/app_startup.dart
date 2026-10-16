@@ -178,7 +178,13 @@ extension _AppStartup on AppState {
           } catch (error) {
             checkCancelled();
             await _markGatewayLoginRequired();
-            connectionError = error.toString();
+            connectionError = ApiError.messageFor(
+              error,
+              fallback: textForLocale(
+                '登录失败，请检查服务器地址和账号信息',
+                'Login failed. Check the server address and credentials.',
+              ),
+            );
             _notifyIfActive();
           }
           return;

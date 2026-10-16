@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/state/books_state.dart';
 import '../../core/theme/app_theme.dart';
@@ -170,7 +171,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(context.localeText(
-                  '更新阅读状态失败：$error', 'Failed to update read status: $error'))),
+                  '更新阅读状态失败：${ApiError.messageFor(error)}',
+                  'Failed to update read status: ${ApiError.messageFor(error)}'))),
         );
       }
     } finally {
@@ -697,8 +699,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
         SnackBar(
           content: Text(
             context.localeText(
-              '删除系列失败：$error',
-              'Failed to delete series: $error',
+              '删除系列失败：${ApiError.messageFor(error)}',
+              'Failed to delete series: ${ApiError.messageFor(error)}',
             ),
           ),
         ),
@@ -738,8 +740,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            context.localeText(
-                '删除书籍失败：$error', 'Failed to delete books: $error'),
+            context.localeText('删除书籍失败：${ApiError.messageFor(error)}',
+                'Failed to delete books: ${ApiError.messageFor(error)}'),
           ),
         ),
       );

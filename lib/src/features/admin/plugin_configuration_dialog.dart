@@ -57,7 +57,8 @@ class _PluginConfigDialogState extends State<_PluginConfigDialog> {
     } catch (error) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(context.localeText(
-              '配置格式不正确: $error', 'Invalid config: $error'))));
+              '配置格式不正确: ${ApiError.messageFor(error)}',
+              'Invalid config: ${ApiError.messageFor(error)}'))));
       return;
     }
     final saved = await _configuration?.save(values) ?? false;

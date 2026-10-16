@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/api/api_error.dart';
 import '../../../core/models/models.dart';
 import '../../../core/state/books_state.dart';
 import '../../../core/theme/app_theme.dart';
@@ -122,8 +123,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           SnackBar(
             content: Text(
               context.localeText(
-                '加载系列失败：$error',
-                'Failed to load series: $error',
+                '加载系列失败：${ApiError.messageFor(error)}',
+                'Failed to load series: ${ApiError.messageFor(error)}',
               ),
             ),
           ),
@@ -226,12 +227,12 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
           content: Text(
             operation == _SeriesBatchOperation.delete
                 ? context.localeText(
-                    '删除书籍失败：$error',
-                    'Failed to delete books: $error',
+                    '删除书籍失败：${ApiError.messageFor(error)}',
+                    'Failed to delete books: ${ApiError.messageFor(error)}',
                   )
                 : context.localeText(
-                    '更新所选书籍失败：$error',
-                    'Failed to update selected books: $error',
+                    '更新所选书籍失败：${ApiError.messageFor(error)}',
+                    'Failed to update selected books: ${ApiError.messageFor(error)}',
                   ),
           ),
         ),
@@ -367,7 +368,8 @@ class _SeriesDetailPageState extends State<SeriesDetailPage> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            context.localeText('加载书籍失败：$error', 'Failed to load books: $error'),
+            context.localeText('加载书籍失败：${ApiError.messageFor(error)}',
+                'Failed to load books: ${ApiError.messageFor(error)}'),
           ),
         ),
       );

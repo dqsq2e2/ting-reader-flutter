@@ -1,4 +1,5 @@
 import '_helpers.dart';
+import '../api/api_error.dart';
 
 const defaultWebhookBodyTemplate = '{{json:payload}}';
 
@@ -105,7 +106,7 @@ class WebhookTestResult {
   final int status;
   final String responseBody;
   final String renderedBody;
-  final String? error;
+  final ApiError? error;
 
   factory WebhookTestResult.fromJson(Map<String, dynamic> json) {
     return WebhookTestResult(
@@ -113,7 +114,7 @@ class WebhookTestResult {
       status: (json['status'] as num?)?.toInt() ?? 0,
       responseBody: (json['response_body'] ?? '').toString(),
       renderedBody: (json['rendered_body'] ?? '').toString(),
-      error: (json['error'] as String?)?.trim(),
+      error: json['error'] == null ? null : ApiError.from(json['error']),
     );
   }
 }

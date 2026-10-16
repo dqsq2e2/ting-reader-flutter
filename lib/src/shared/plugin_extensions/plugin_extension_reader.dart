@@ -108,7 +108,7 @@ class _PluginDocumentReaderPanelState
       });
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = ApiError.messageFor(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -133,7 +133,7 @@ class _PluginDocumentReaderPanelState
       setState(() => _chunk = chunk);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = ApiError.messageFor(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -157,7 +157,7 @@ class _PluginDocumentReaderPanelState
       setState(() => _page = page);
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = ApiError.messageFor(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }

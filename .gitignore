@@ -57,6 +57,7 @@ test/*
 !test/download_state_test.dart
 !test/flutter_test_config.dart
 !test/api_client_gateway_token_test.dart
+!test/api_error_test.dart
 !test/book_cover_upload_test.dart
 !test/webdav_metadata_config_test.dart
 !test/fn_connect_route_readiness_test.dart

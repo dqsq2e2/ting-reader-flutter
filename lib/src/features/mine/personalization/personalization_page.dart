@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/api/api_error.dart';
 import '../../../core/models/models.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/home_layout.dart';
@@ -161,7 +162,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       if (!mounted) return;
       _applySettings(appState.settings);
       setState(() {});
-      _showSnack(context.l10n.commonSaveFailed(error.toString()));
+      _showSnack(context.l10n.commonSaveFailed(ApiError.messageFor(error)));
     } finally {
       final pending = Map<String, dynamic>.from(_pendingSettingsPatch);
       _pendingSettingsPatch.clear();
@@ -199,7 +200,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (!mounted) return;
-      _showSnack(context.l10n.commonSaveFailed(error.toString()));
+      _showSnack(context.l10n.commonSaveFailed(ApiError.messageFor(error)));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -226,7 +227,7 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
       });
     } catch (error) {
       if (mounted) {
-        _showSnack(context.l10n.commonSaveFailed(error.toString()));
+        _showSnack(context.l10n.commonSaveFailed(ApiError.messageFor(error)));
       }
     } finally {
       if (mounted) setState(() => _timeZoneSaving = false);

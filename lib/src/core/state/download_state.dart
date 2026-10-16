@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 import '../utils/urls.dart';
 import 'app_state.dart';
@@ -638,7 +639,7 @@ class DownloadState extends ChangeNotifier {
         return;
       }
       task.status = DownloadStatus.failed;
-      task.error = error.toString();
+      task.error = ApiError.messageFor(error);
       task.touch();
       _completeWaitersWithError(task.storageKey, error);
       try {

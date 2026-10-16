@@ -11,6 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_win_floating/webview_plugin.dart';
 
 import '../../core/document_reader/document_reader.dart';
+import '../../core/api/api_error.dart';
 import '../../core/auth/fnos_gateway_auth.dart';
 import '../../core/models/_helpers.dart' show asMap;
 import '../../core/plugin_extensions/types.dart';
@@ -115,7 +116,7 @@ class _PluginExtensionHostState extends State<PluginExtensionHost>
       if (!mounted) return;
       setState(() {
         _actionFailed = true;
-        _actionMessage = error.toString();
+        _actionMessage = ApiError.messageFor(error);
       });
     } finally {
       if (mounted) setState(() => _running = false);
@@ -280,7 +281,7 @@ class _PluginExtensionSlotState extends State<PluginExtensionSlot>
     } catch (error) {
       if (!mounted) return;
       _actionFailed = true;
-      _actionMessage = error.toString();
+      _actionMessage = ApiError.messageFor(error);
     } finally {
       if (mounted) {
         _running = false;

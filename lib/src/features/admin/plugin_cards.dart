@@ -134,6 +134,13 @@ class _PluginCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
+          if (item.error case final failure?) ...[
+            Text(
+              ApiError.messageFor(failure),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            const SizedBox(height: 8),
+          ],
           InkWell(
             onTap: onToggleDescription,
             borderRadius: BorderRadius.circular(8),

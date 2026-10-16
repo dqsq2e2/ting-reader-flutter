@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/application_time_zone.dart';
@@ -93,12 +94,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _shortError(Object error) {
-    final text = error.toString();
-    const dioPrefix = 'DioException [';
-    if (text.startsWith(dioPrefix)) {
-      return text.split('\n').first;
-    }
-    return text.replaceFirst('Exception: ', '');
+    return ApiError.messageFor(error);
   }
 
   List<Book> get _recentlyAdded {

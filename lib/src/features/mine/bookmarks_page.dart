@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/models/_helpers.dart' show readDouble, readInt, readString;
 import '../../core/theme/app_theme.dart';
@@ -57,7 +58,7 @@ class _BookmarksPageState extends State<BookmarksPage> {
         _expanded.clear();
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = ApiError.messageFor(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -248,7 +249,7 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
       });
     } catch (error) {
       if (mounted && revision == _loadRevision) {
-        setState(() => _error = error.toString());
+        setState(() => _error = ApiError.messageFor(error));
       }
     } finally {
       if (mounted && revision == _loadRevision) {
@@ -280,8 +281,8 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
       if (mounted) widget.onCountChanged?.call(_total);
     } catch (error) {
       if (mounted) {
-        _message(context.localeText(
-            '添加书签失败：$error', 'Could not add bookmark: $error'));
+        _message(context.localeText('添加书签失败：${ApiError.messageFor(error)}',
+            'Could not add bookmark: ${ApiError.messageFor(error)}'));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -305,7 +306,8 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
       if (mounted) await _load(1);
     } catch (error) {
       if (mounted) {
-        _message(context.localeText('保存失败：$error', 'Save failed: $error'));
+        final message = ApiError.messageFor(error);
+        _message(context.localeText('保存失败：$message', 'Save failed: $message'));
       }
     }
   }
@@ -318,7 +320,9 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
       if (mounted) widget.onCountChanged?.call(_total);
     } catch (error) {
       if (mounted) {
-        _message(context.localeText('删除失败：$error', 'Delete failed: $error'));
+        final message = ApiError.messageFor(error);
+        _message(
+            context.localeText('删除失败：$message', 'Delete failed: $message'));
       }
     }
   }
@@ -363,8 +367,8 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
       if (mounted && widget.allowAdd) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
-        _message(context.localeText(
-            '跳转失败：$error', 'Could not play bookmark: $error'));
+        _message(context.localeText('跳转失败：${ApiError.messageFor(error)}',
+            'Could not play bookmark: ${ApiError.messageFor(error)}'));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -373,8 +377,8 @@ class _BookBookmarkPanelState extends State<BookBookmarkPanel> {
 
   void _jumpError(Object error) {
     if (!mounted) return;
-    _message(
-        context.localeText('跳转失败：$error', 'Could not play bookmark: $error'));
+    _message(context.localeText('跳转失败：${ApiError.messageFor(error)}',
+        'Could not play bookmark: ${ApiError.messageFor(error)}'));
   }
 
   void _message(String text) =>

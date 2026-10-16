@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 
 /// Owns one manual scrape session: sources, search inputs, ranked results,
@@ -667,16 +668,7 @@ int scrapeTitleMatchScore(Object? candidate, List<String> terms) {
 }
 
 String scrapeErrorMessage(Object error) {
-  if (error is DioException) {
-    final data = error.response?.data;
-    final map = asMap(data);
-    final message = map['message']?.toString() ?? map['error']?.toString();
-    if (message != null && message.trim().isNotEmpty) {
-      return message.trim();
-    }
-    return error.message ?? error.toString();
-  }
-  return error.toString();
+  return ApiError.messageFor(error);
 }
 
 String bookDefaultScrapeValue(Book book, ScrapeSearchField field) {

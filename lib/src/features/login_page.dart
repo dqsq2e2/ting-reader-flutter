@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/auth/fn_connect_client.dart';
 import '../core/auth/fnos_gateway_auth.dart';
+import '../core/api/api_error.dart';
 import '../core/state/app_state.dart';
 import '../core/theme/app_theme.dart';
 import '../core/utils/external_links.dart';
@@ -428,22 +429,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   String _loginErrorMessage(Object error) {
-    if (error is DioException) {
-      final messageValue = error.message;
-      final data = error.response?.data;
-      if (data is Map && data['error'] != null) return data['error'].toString();
-      final status = error.response?.statusCode;
-      final uri = error.requestOptions.uri.toString();
-      final parts = <String>[
-        context.l10n.authLoginFailed,
-        if (status != null) 'HTTP $status',
-        if (messageValue != null && messageValue.isNotEmpty) messageValue,
-        uri,
-      ];
-      return parts.join('：');
-    }
-    final text = error.toString().replaceFirst('Bad state: ', '');
-    return text.isEmpty ? context.l10n.authLoginFailedFallback : text;
+    return ApiError.messageFor(error, fallback: context.l10n.authLoginFailed);
   }
 
   @override

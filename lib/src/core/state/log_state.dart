@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 
 /// Owns filtered system/plugin log requests and their refresh timer.
@@ -107,7 +108,7 @@ class LogState extends ChangeNotifier {
       error = null;
     } catch (failure) {
       if (!_disposed && revision == _revision && !token.isCancelled) {
-        error = failure.toString();
+        error = ApiError.messageFor(failure);
       }
     } finally {
       if (!_disposed && revision == _revision) {

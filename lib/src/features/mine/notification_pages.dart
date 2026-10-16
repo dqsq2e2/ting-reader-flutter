@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/state/notification_state.dart';
 import '../../core/theme/app_theme.dart';

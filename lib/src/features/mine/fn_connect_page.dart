@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/api/api_client.dart';
+import '../../core/api/api_error.dart';
 import '../../core/auth/fn_connect_client.dart';
 import '../../core/auth/fnos_gateway_auth.dart';
 import '../../core/state/app_state.dart';
@@ -68,7 +69,7 @@ class _FnConnectPageState extends State<FnConnectPage> {
   }
 
   String _errorText(Object error) {
-    return error.toString().replaceFirst('Bad state: ', '');
+    return ApiError.messageFor(error);
   }
 
   void _toggleUnavailable(FnConnectCandidateGroup group) {

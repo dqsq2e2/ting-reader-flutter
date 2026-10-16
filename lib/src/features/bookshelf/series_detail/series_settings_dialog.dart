@@ -106,7 +106,8 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(context.localeText(
-                '保存系列失败：$error', 'Failed to save series: $error'))),
+                '保存系列失败：${ApiError.messageFor(error)}',
+                'Failed to save series: ${ApiError.messageFor(error)}'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -154,7 +155,8 @@ class _SeriesSettingsDialogState extends State<_SeriesSettingsDialog> {
       messenger.showSnackBar(
         SnackBar(
             content: Text(context.localeText(
-                '删除系列失败：$error', 'Failed to delete series: $error'))),
+                '删除系列失败：${ApiError.messageFor(error)}',
+                'Failed to delete series: ${ApiError.messageFor(error)}'))),
       );
       setState(() => _deleting = false);
     }

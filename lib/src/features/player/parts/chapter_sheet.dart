@@ -177,7 +177,8 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(context.localeText(
-                '加入下载失败：$error', 'Failed to add download: $error'))));
+                '加入下载失败：${ApiError.messageFor(error)}',
+                'Failed to add download: ${ApiError.messageFor(error)}'))));
       }
     }
   }

@@ -162,6 +162,7 @@ void main() {
     expect(script, contains('bridge_token: bridgeToken'));
     expect(script, contains('const bridgeNonce = "test-nonce"'));
     expect(script, contains('const bridgeToken = "test-token"'));
+    expect(script, contains('createError: createRequestError'));
   });
 
   test('plugin asset URL validation includes the client grant segment', () {

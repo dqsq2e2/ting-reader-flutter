@@ -78,7 +78,8 @@ class _PluginsPageState extends State<PluginsPage> {
       AppScope.appOf(context).notifyPluginExtensionsChanged();
     } catch (error) {
       if (mounted) {
-        _showSnack(context.localeText('重载失败：$error', 'Reload failed: $error'));
+        _showSnack(context.localeText('重载失败：${ApiError.messageFor(error)}',
+            'Reload failed: ${ApiError.messageFor(error)}'));
       }
     }
   }
@@ -108,8 +109,13 @@ class _PluginsPageState extends State<PluginsPage> {
       );
       if (!mounted || !installed) return;
       _showSnack(context.l10n.pluginsInstalled);
-    } catch (_) {
-      if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
+    } catch (error) {
+      if (mounted) {
+        _showSnack(ApiError.messageFor(
+          error,
+          fallback: context.l10n.pluginsInstallFailed,
+        ));
+      }
     } finally {
       if (mounted && attemptedInstall) {
         AppScope.appOf(context).notifyPluginExtensionsChanged();
@@ -188,8 +194,13 @@ class _PluginsPageState extends State<PluginsPage> {
       if (!mounted) return;
       _showSnack(context.l10n.pluginsInstalled);
       AppScope.appOf(context).notifyPluginExtensionsChanged();
-    } catch (_) {
-      if (mounted) _showSnack(context.l10n.pluginsInstallFailed);
+    } catch (error) {
+      if (mounted) {
+        _showSnack(ApiError.messageFor(
+          error,
+          fallback: context.l10n.pluginsInstallFailed,
+        ));
+      }
     } finally {
       if (mounted) setState(() => _uploadingPlugin = false);
     }
@@ -230,8 +241,8 @@ class _PluginsPageState extends State<PluginsPage> {
       AppScope.appOf(context).notifyPluginExtensionsChanged();
     } catch (error) {
       if (mounted) {
-        _showSnack(
-            context.localeText('卸载失败：$error', 'Uninstall failed: $error'));
+        _showSnack(context.localeText('卸载失败：${ApiError.messageFor(error)}',
+            'Uninstall failed: ${ApiError.messageFor(error)}'));
       }
     }
   }

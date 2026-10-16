@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../../core/api/api_error.dart';
 import '../../core/state/download_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/application_time_zone.dart';
@@ -258,7 +259,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.downloadsSaveSettingsFailed('$error')),
+          content: Text(context.l10n
+              .downloadsSaveSettingsFailed(ApiError.messageFor(error))),
         ),
       );
     }

@@ -101,10 +101,11 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
                 ? context.localeText('连接成功！', 'Connection successful')
                 : context.localeText('连接失败', 'Connection failed')),
       );
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _showMessage(context.localeText(
-          '请求失败，请检查 WebDAV 配置', 'Request failed. Check your WebDAV settings.'));
+      _showMessage(ApiError.messageFor(error,
+          fallback: context.localeText('请求失败，请检查 WebDAV 配置',
+              'Request failed. Check your WebDAV settings.')));
     } finally {
       if (mounted) setState(() => _testingConnection = false);
     }
@@ -121,10 +122,11 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
         return source.autoScrape;
       }).toList();
       setState(() => _scraperSources = sources);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _showMessage(
-          context.localeText('获取刮削源失败', 'Failed to load scraper sources'));
+      _showMessage(ApiError.messageFor(error,
+          fallback:
+              context.localeText('获取刮削源失败', 'Failed to load scraper sources')));
     } finally {
       if (mounted) setState(() => _scraperSourcesLoading = false);
     }
@@ -193,13 +195,14 @@ class _LibraryEditorDialogState extends State<_LibraryEditorDialog> {
         await api.post('/api/libraries', data: payload);
       }
       if (mounted) Navigator.pop(context, true);
-    } catch (_) {
+    } catch (error) {
       if (!mounted) return;
-      _showMessage(_editing
-          ? context.localeText(
-              '修改失败，请检查配置', 'Update failed. Check the configuration.')
-          : context.localeText(
-              '添加失败，请检查配置', 'Create failed. Check the configuration.'));
+      _showMessage(ApiError.messageFor(error,
+          fallback: _editing
+              ? context.localeText(
+                  '修改失败，请检查配置', 'Update failed. Check the configuration.')
+              : context.localeText(
+                  '添加失败，请检查配置', 'Create failed. Check the configuration.')));
     } finally {
       if (mounted) setState(() => _saving = false);
     }

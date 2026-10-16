@@ -58,7 +58,7 @@ class _PluginExtensionPageState extends State<PluginExtensionPage> {
       if (!mounted) return;
       setState(() {
         _failed = true;
-        _message = error.toString();
+        _message = ApiError.messageFor(error);
       });
     } finally {
       if (mounted) setState(() => _running = false);
@@ -489,7 +489,7 @@ class _PluginBuiltinViewState extends State<_PluginBuiltinView> {
       if (!mounted) return;
       setState(() {
         _failed = true;
-        _message = error.toString();
+        _message = ApiError.messageFor(error);
       });
     } finally {
       if (mounted) setState(() => _running = false);

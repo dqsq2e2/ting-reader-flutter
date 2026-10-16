@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../auth/fn_access_code.dart';
 import '../auth/credential_store.dart';
 import '../auth/fn_connect_client.dart';

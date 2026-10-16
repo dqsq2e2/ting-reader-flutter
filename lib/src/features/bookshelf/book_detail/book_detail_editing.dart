@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../../core/api/api_error.dart';
 import '../../../core/models/models.dart';
 import '../../../core/state/books_state.dart';
 import '../../../core/theme/app_theme.dart';
@@ -43,7 +44,8 @@ Future<EditBookDialogResult?> showBookEditorDialog(
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            context.l10n.bookDetailWriteMetadataFailed(error.toString()),
+            context.l10n
+                .bookDetailWriteMetadataFailed(ApiError.messageFor(error)),
           ),
         ),
       );
@@ -126,8 +128,8 @@ Future<EditBookDialogResult?> showBookEditorDialog(
               }
             } catch (error) {
               if (!dialogContext.mounted) return;
-              setDialogState(() => dialogError =
-                  context.l10n.bookDetailSaveFailed(error.toString()));
+              setDialogState(() => dialogError = context.l10n
+                  .bookDetailSaveFailed(ApiError.messageFor(error)));
             } finally {
               if (dialogContext.mounted) {
                 setDialogState(() => saving = false);
@@ -176,8 +178,8 @@ Future<EditBookDialogResult?> showBookEditorDialog(
               if (dialogContext.mounted) {
                 if (!dialogContext.mounted) return;
                 setDialogState(() => dialogError = context.localeText(
-                      '无法选择封面：$error',
-                      'Could not select a cover: $error',
+                      '无法选择封面：${ApiError.messageFor(error)}',
+                      'Could not select a cover: ${ApiError.messageFor(error)}',
                     ));
               }
             } finally {
@@ -210,8 +212,8 @@ Future<EditBookDialogResult?> showBookEditorDialog(
               }
             } catch (error) {
               if (!dialogContext.mounted) return;
-              setDialogState(() => dialogError =
-                  context.l10n.bookDetailDeleteFailed(error.toString()));
+              setDialogState(() => dialogError = context.l10n
+                  .bookDetailDeleteFailed(ApiError.messageFor(error)));
             } finally {
               if (dialogContext.mounted) {
                 setDialogState(() => deleting = false);
@@ -241,7 +243,8 @@ Future<EditBookDialogResult?> showBookEditorDialog(
             } catch (error) {
               if (!dialogContext.mounted) return;
               setDialogState(() => dialogError = context.localeText(
-                  '生成失败：$error', 'Generation failed: $error'));
+                  '生成失败：${ApiError.messageFor(error)}',
+                  'Generation failed: ${ApiError.messageFor(error)}'));
             } finally {
               if (dialogContext.mounted) {
                 setDialogState(() => generating = false);

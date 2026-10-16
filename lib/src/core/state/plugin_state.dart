@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../api/api_client.dart';
+import '../api/api_error.dart';
 import '../models/models.dart';
 
 /// Owns plugin catalogue loading and package confirmation retries.
@@ -134,7 +135,7 @@ class PluginState extends ChangeNotifier {
       }
     } catch (failure) {
       if (!_disposed && revision == _installedRevision && !token.isCancelled) {
-        error = failure.toString();
+        error = ApiError.messageFor(failure);
       }
     } finally {
       _requests.remove(token);
@@ -167,7 +168,7 @@ class PluginState extends ChangeNotifier {
       }
     } catch (failure) {
       if (!_disposed && revision == _storeRevision && !token.isCancelled) {
-        error = failure.toString();
+        error = ApiError.messageFor(failure);
       }
     } finally {
       _requests.remove(token);
@@ -345,7 +346,9 @@ class PluginConfigurationState extends ChangeNotifier {
         error = null;
       }
     } catch (failure) {
-      if (!_disposed && !token.isCancelled) error = failure.toString();
+      if (!_disposed && !token.isCancelled) {
+        error = ApiError.messageFor(failure);
+      }
     } finally {
       _requests.remove(token);
       if (!_disposed) {
@@ -366,7 +369,9 @@ class PluginConfigurationState extends ChangeNotifier {
       await api.put(_endpoint, data: {'config': values}, cancelToken: token);
       return !_disposed;
     } catch (failure) {
-      if (!_disposed && !token.isCancelled) error = failure.toString();
+      if (!_disposed && !token.isCancelled) {
+        error = ApiError.messageFor(failure);
+      }
       return false;
     } finally {
       _requests.remove(token);

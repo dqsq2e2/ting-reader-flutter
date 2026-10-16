@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../core/api/api_error.dart';
 import '../../../core/models/models.dart';
 import '../../../core/state/books_state.dart';
 import '../../../core/theme/app_theme.dart';
@@ -215,7 +216,8 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(context.localeText(
-                '保存章节失败：$err', 'Failed to save chapters: $err'))),
+                '保存章节失败：${ApiError.messageFor(err)}',
+                'Failed to save chapters: ${ApiError.messageFor(err)}'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -247,7 +249,8 @@ class ChapterManagerDialogState extends State<ChapterManagerDialog> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(context.localeText(
-                '移动章节失败：$err', 'Failed to move chapters: $err'))),
+                '移动章节失败：${ApiError.messageFor(err)}',
+                'Failed to move chapters: ${ApiError.messageFor(err)}'))),
       );
     } finally {
       if (mounted) setState(() => _moving = false);
