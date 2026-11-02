@@ -177,7 +177,7 @@ class LibraryCache {
           return file;
         }
       }
-      return _loadCover(key, fetch);
+      return await _loadCover(key, fetch);
     } catch (_) {
       return null;
     }
