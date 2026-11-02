@@ -109,6 +109,14 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late final ShellNavigation _navigation;
+  static const _primaryDestinations = [
+    AppDestination.bookshelf,
+    AppDestination.playlists,
+    AppDestination.downloads,
+    AppDestination.mine,
+  ];
+  final Map<AppDestination, Widget> _primaryPages = {};
+  String? _pageIdentity;
   AppDestination get _destination => _navigation.destination;
   AppDestination get _searchOrigin => _navigation.searchOrigin;
   String? get _bookId => _navigation.bookId;
@@ -191,7 +199,7 @@ class _AppShellState extends State<AppShell> {
       if (!mounted || changeCredentials != true) return;
       final active = AppScope.appOf(context);
       if ('${active.serverUrl}:${active.user?.id}' != identity) return;
-      AppScope.playerOf(context).setExpanded(false);
+      AppScope.playerOf(context, listen: false).setExpanded(false);
       _go(AppDestination.mine);
     });
   }
@@ -223,12 +231,19 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _navigate(VoidCallback change) {
+    final refresh =
+        _navigation.hasDetail || !_primaryDestinations.contains(_destination);
     setState(() {
       _mobileAdminDrawerOpen = false;
+      if (refresh) {
+        _primaryPages.removeWhere(
+            (destination, _) => destination != AppDestination.bookshelf);
+      }
       change();
     });
+    if (refresh) AppScope.appOf(context).refreshLibraryViews();
     if (hidesMiniPlayer(_navigation.navDestination)) {
-      AppScope.playerOf(context).setExpanded(false);
+      AppScope.playerOf(context, listen: false).setExpanded(false);
     }
   }
 
@@ -260,10 +275,10 @@ class _AppShellState extends State<AppShell> {
       _navigate(() => _navigation.openDetail(DetailDestination.playlist, id));
   void _openSearch(AppDestination origin) =>
       _navigate(() => _navigation.openSearch(origin));
-  void _backFromDetail() => setState(_navigation.closeDetail);
+  void _backFromDetail() => _navigate(_navigation.closeDetail);
 
   bool _handleSystemBack() {
-    final player = AppScope.playerOf(context);
+    final player = AppScope.playerOf(context, listen: false);
     if (player.isExpanded) {
       player.setExpanded(false);
       return true;
@@ -313,9 +328,10 @@ class _AppShellState extends State<AppShell> {
               final sidebarCollapsed = appState.sidebarCollapsed;
               final navDestination = _navigation.navDestination;
               return AnimatedBuilder(
-                animation: AppScope.playerOf(context),
-                builder: (context, _) {
-                  final player = AppScope.playerOf(context);
+                animation: AppScope.playerOf(context, listen: false),
+                child: _page(),
+                builder: (context, page) {
+                  final player = AppScope.playerOf(context, listen: false);
                   final bottomInset = MediaQuery.of(context).padding.bottom;
                   final collapsedMini = player.isMiniCollapsed;
                   final showMiniPlayer = player.hasChapter &&
@@ -349,7 +365,7 @@ class _AppShellState extends State<AppShell> {
                                     _MobileHeader(
                                       openMenu: _openMobileAdminDrawer,
                                     ),
-                                  Expanded(child: _page()),
+                                  Expanded(child: page!),
                                   if (!desktop)
                                     _BottomNav(
                                       current: navDestination,
@@ -419,6 +435,41 @@ class _AppShellState extends State<AppShell> {
   }
 
   Widget _page() {
+    final app = AppScope.appOf(context);
+    final identity =
+        '${app.serverMode}:${app.serverUrl}:${app.fnId}:${app.user?.id}:${app.offlineMode}';
+    if (_pageIdentity != identity) {
+      _primaryPages.clear();
+      _pageIdentity = identity;
+    }
+    if (app.offlineMode) return _buildPage();
+    final primary =
+        !_navigation.hasDetail && _primaryDestinations.contains(_destination);
+    if (primary) _primaryPages.putIfAbsent(_destination, _buildPage);
+    return Stack(
+      key: ValueKey(identity),
+      fit: StackFit.expand,
+      children: [
+        IndexedStack(
+          index: primary ? _primaryDestinations.indexOf(_destination) : null,
+          sizing: StackFit.expand,
+          children: [
+            for (final destination in _primaryDestinations)
+              ExcludeFocus(
+                excluding: !primary || _destination != destination,
+                child: TickerMode(
+                  enabled: primary && _destination == destination,
+                  child: _primaryPages[destination] ?? const SizedBox.shrink(),
+                ),
+              ),
+          ],
+        ),
+        if (!primary) _buildPage(),
+      ],
+    );
+  }
+
+  Widget _buildPage() {
     final bookId = _bookId;
     final playlistId = _playlistId;
     final seriesId = _seriesId;

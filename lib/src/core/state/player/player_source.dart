@@ -2,6 +2,57 @@ part of '../player_state.dart';
 
 /// Audio source construction, local downloads and notification metadata.
 extension _PlayerSources on PlayerState {
+  bool _canReuseAudioQueue(Book book, List<Chapter> nextChapters) {
+    if (book.libraryType == 'source' ||
+        _usingSegmentSource ||
+        !_usingAudioQueue ||
+        _usingTranscodeStream ||
+        error != null ||
+        _audio.processingState == audio.ProcessingState.completed ||
+        _audio.processingState == audio.ProcessingState.idle ||
+        !identical(currentBook, book) ||
+        _mediaAuthRevision != appState.api.authRevision ||
+        chapters.length != nextChapters.length) {
+      return false;
+    }
+    for (var index = 0; index < chapters.length; index++) {
+      if (chapters[index].id != nextChapters[index].id ||
+          chapters[index].path != nextChapters[index].path) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Future<bool> _seekExistingAudioQueue(
+    Chapter chapter,
+    int index, {
+    required String? localPath,
+    required double position,
+  }) async {
+    if (_failedQueueChapters.contains(chapter.id)) return false;
+    final queue = _audio.audioSource;
+    if (queue is! audio.ConcatenatingAudioSource ||
+        index < 0 ||
+        index >= queue.children.length) {
+      return false;
+    }
+    final source = queue.children[index];
+    final expected = localPath == null
+        ? Uri.parse(streamUrl(chapter.id))
+        : Uri.file(localPath);
+    if (source is! audio.UriAudioSource || source.uri != expected) return false;
+    try {
+      // 音源和鉴权未变时直接切换队列索引，不重新加载整本书。
+      await _seekAudioQueueToChapter(index, currentBook!, chapter,
+          position: position);
+      return true;
+    } catch (_) {
+      // 原生后端不支持队列跳转时，回退到原有的音源加载流程。
+      return false;
+    }
+  }
+
   String _buildStreamUrl(
     String chapterId, {
     String? transcodeFormat,
@@ -81,12 +132,14 @@ extension _PlayerSources on PlayerState {
     required double position,
   }) async {
     final mediaItem = _mediaItemFor(book, chapter);
+    // Embedded chapters start partway into the shared file.
+    final startPosition = Duration(
+      milliseconds: ((chapter.startSeconds + position) * 1000).round(),
+    );
     if (localPath != null) {
       await _audio.setAudioSource(
         audio.AudioSource.uri(Uri.file(localPath), tag: mediaItem),
-        initialPosition: Duration(
-          milliseconds: (position * 1000).round(),
-        ),
+        initialPosition: startPosition,
       );
       _mediaAuthRevision = appState.api.authRevision;
       return;
@@ -95,9 +148,35 @@ extension _PlayerSources on PlayerState {
     await _setAudioUrlWithRedirectRecovery(
       () => streamUrl(chapter.id),
       mediaItem: mediaItem,
-      initialPosition: Duration(
-        milliseconds: (position * 1000).round(),
-      ),
+      initialPosition: startPosition,
+    );
+  }
+
+  /// Play one time range of a single-file audiobook. Every embedded chapter
+  /// shares the same file, so the source is opened once and positioned at the
+  /// chapter start instead of concatenating the file once per chapter.
+  Future<void> _setSegmentSource(
+    Book book,
+    Chapter chapter, {
+    required String? localPath,
+    required double position,
+  }) async {
+    final mediaItem = _mediaItemFor(book, chapter);
+    final startPosition = Duration(
+      milliseconds: ((chapter.startSeconds + position) * 1000).round(),
+    );
+    if (localPath != null) {
+      await _audio.setAudioSource(
+        audio.AudioSource.uri(Uri.file(localPath), tag: mediaItem),
+        initialPosition: startPosition,
+      );
+      _mediaAuthRevision = appState.api.authRevision;
+      return;
+    }
+    await _setAudioUrlWithRedirectRecovery(
+      () => streamUrl(chapter.id),
+      mediaItem: mediaItem,
+      initialPosition: startPosition,
     );
   }
 
@@ -218,6 +297,18 @@ extension _PlayerSources on PlayerState {
     return null;
   }
 
+  /// A segmented book stores the whole file under every chapter id. Reuse the
+  /// first chapter that has a local copy instead of downloading the audio once
+  /// per chapter.
+  Future<String?> _sharedSegmentLocalPath(List<Chapter> chapterList) async {
+    for (final chapter in chapterList) {
+      final localPath = _localFilePathFromChapter(chapter) ??
+          await downloadState.localPathForChapter(chapter.id);
+      if (localPath != null) return localPath;
+    }
+    return null;
+  }
+
   MediaItem _mediaItemFor(
     Book book,
     Chapter chapter, {
@@ -226,10 +317,10 @@ extension _PlayerSources on PlayerState {
     final authorValue = book.author;
     final narratorValue = book.narrator;
     final artistParts = [
-      if (narratorValue != null && narratorValue.trim().isNotEmpty)
-        narratorValue.trim(),
       if (authorValue != null && authorValue.trim().isNotEmpty)
         authorValue.trim(),
+      if (narratorValue != null && narratorValue.trim().isNotEmpty)
+        narratorValue.trim(),
     ];
     final artUri = _mediaArtUri(book);
     final artHeaders = artUri != null &&
@@ -237,6 +328,7 @@ extension _PlayerSources on PlayerState {
             appState.usesActiveOrigin(artUri.toString())
         ? _streamHeaders
         : null;
+    final chapterIndex = chapters.indexWhere((item) => item.id == chapter.id);
     return MediaItem(
       id: chapter.id,
       album: book.title,
@@ -249,6 +341,8 @@ extension _PlayerSources on PlayerState {
       extras: {
         'bookId': book.id,
         'chapterId': chapter.id,
+        if (chapterIndex >= 0) 'queueIndex': chapterIndex,
+        if (chapters.isNotEmpty) 'queueCount': chapters.length,
         if (streamOffset > 0) 'streamOffsetSeconds': streamOffset,
       },
     );

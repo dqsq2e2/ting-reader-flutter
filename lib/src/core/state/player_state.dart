@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart' as audio_session;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter/widgets.dart';
 import 'package:just_audio/just_audio.dart' as audio;
 import 'package:just_audio_background/just_audio_background.dart'
@@ -12,6 +13,7 @@ import 'package:just_audio_background/just_audio_background.dart'
 
 import '../api/api_client.dart';
 import '../api/api_error.dart';
+import '../services/socket_heartbeat.dart';
 import '../models/models.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/urls.dart';
@@ -46,12 +48,16 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       handleAudioSessionActivation: false,
     );
     _positionSub = _audio.positionStream.listen((position) {
-      if (_suppressPositionUpdates) return;
+      if (_suppressPositionUpdates || _applyingQueueStartSeek) return;
+      if (_usingAudioQueue && _audio.currentIndex != _currentChapterIndex) {
+        return;
+      }
       currentTime = _displayTimeForAudioPosition(position);
       if (currentTime > _furthestChapterPosition) {
         _furthestChapterPosition = currentTime;
       }
       _handleSkipOutro();
+      _handleSegmentEnd();
       notifyListeners();
     });
     _durationSub = _audio.durationStream.listen((durationValue) {
@@ -59,8 +65,13 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
         final chapter = currentChapter;
         final chapterDuration = chapter?.duration.toDouble() ?? 0;
         final discoveredDuration = durationValue.inMilliseconds / 1000;
-        duration = _usingTranscodeStream ? chapterDuration : discoveredDuration;
-        if (chapter != null && chapter.duration <= 0) {
+        // A segment describes only a slice of the shared file, and a
+        // transcoded response only a partial stream: never adopt the native
+        // duration there.
+        duration = _usingTranscodeStream || _usingSegmentSource
+            ? chapterDuration
+            : discoveredDuration;
+        if (chapter != null && !chapter.isSegmented && chapter.duration <= 0) {
           _syncDiscoveredChapterDuration(chapter, discoveredDuration);
         }
         notifyListeners();
@@ -94,7 +105,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
       }
     });
     _indexSub = _audio.currentIndexStream.listen(_syncChapterFromAudioIndex);
+    _errorSub = _audio.playbackEventStream
+        .listen((_) {}, onError: _handleNativePlaybackError);
     if (!kIsWeb) {
+      audio_background.JustAudioBackground.setBeforePlayHandler(
+          _prepareBackgroundPlayback);
       audio_background.JustAudioBackground.setSeekHandler(
         (position) => seek(position.inMilliseconds / 1000),
       );
@@ -118,6 +133,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<audio.PlayerState>? _completeSub;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription<audio.PlaybackEvent>? _errorSub;
   StreamSubscription<audio_session.AudioInterruptionEvent>? _interruptionSub;
   StreamSubscription<void>? _noisySub;
   StreamSubscription<audio_session.AudioDevicesChangedEvent>?
@@ -173,8 +189,16 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _usingTranscodeStream = false;
   bool _usingAudioQueue = false;
   bool _usingGatewaySingleChapterSource = false;
+  // A single-file audiobook split into embedded chapters: one source for the
+  // whole file, chapters are time ranges reached by seeking.
+  bool _usingSegmentSource = false;
+  bool _segmentAdvancing = false;
   bool _suppressPositionUpdates = false;
   bool _applyingQueueStartSeek = false;
+  final Set<String> _failedQueueChapters = {};
+  bool _recoveringQueueFailure = false;
+  String? _lastRecoveredQueueChapterId;
+  bool _connectingPlayback = false;
   ({int play, int seek})? _completedPlaybackOperation;
   bool _gatewayReauthenticationPending = false;
   bool _resumeAfterGatewayReauthentication = false;
@@ -199,6 +223,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     },
   );
   late final BookOperations _bookOperations = BookOperations(appState.api);
+  ChapterCatalogue? _sourceCatalogue;
 
   Book? currentBook;
   Chapter? currentChapter;
@@ -214,7 +239,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _speedInitialized = false;
   String? error;
   // Allow other apps to keep playing audio by default.
-  bool ignoreAudioFocus = true;
+  bool ignoreAudioFocus = defaultTargetPlatform != TargetPlatform.iOS;
   bool usingLocalFile = false;
   bool _advancingFromOutro = false;
   // Always enabled: an interruption resumes only if playback was active when
@@ -222,6 +247,11 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   bool _resumeAfterInterruption = false;
 
   bool get hasChapter => currentBook != null && currentChapter != null;
+  bool get isLoading =>
+      _connectingPlayback ||
+      (hasChapter &&
+          (_audio.processingState == audio.ProcessingState.loading ||
+              _audio.processingState == audio.ProcessingState.buffering));
 
   void updateBookMetadata(Book book) {
     if (currentBook?.id != book.id) return;
@@ -239,6 +269,9 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     final index = _currentChapterIndex;
     if (index < 0) return false;
     final target = index + offset;
+    if (currentBook?.libraryType == 'source') {
+      return target >= 0 || chapters.first.chapterIndex > 1;
+    }
     return target >= 0 && target < chapters.length;
   }
 
@@ -297,9 +330,12 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> playChapter(
-          Book book, List<Chapter> chapterList, Chapter chapter,
-          {double? startAt}) =>
-      _playChapter(book, chapterList, chapter, startAt: startAt);
+      Book book, List<Chapter> chapterList, Chapter chapter,
+      {double? startAt}) {
+    _lastRecoveredQueueChapterId = null;
+    return _playChapter(book, chapterList, chapter, startAt: startAt);
+  }
+
   Future<void> togglePlay() => _togglePlayback();
   Future<void> pause() => _pausePlayback();
   Future<void> seek(double seconds) => _seekPlayback(seconds);
@@ -311,11 +347,17 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   double _displayTimeForAudioPosition(Duration position) {
     final rawSeconds = position.inMilliseconds / 1000;
-    if (!_usingTranscodeStream) {
-      return _clampPlaybackTime(rawSeconds);
+    if (_usingTranscodeStream) {
+      return _expectedTranscodeTime();
     }
-    return _expectedTranscodeTime();
+    final relative =
+        _usingSegmentSource ? rawSeconds - _chapterStartSeconds : rawSeconds;
+    return _clampPlaybackTime(relative);
   }
+
+  double get _chapterStartSeconds => currentChapter?.startSeconds ?? 0;
+
+  double get _chapterEndSeconds => currentChapter?.endSeconds ?? 0;
 
   double _expectedTranscodeTime() =>
       _clock.position(speed: playbackSpeed, duration: duration);
@@ -420,6 +462,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _progress.connectionChanged();
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
@@ -433,6 +476,7 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _disposed = true;
     _sleep.dispose();
     _bookOperations.dispose();
+    _sourceCatalogue?.dispose();
     _playGeneration++;
     _seekGeneration++;
     if (appState.onGatewayLoginRequired == _pauseForGatewayReauthentication) {
@@ -449,12 +493,14 @@ class PlayerState extends ChangeNotifier with WidgetsBindingObserver {
     _playingSub?.cancel();
     _completeSub?.cancel();
     _indexSub?.cancel();
+    _errorSub?.cancel();
     _interruptionSub?.cancel();
     _noisySub?.cancel();
     _devicesChangedSub?.cancel();
     _cancelFocusRecovery(clearResume: true);
     if (!kIsWeb) {
       audio_background.JustAudioBackground.setSeekHandler(null);
+      audio_background.JustAudioBackground.setBeforePlayHandler(null);
       audio_background.JustAudioBackground.setChapterNavigationHandlers();
       audio_background.JustAudioBackground.setAudioFocusEnabled(true);
     }

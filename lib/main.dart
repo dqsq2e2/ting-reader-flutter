@@ -5,6 +5,9 @@ import 'package:just_audio_background/just_audio_background.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 
 import 'l10n/app_localizations.dart';
+import 'src/core/services/desktop_window.dart';
+import 'src/features/player/desktop_window_host.dart';
+import 'src/features/player/mini_player.dart';
 import 'src/features/login_page.dart';
 import 'src/core/state/app_state.dart';
 import 'src/core/state/download_state.dart';
@@ -25,6 +28,14 @@ Future<void> main() async {
   final appState = AppState();
   final downloadState = DownloadState(appState);
   final playerState = PlayerState(appState, downloadState);
+  await DesktopWindow.instance.initialize(appState);
+  DesktopWindow.instance.onExitRequested = () async {
+    try {
+      await playerState.sendProgress().timeout(const Duration(seconds: 2));
+    } finally {
+      await DesktopWindow.instance.exit();
+    }
+  };
 
   runApp(
     AppScope(
@@ -83,6 +94,8 @@ Future<void> _initializeBackgroundAudio() async {
 class TingReaderApp extends StatelessWidget {
   const TingReaderApp({super.key});
 
+  static final _navigatorKey = GlobalKey<NavigatorState>();
+
   @override
   Widget build(BuildContext context) {
     final appState = AppScope.appOf(context);
@@ -91,6 +104,7 @@ class TingReaderApp extends StatelessWidget {
       animation: appState,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           title: 'Ting Reader',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
@@ -100,7 +114,16 @@ class TingReaderApp extends StatelessWidget {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           builder: (context, child) {
-            final content = child ?? const SizedBox.shrink();
+            final content = DesktopWindowHost(
+              openChapters: () async {
+                await DesktopWindow.instance.setMini(false);
+                final context = _navigatorKey.currentContext;
+                if (context != null && context.mounted) {
+                  await showPlayerChapters(context, AppScope.playerOf(context));
+                }
+              },
+              child: child ?? const SizedBox.shrink(),
+            );
             final brightness = Theme.of(context).brightness;
             final isDark = brightness == Brightness.dark;
             final background = Theme.of(context).scaffoldBackgroundColor;
@@ -159,6 +182,7 @@ class _StartupGateState extends State<StartupGate> {
       } catch (_) {
         // Downloads are recoverable local state; keep the app bootable.
       }
+      appState.startSessionMonitoring();
     } catch (_) {
       if (!_cancelled) {
         await appState.resetToLoginAfterStartupFailure();

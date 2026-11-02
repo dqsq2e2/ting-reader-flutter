@@ -25,9 +25,10 @@ class AppScope extends StatefulWidget {
     return scope.appState;
   }
 
-  static PlayerState playerOf(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<_PlayerStateScope>();
+  static PlayerState playerOf(BuildContext context, {bool listen = true}) {
+    final scope = listen
+        ? context.dependOnInheritedWidgetOfExactType<_PlayerStateScope>()
+        : context.getInheritedWidgetOfExactType<_PlayerStateScope>();
     assert(scope != null, 'No PlayerScope found in context');
     if (scope == null) throw StateError('No AppScope found in context');
     return scope.playerState;

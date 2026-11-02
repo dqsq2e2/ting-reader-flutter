@@ -379,7 +379,8 @@ class _PersonalizationPageState extends State<PersonalizationPage> {
               autoPreload: _autoPreload,
               autoCache: _autoCache,
               ignoreAudioFocus: _ignoreAudioFocus,
-              showAudioFocusSetting: isMobilePlatform,
+              showAudioFocusSetting:
+                  Theme.of(context).platform == TargetPlatform.android,
               onSpeed: (value) {
                 setState(() => _playbackSpeed = value);
                 AppScope.playerOf(context).setSpeed(value);

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../api/api_client.dart';
 import '../api/api_error.dart';
 import '../models/models.dart';
+import '../services/library_cache.dart';
 import '../utils/chapter_sort.dart';
 import '../utils/formatters.dart';
 
@@ -220,6 +221,26 @@ class ChapterCatalogue {
     }
   }
 
+  Future<ChaptersPage?> adjacentPage(Chapter current, int direction) async {
+    final currentPage = await page({
+      'limit': 100,
+      'target_chapter_id': current.id,
+      'order': 'asc',
+    });
+    if (currentPage == null || _disposed) return null;
+    final count = currentPage.chapterType == 'extra'
+        ? currentPage.extraTotal
+        : currentPage.mainTotal;
+    final offset = currentPage.offset + (direction < 0 ? -100 : 100);
+    if (offset < 0 || offset >= count) return null;
+    return page({
+      'limit': 100,
+      'offset': offset,
+      'chapter_type': currentPage.chapterType,
+      'order': 'asc',
+    });
+  }
+
   Future<List<Chapter>?> all() {
     if (_disposed) return Future.value(null);
     if (_cached != null) return Future.value(_cached);
@@ -262,10 +283,28 @@ class ChapterCatalogue {
   }
 }
 
+Map<String, dynamic> _cachedDisplaySettings(Map<String, dynamic> settings) => {
+      for (final entry in settings.entries)
+        if (entry.key.startsWith('bookshelf_') ||
+            entry.key == 'chapter_group_orders')
+          entry.key: entry.value,
+    };
+
 class BookDetailState extends ChangeNotifier {
-  BookDetailState(this.api, this.bookId)
+  BookDetailState(this.api, this.bookId, {this.cache})
       : catalogue = ChapterCatalogue(api, bookId),
-        operations = BookOperations(api);
+        operations = BookOperations(api) {
+    final saved = cache?.peek(_identity, _resource);
+    if (saved != null) _restore(saved);
+  }
+  final LibraryCache? cache;
+  late final String _identity =
+      api.sessionIdentity?.call() ?? '${api.baseUrl}|${api.token}';
+  bool get _active =>
+      !_disposed &&
+      _identity ==
+          (api.sessionIdentity?.call() ?? '${api.baseUrl}|${api.token}');
+  String get _resource => 'book:$bookId';
   final ApiClient api;
   final String bookId;
   final ChapterCatalogue catalogue;
@@ -291,19 +330,68 @@ class BookDetailState extends ChangeNotifier {
   int _pageRevision = 0;
   bool _favoritePending = false;
 
+  void _restore(Map<String, dynamic> saved) {
+    try {
+      final restored = Book.fromJson(asMap(saved['book']));
+      if (restored.id != bookId) return;
+      book = restored;
+      progress = saved['progress'] == null
+          ? null
+          : ProgressItem.fromJson(asMap(saved['progress']));
+      settings = asMap(saved['settings']);
+      chapters = asMapList(saved['chapters']).map(Chapter.fromJson).toList();
+      total = saved['total'] as int;
+      mainTotal = saved['main_total'] as int;
+      extraTotal = saved['extra_total'] as int;
+      tab = saved['tab'] as String;
+      group = saved['group'] as int;
+      ascending = saved['ascending'] as bool;
+      groupsDescending = saved['groups_descending'] as bool;
+      groupOrders = readChapterGroupOrders(settings);
+      loading = false;
+    } catch (_) {
+      book = null;
+    }
+  }
+
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (!_active) return;
+    if (book != null && !loading && !pageLoading && error == null) {
+      unawaited(cache?.write(_identity, _resource, {
+        'book': book!.toJson(),
+        'progress': progress?.toJson(),
+        'settings': _cachedDisplaySettings(settings),
+        'chapters': chapters.map((item) => item.toJson()).toList(),
+        'total': total,
+        'main_total': mainTotal,
+        'extra_total': extraTotal,
+        'tab': tab,
+        'group': group,
+        'ascending': ascending,
+        'groups_descending': groupsDescending,
+      }));
+    }
+    notifyListeners();
   }
 
   Future<void> load({String? initialChapter}) async {
-    if (_disposed) return;
+    if (!_active) return;
     _loadToken?.cancel('Book details reloaded');
     _pageRevision++;
     pageLoading = false;
     catalogue.invalidate();
     final token = CancelToken();
     _loadToken = token;
-    loading = true;
+    if (book == null && cache != null) {
+      unawaited(cache!.read(_identity, _resource).then((saved) {
+        if (!_active || token.isCancelled || book != null || saved == null) {
+          return;
+        }
+        _restore(saved);
+        _notify();
+      }));
+    }
+    loading = book == null;
     error = null;
     _notify();
     try {
@@ -318,7 +406,8 @@ class BookDetailState extends ChangeNotifier {
             .catchError((_) => null),
         api.get('/api/settings', cancelToken: token),
       ]);
-      if (_disposed || token.isCancelled) return;
+      if (!_active || token.isCancelled) return;
+      final hadContent = book != null;
       book = Book.fromJson(asMap((results[0] as Response).data));
       progress = results[1] as ProgressItem?;
       settings = asMap(asMap((results[2] as Response).data)['settings_json']);
@@ -327,13 +416,17 @@ class BookDetailState extends ChangeNotifier {
           (book?.libraryType == 'rss' ? 'desc' : 'asc');
       ascending = order == 'asc';
       groupsDescending = !ascending;
-      tab = 'main';
-      group = 0;
-      chapters = [];
-      total = mainTotal = extraTotal = 0;
+      if (!hadContent) {
+        tab = 'main';
+        group = 0;
+        chapters = [];
+        total = mainTotal = extraTotal = 0;
+      }
       await loadPage(
           target: initialChapter,
-          preferLast: groupsDescending && initialChapter == null);
+          background: hadContent && initialChapter == null,
+          preferLast:
+              !hadContent && groupsDescending && initialChapter == null);
     } catch (failure) {
       if (!_disposed && !token.isCancelled) {
         error = ApiError.messageFor(failure);
@@ -350,10 +443,12 @@ class BookDetailState extends ChangeNotifier {
       {String? requestedTab,
       int? requestedGroup,
       String? target,
-      bool preferLast = false}) async {
-    if (_disposed || book == null) return null;
+      bool preferLast = false,
+      bool background = false}) async {
+    if (!_active || book == null) return null;
     final revision = ++_pageRevision;
-    pageLoading = true;
+    pageLoading = !background;
+    error = null;
     _notify();
     try {
       final page = await catalogue.page({
@@ -364,14 +459,14 @@ class BookDetailState extends ChangeNotifier {
           'chapter_type': requestedTab ?? tab,
         if (target != null) 'target_chapter_id': target,
       });
-      if (page == null || _disposed || revision != _pageRevision) return null;
+      if (page == null || !_active || revision != _pageRevision) return null;
       total = page.total;
       mainTotal = page.mainTotal;
       extraTotal = page.extraTotal;
       tab = page.chapterType == 'extra' ? 'extra' : 'main';
       group = page.offset ~/ pageSize;
       final last = lastGroup(tab);
-      if (preferLast && target == null && group != last) {
+      if (target == null && (group > last || preferLast && group != last)) {
         return await loadPage(requestedTab: tab, requestedGroup: last);
       }
       chapters = page.chapters;
@@ -538,7 +633,31 @@ List<Map<String, String>> serializeChapterGroupOrders(
 
 /// Shelf data and ordering rules. Selection, scrolling and overlays are UI state.
 class BookshelfState extends ChangeNotifier {
-  BookshelfState(this.api) : operations = BookOperations(api);
+  BookshelfState(this.api, {this.cache}) : operations = BookOperations(api) {
+    final saved = cache?.peek(_identity, 'shelf');
+    if (saved != null) _restore(saved);
+  }
+  final LibraryCache? cache;
+  String get _identity =>
+      api.sessionIdentity?.call() ?? '${api.baseUrl}|${api.token}';
+  String? _loadedIdentity;
+  bool hasSnapshot = false;
+  void _restore(Map<String, dynamic> saved) {
+    try {
+      books = asMapList(saved['books']).map(Book.fromJson).toList();
+      series = asMapList(saved['series']).map(Series.fromJson).toList();
+      libraries = asMapList(saved['libraries']).map(Library.fromJson).toList();
+      settings = asMap(saved['settings']);
+      selectedLibrary = (settings['bookshelf_library_id'] ?? '').toString();
+      sortBy = (settings['bookshelf_sort_by'] ?? 'created_at').toString();
+      _loadedIdentity = _identity;
+      hasSnapshot = true;
+      loading = false;
+    } catch (_) {
+      hasSnapshot = false;
+    }
+  }
+
   final ApiClient api;
   final BookOperations operations;
   CancelToken? _loadToken;
@@ -558,7 +677,26 @@ class BookshelfState extends ChangeNotifier {
     _loadToken?.cancel('Shelf query replaced');
     final token = CancelToken();
     _loadToken = token;
-    loading = true;
+    final identity = _identity;
+    if (_loadedIdentity != identity) {
+      hasSnapshot = false;
+      books = [];
+      series = [];
+      libraries = [];
+      unawaited(cache?.read(identity, 'shelf').then((saved) {
+        if (_disposed ||
+            token.isCancelled ||
+            identity != _identity ||
+            hasSnapshot ||
+            saved == null) {
+          return;
+        }
+        _restore(saved);
+        notifyListeners();
+      }));
+      _loadedIdentity = identity;
+    }
+    loading = !hasSnapshot;
     error = null;
     notifyListeners();
     try {
@@ -566,7 +704,7 @@ class BookshelfState extends ChangeNotifier {
         api.get('/api/settings', cancelToken: token),
         api.get('/api/libraries', cancelToken: token),
       ]);
-      if (_disposed || token.isCancelled) return;
+      if (_disposed || token.isCancelled || identity != _identity) return;
       final payload = asMap(initial[0].data);
       final nextSettings = {...asMap(payload['settings_json']), ...payload}
         ..remove('settings_json');
@@ -579,13 +717,23 @@ class BookshelfState extends ChangeNotifier {
         api.get('/api/books', params: params, cancelToken: token),
         api.get('/api/v1/series', params: params, cancelToken: token),
       ]);
-      if (_disposed || token.isCancelled) return;
+      if (_disposed || token.isCancelled || identity != _identity) return;
       settings = nextSettings;
       libraries = nextLibraries;
       selectedLibrary = library;
       sortBy = (settings['bookshelf_sort_by'] ?? 'created_at').toString();
       books = asMapList(results[0].data).map(Book.fromJson).toList();
       series = asMapList(results[1].data).map(Series.fromJson).toList();
+      hasSnapshot = true;
+      unawaited(cache?.write(identity, 'shelf', {
+        'books': books.map((item) => item.toJson()).toList(),
+        'series': series.map((item) => item.toJson()).toList(),
+        'libraries': [
+          for (final item in libraries)
+            {'id': item.id, 'name': item.name, 'library_type': item.libraryType}
+        ],
+        'settings': _cachedDisplaySettings(settings),
+      }));
     } catch (failure) {
       if (!_disposed && !token.isCancelled) {
         error = ApiError.messageFor(failure);

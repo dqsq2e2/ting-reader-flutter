@@ -272,12 +272,14 @@ class ScrapeSource {
     required this.searchFields,
     required this.resultFields,
     required this.resultFieldLabels,
+    this.bookSource = false,
   });
 
   final String id;
   final String name;
   final bool enabled;
   final bool autoScrape;
+  final bool bookSource;
   final List<ScrapeSearchField> searchFields;
   final List<String> resultFields;
   final Map<String, LocalizedPluginText> resultFieldLabels;
@@ -297,6 +299,7 @@ class ScrapeSource {
       name: json['name']?.toString() ?? 'Plugin',
       enabled: json['enabled'] == true,
       autoScrape: json['auto_scrape'] == true,
+      bookSource: json['book_source'] == true,
       searchFields: fields.isEmpty ? defaultScrapeSearchFields : fields,
       resultFields: rawResultFields is List && rawResultFields.isNotEmpty
           ? resultFields

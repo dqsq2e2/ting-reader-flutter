@@ -27,6 +27,20 @@ class ProgressItem {
   final String? libraryId;
   final int? chapterDuration;
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'book_id': bookId,
+        'chapter_id': chapterId,
+        'position': position,
+        'duration': duration,
+        'updated_at': updatedAt,
+        'book_title': bookTitle,
+        'chapter_title': chapterTitle,
+        'cover_url': coverUrl,
+        'library_id': libraryId,
+        'chapter_duration': chapterDuration,
+      };
+
   factory ProgressItem.fromJson(Map<String, dynamic> json) {
     return ProgressItem(
       id: readString(json, 'id') ?? '',

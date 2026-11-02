@@ -26,6 +26,19 @@ class Series {
   final String? updatedAt;
   final List<Book> books;
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'library_id': libraryId,
+        'title': title,
+        'author': author,
+        'narrator': narrator,
+        'description': description,
+        'cover_url': coverUrl,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+        'books': books.map((item) => item.toJson()).toList(),
+      };
+
   factory Series.fromJson(Map<String, dynamic> json) {
     return Series(
       id: readString(json, 'id') ?? '',

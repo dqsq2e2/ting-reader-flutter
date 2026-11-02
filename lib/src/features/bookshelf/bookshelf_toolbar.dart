@@ -54,6 +54,7 @@ class _Header extends StatelessWidget {
         final hasSelection = selectedCount > 0;
         final operationsButton = _BatchOperationsMenuButton(
           compact: mobile,
+          selectedCount: selectedCount,
           hasSelection: hasSelection,
           canCreateSeries: onCreateSeries != null,
           canDelete: onDeleteSelected != null,
@@ -75,10 +76,6 @@ class _Header extends StatelessWidget {
               child: _SearchEntry(onTap: onSearchOpen),
             ),
             if (selectionMode) ...[
-              BatchCountBadge(
-                  label: context.localeText(
-                      '已选 $selectedCount', '$selectedCount selected'),
-                  compact: mobile),
               BatchActionButton(
                 icon: Icons.select_all_rounded,
                 label: context.localeText('全选', 'Select All'),
@@ -133,10 +130,6 @@ class _Header extends StatelessWidget {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                BatchCountBadge(
-                    label: context.localeText(
-                        '已选 $selectedCount', '$selectedCount selected'),
-                    compact: mobile),
                 BatchActionButton(
                   icon: Icons.select_all_rounded,
                   label: context.localeText('全选', 'Select All'),
@@ -241,6 +234,7 @@ enum _BatchOperation { markRead, markUnread, createSeries, delete }
 class _BatchOperationsMenuButton extends StatelessWidget {
   const _BatchOperationsMenuButton({
     required this.compact,
+    required this.selectedCount,
     required this.hasSelection,
     required this.canCreateSeries,
     required this.canDelete,
@@ -253,6 +247,7 @@ class _BatchOperationsMenuButton extends StatelessWidget {
   });
 
   final bool compact;
+  final int selectedCount;
   final bool hasSelection;
   final bool canCreateSeries;
   final bool canDelete;
@@ -347,6 +342,7 @@ class _BatchOperationsMenuButton extends StatelessWidget {
       },
       child: _BatchOperationsButtonSurface(
         compact: compact,
+        selectedCount: selectedCount,
         loading: loading,
       ),
     );
@@ -392,10 +388,12 @@ class _BatchOperationMenuItem extends StatelessWidget {
 class _BatchOperationsButtonSurface extends StatelessWidget {
   const _BatchOperationsButtonSurface({
     required this.compact,
+    required this.selectedCount,
     required this.loading,
   });
 
   final bool compact;
+  final int selectedCount;
   final bool loading;
 
   @override
@@ -443,9 +441,8 @@ class _BatchOperationsButtonSurface extends StatelessWidget {
             ),
           SizedBox(width: compact ? 6 : 8),
           Text(
-            compact
-                ? context.localeText('操作', 'Actions')
-                : context.localeText('批量操作', 'Batch Actions'),
+            context.localeText(
+                '操作（$selectedCount）', 'Actions ($selectedCount)'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(

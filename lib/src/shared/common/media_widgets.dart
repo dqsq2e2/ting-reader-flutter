@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -265,6 +267,8 @@ class CoverImage extends StatefulWidget {
 }
 
 class _CoverImageState extends State<CoverImage> {
+  Future<File?>? _cachedCover;
+  String? _cacheRequest;
   bool _recoveringRedirect = false;
   int _retryEpoch = 0;
   String? _failedUrl;
@@ -313,24 +317,95 @@ class _CoverImageState extends State<CoverImage> {
                   errorBuilder: (context, error, stackTrace) =>
                       _placeholder(context),
                 )
-              : Image.network(
-                  url,
-                  key: ValueKey('$url:$_retryEpoch'),
-                  headers: imageHeaders.isEmpty ? null : imageHeaders,
-                  fit: widget.fit,
-                  width: double.infinity,
-                  height: double.infinity,
-                  errorBuilder: (context, error, stackTrace) {
-                    _recoverRedirectAndRetry(url);
-                    return _placeholder(context, loading: _recoveringRedirect);
-                  },
-                  loadingBuilder: (context, child, progress) {
-                    if (progress == null) return child;
-                    return _placeholder(context, loading: true);
-                  },
-                ),
+              : _cachedImage(context, url, imageHeaders),
     );
   }
+
+  Widget _cachedImage(
+      BuildContext context, String url, Map<String, String> headers) {
+    final app = AppScope.appOf(context);
+    final ownOrigin = app.usesActiveOrigin(url);
+    final resource =
+        app.libraryCache.coverResource(url, serverResource: ownOrigin);
+    final request = '${app.libraryCacheIdentity}:$resource';
+    if (_cacheRequest != request) {
+      _cacheRequest = request;
+      _cachedCover = app.libraryCache.cover(app.libraryCacheIdentity, resource,
+          (cancel) async {
+        final Response<dynamic> response;
+        if (ownOrigin) {
+          response = await app.api.getBytes(url, cancelToken: cancel);
+        } else {
+          final client = Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 12),
+              receiveTimeout: const Duration(seconds: 30)));
+          try {
+            response = await client.get<List<int>>(url,
+                cancelToken: cancel,
+                options: Options(responseType: ResponseType.bytes),
+                onReceiveProgress: (received, total) {
+              if (received > 8 * 1024 * 1024 || total > 8 * 1024 * 1024) {
+                cancel.cancel('Cover too large');
+              }
+            });
+          } finally {
+            client.close();
+          }
+        }
+        final bytes = Uint8List.fromList(List<int>.from(response.data as List));
+        final codec = await ui.instantiateImageCodec(bytes, targetWidth: 64);
+        try {
+          final frame = await codec.getNextFrame();
+          frame.image.dispose();
+        } finally {
+          codec.dispose();
+        }
+        return bytes;
+      }, onUpdated: (file) async {
+        await FileImage(file).evict();
+        if (mounted && _cacheRequest == request) setState(() => _retryEpoch++);
+      });
+    }
+    return FutureBuilder<File?>(
+        key: ValueKey(request),
+        future: _cachedCover,
+        builder: (context, snapshot) {
+          final file = snapshot.data;
+          if (file != null) {
+            return Image.file(file,
+                key: ValueKey('$request:$_retryEpoch'),
+                fit: widget.fit,
+                width: double.infinity,
+                height: double.infinity,
+                cacheWidth: 1024,
+                errorBuilder: (context, error, stackTrace) =>
+                    _networkImage(context, url, headers));
+          }
+          if (snapshot.connectionState != ConnectionState.done) {
+            return _placeholder(context);
+          }
+          return _networkImage(context, url, headers);
+        });
+  }
+
+  Widget _networkImage(
+          BuildContext context, String url, Map<String, String> imageHeaders) =>
+      Image.network(
+        url,
+        key: ValueKey('$url:$_retryEpoch'),
+        headers: imageHeaders.isEmpty ? null : imageHeaders,
+        fit: widget.fit,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (context, error, stackTrace) {
+          _recoverRedirectAndRetry(url);
+          return _placeholder(context, loading: _recoveringRedirect);
+        },
+        loadingBuilder: (context, child, progress) {
+          if (progress == null) return child;
+          return _placeholder(context, loading: true);
+        },
+      );
 
   void _recoverRedirectAndRetry(String url) {
     if (_recoveringRedirect || _failedUrl == url) return;

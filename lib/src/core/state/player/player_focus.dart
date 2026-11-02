@@ -2,7 +2,13 @@ part of '../player_state.dart';
 
 /// Audio focus, interruption handling and headset disconnection.
 extension _PlayerAudioFocus on PlayerState {
+  Future<void> _prepareBackgroundPlayback() async {
+    await _audioSessionReady;
+    if (!_disposed) await _configureAudioSession();
+  }
+
   Future<void> _setAudioFocusPolicy(bool value) async {
+    if (defaultTargetPlatform == TargetPlatform.iOS) value = false;
     if (!kIsWeb) {
       audio_background.JustAudioBackground.setAudioFocusEnabled(
         !value || defaultTargetPlatform != TargetPlatform.android,
@@ -13,7 +19,7 @@ extension _PlayerAudioFocus on PlayerState {
     ignoreAudioFocus = value;
     _cancelFocusRecovery(clearResume: value);
     await _configureAudioSession();
-    if (ignoreAudioFocus) {
+    if (ignoreAudioFocus && defaultTargetPlatform == TargetPlatform.android) {
       await _deactivateAudioSession();
     } else if (isPlaying || _audio.playing) {
       await _activateAudioSessionForPlayback();
@@ -45,7 +51,10 @@ extension _PlayerAudioFocus on PlayerState {
                   audio_session.AndroidAudioFocusGainType.gain,
               androidWillPauseWhenDucked: false,
             )
-          : const audio_session.AudioSessionConfiguration.speech();
+          : const audio_session.AudioSessionConfiguration.speech().copyWith(
+              avAudioSessionCategoryOptions:
+                  audio_session.AVAudioSessionCategoryOptions.none,
+            );
       await session.configure(config);
     } catch (_) {
       // Unsupported platforms should not block in-app playback.
@@ -244,7 +253,7 @@ extension _PlayerAudioFocus on PlayerState {
 
   Future<bool> _playWithSession({
     bool Function()? stillAllowed,
-    bool waitForCompletion = true,
+    bool waitForCompletion = false,
   }) async {
     if (_disposed) return false;
     if (_gatewayReauthenticationPending) {
@@ -263,6 +272,7 @@ extension _PlayerAudioFocus on PlayerState {
     if (_disposed || stillAllowed?.call() == false) return false;
     if (!await _activateAudioSessionForPlayback()) return false;
     if (_disposed || stillAllowed?.call() == false) return false;
+    final playGeneration = _playGeneration;
     final playback = _audio.play();
     if (waitForCompletion) {
       await playback;
@@ -270,9 +280,8 @@ extension _PlayerAudioFocus on PlayerState {
       // just_audio's play Future represents the whole playback lifetime,
       // including its next interruption, rather than playback starting.
       unawaited(playback.catchError((Object failure) {
-        if (_disposed) return;
-        error = ApiError.messageFor(failure);
-        _notifyIfActive();
+        if (_disposed || playGeneration != _playGeneration) return;
+        _handleNativePlaybackError(failure);
       }));
     }
     return true;

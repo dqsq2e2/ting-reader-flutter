@@ -86,9 +86,11 @@ class _AdminLibrariesPageState extends State<AdminLibrariesPage> {
   Future<void> _openEditor([Library? library]) async {
     final saved = await showDialog<bool>(
       context: context,
-      builder: (context) => _LibraryEditorDialog(library: library),
+      builder: (context) => library != null && library.isSource
+          ? _SourceLibraryBooksDialog(library: library)
+          : _LibraryEditorDialog(library: library),
     );
-    if (saved == true) await _load();
+    if (mounted && (saved == true || library?.isSource == true)) await _load();
   }
 
   void _showSnack(String text) {
@@ -260,9 +262,11 @@ class _LibraryCard extends StatelessWidget {
                 ),
                 alignment: Alignment.center,
                 child: Icon(
-                  library.libraryType == 'rss'
-                      ? Icons.rss_feed_rounded
-                      : Icons.storage_rounded,
+                  library.isSource
+                      ? Icons.menu_book_rounded
+                      : library.libraryType == 'rss'
+                          ? Icons.rss_feed_rounded
+                          : Icons.storage_rounded,
                   size: 28,
                   color: AppColors.primary600,
                 ),
@@ -294,12 +298,12 @@ class _LibraryCard extends StatelessWidget {
                       spacing: 16,
                       runSpacing: 6,
                       children: [
-                        if (library.libraryType != 'local')
+                        if (!library.isSource && library.libraryType != 'local')
                           _LibraryInfoLine(
                             icon: Icons.public_rounded,
                             text: library.url ?? '',
                           ),
-                        if (library.libraryType != 'rss')
+                        if (!library.isSource && library.libraryType != 'rss')
                           _LibraryInfoLine(
                             icon: Icons.folder_rounded,
                             text: library.libraryType == 'local'
@@ -309,6 +313,11 @@ class _LibraryCard extends StatelessWidget {
                                     : library.rootPath)
                                 : library.rootPath,
                           ),
+                        if (library.isSource)
+                          Text(
+                              context.localeText('管理从此书源加入的书籍',
+                                  'Manage books added from this source'),
+                              style: TextStyle(color: context.mutedText)),
                       ],
                     ),
                   ],
@@ -322,7 +331,19 @@ class _LibraryCard extends StatelessWidget {
             runSpacing: 8,
             alignment: compact ? WrapAlignment.start : WrapAlignment.end,
             children: [
-              _LibrarySyncButton(scanning: scanning, onSelected: onScanMode),
+              if (library.isSource)
+                OutlinedButton.icon(
+                  onPressed: scanning ? null : () => onScanMode('incremental'),
+                  icon: scanning
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.sync_rounded, size: 18),
+                  label: Text(context.localeText('同步', 'Sync')),
+                )
+              else
+                _LibrarySyncButton(scanning: scanning, onSelected: onScanMode),
               _SoftIconButton(
                 icon: Icons.edit_rounded,
                 tooltip: context.localeText('编辑存储库', 'Edit library'),
@@ -395,11 +416,13 @@ class _LibraryTypeChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        local
-            ? context.localeText('本地存储', 'Local')
-            : rss
-                ? context.localeText('RSS订阅', 'RSS')
-                : 'WebDAV',
+        type == 'source'
+            ? context.localeText('在线书源', 'Online source')
+            : local
+                ? context.localeText('本地存储', 'Local')
+                : rss
+                    ? context.localeText('RSS订阅', 'RSS')
+                    : 'WebDAV',
         style: TextStyle(
           fontSize: 11,
           height: 1.2,

@@ -48,6 +48,7 @@ class _PlaylistsPageState extends State<PlaylistsPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (!TickerMode.valuesOf(context).enabled) _closeFilterMenu();
     if (!_initialized) {
       _initialized = true;
       _load();

@@ -94,11 +94,22 @@ extension _PlayerGateway on PlayerState {
           initialPosition:
               Duration(milliseconds: (resumePosition * 1000).round()),
         );
+      } else if (_usingSegmentSource) {
+        final localPath = await _sharedSegmentLocalPath(
+          chapters.isEmpty ? <Chapter>[chapter] : chapters,
+        );
+        usingLocalFile = localPath != null;
+        await _setSegmentSource(
+          book,
+          chapter,
+          localPath: localPath,
+          position: resumePosition,
+        );
       } else if (_usingTranscodeStream) {
         await _setFallbackTranscodeSource(
           chapter,
           _mediaItemFor(book, chapter, streamOffset: resumePosition),
-          resumePosition,
+          chapter.startSeconds + resumePosition,
         );
       } else {
         await _setAudioUrlWithRedirectRecovery(
@@ -134,9 +145,25 @@ extension _PlayerGateway on PlayerState {
       (appState.api.isGatewaySession?.call() ?? false);
 
   Future<void> _handlePlaybackCompleted(audio.PlayerState state) async {
+    if (_disposed || _suppressPositionUpdates || _applyingQueueStartSeek) {
+      return;
+    }
+    if (_usingAudioQueue) {
+      final next = _currentChapterIndex + 1;
+      if (next > 0 &&
+          next < chapters.length &&
+          _failedQueueChapters.contains(chapters[next].id)) {
+        await _recoverQueueChapter(chapters[next]);
+        return;
+      }
+      await _audio.pause();
+      await sendProgress();
+      return;
+    }
     // Native queues advance themselves; single transcode streams do not.
-    if (_usingAudioQueue ||
-        (!_usingGatewaySingleChapterSource && !_usingTranscodeStream)) {
+    if (!_usingGatewaySingleChapterSource &&
+        !_usingTranscodeStream &&
+        !_usingSegmentSource) {
       await sendProgress();
       return;
     }

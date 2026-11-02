@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/api/api_error.dart';
 import '../../core/models/models.dart';
 import '../../core/state/app_state.dart';
+import '../../core/state/books_state.dart';
 import '../../core/state/download_state.dart';
 import '../../core/state/player_state.dart';
 import '../../core/theme/app_theme.dart';
@@ -25,6 +27,20 @@ part 'parts/expanded_player.dart';
 part 'parts/playback_menus.dart';
 part 'parts/player_controls.dart';
 part 'parts/theme_utils.dart';
+
+Future<void> showPlayerChapters(
+    BuildContext context, PlayerState player) async {
+  if (!player.hasChapter) return;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => _ChapterSheetList(
+      player: player,
+      themeColor: effectiveBookThemeColor(player.currentBook?.themeColor),
+    ),
+  );
+}
 
 class MiniPlayer extends StatefulWidget {
   const MiniPlayer({super.key});
@@ -54,9 +70,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
         final themeColor = effectiveBookThemeColor(book.themeColor);
         final accentColor = themeColor ?? AppColors.primary600;
         final subduedAccent =
-            themeColor != null && !_isPlayerThemeLight(themeColor)
-                ? themeColor.withValues(alpha: 0.72)
-                : (context.isDark ? AppColors.slate300 : AppColors.slate500);
+            context.isDark ? AppColors.slate300 : AppColors.slate600;
         final onAccent = themeColor != null && _isPlayerThemeLight(themeColor)
             ? AppColors.slate600
             : Colors.white;
@@ -116,7 +130,7 @@ class _MiniPlayerState extends State<MiniPlayer> {
                 ),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final desktop = constraints.maxWidth >= 768;
+                    final desktop = constraints.maxWidth >= 900;
                     final compact = !desktop;
                     final tiny = constraints.maxWidth < 500;
                     final veryTiny = constraints.maxWidth < 380;
@@ -287,6 +301,14 @@ class _MiniPlayerState extends State<MiniPlayer> {
                               mainAxisSize: MainAxisSize.min,
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
+                                IconButton(
+                                  tooltip:
+                                      context.localeText('章节列表', 'Chapters'),
+                                  icon: Icon(Icons.queue_music_rounded,
+                                      color: subduedAccent),
+                                  onPressed: () =>
+                                      showPlayerChapters(context, player),
+                                ),
                                 _MiniIconButton(
                                   icon: player.volume <= 0
                                       ? Icons.volume_off_rounded
@@ -358,6 +380,14 @@ class _MiniPlayerState extends State<MiniPlayer> {
                             filledIconColor: onAccent,
                           ),
                           SizedBox(width: veryTiny ? 14 : 16),
+                          IconButton(
+                            tooltip: context.localeText('章节列表', 'Chapters'),
+                            icon: Icon(Icons.queue_music_rounded,
+                                color: subduedAccent),
+                            onPressed: () =>
+                                showPlayerChapters(context, player),
+                            visualDensity: VisualDensity.compact,
+                          ),
                           _MiniCollapseButton(
                             icon: Icons.chevron_left_rounded,
                             color: subduedAccent,

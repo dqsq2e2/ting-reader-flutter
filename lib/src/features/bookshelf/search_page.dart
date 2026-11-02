@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../core/models/models.dart';
+import '../../core/api/api_error.dart';
+import '../../core/state/search_state.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/locale.dart';
 import '../../shared/app_scope.dart';
@@ -26,171 +27,57 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final _queryController = TextEditingController();
   Timer? _debounce;
-
-  bool _loadingMetadata = true;
-  bool _searching = false;
+  SearchState? _searchState;
+  SearchState get _state =>
+      _searchState ?? (throw StateError('Search not bound'));
   bool _showFilters = false;
+  final _sourceMenu = MenuController();
 
-  String _query = '';
-  String _selectedLibraryId = '';
-  String _selectedSeries = '';
-  String _selectedTag = '';
-  String _selectedGenre = '';
-  String _selectedYear = '';
-  String _selectedAuthor = '';
-  String _selectedNarrator = '';
-
-  List<Library> _libraries = [];
-  List<Series> _series = [];
-  List<String> _tags = [];
-  List<String> _genres = [];
-  List<String> _years = [];
-  List<String> _authors = [];
-  List<String> _narrators = [];
-  List<Book> _results = [];
-  IconSizeSetting _iconSize = IconSizeSetting.medium;
-  CoverShape _coverShape = CoverShape.square;
+  IconSizeSetting get _iconSize => iconSizeFromAppSettings(_state.settings);
+  CoverShape get _coverShape => coverShapeFromAppSettings(_state.settings);
 
   @override
-  void initState() {
-    super.initState();
-    _loadMetadata();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _searchState ??= SearchState(AppScope.appOf(context).api)
+      ..addListener(_changed)
+      ..load();
+  }
+
+  void _changed() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _searchState?.removeListener(_changed);
+    _searchState?.dispose();
     _queryController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadMetadata() async {
-    final appState = AppScope.appOf(context);
-    try {
-      final results = await Future.wait([
-        appState.api.get('/api/tags'),
-        appState.api.get('/api/books'),
-        appState.api.get('/api/libraries'),
-        appState.api.get('/api/v1/series'),
-        appState.api.get('/api/settings'),
-      ]);
-      final allBooks = asMapList(results[1].data).map(Book.fromJson).toList();
-      final authors = <String>{};
-      final narrators = <String>{};
-      final genres = <String>{};
-      final years = <String>{};
-      for (final book in allBooks) {
-        final authorValue = book.author;
-        final narratorValue = book.narrator;
-        final genreValue = book.genre;
-        if (authorValue != null && authorValue.isNotEmpty) {
-          authors.add(authorValue);
-        }
-        if (narratorValue != null && narratorValue.isNotEmpty) {
-          narrators.add(narratorValue);
-        }
-        if (genreValue != null && genreValue.isNotEmpty) {
-          genres.addAll(genreValue
-              .split(',')
-              .map((item) => item.trim())
-              .where((item) => item.isNotEmpty));
-        }
-        if (book.year != null) years.add(book.year.toString());
-      }
-      final settings = asMap(results[4].data);
-      setState(() {
-        _tags = (results[0].data as List? ?? const [])
-            .map((e) => e.toString())
-            .toList();
-        _libraries = asMapList(results[2].data).map(Library.fromJson).toList();
-        _series = asMapList(results[3].data).map(Series.fromJson).toList();
-        _authors = authors.toList()..sort();
-        _narrators = narrators.toList()..sort();
-        _genres = genres.toList()..sort();
-        _years = years.toList()
-          ..sort((a, b) => int.parse(b).compareTo(int.parse(a)));
-        _iconSize = iconSizeFromAppSettings(settings);
-        _coverShape = coverShapeFromAppSettings(settings);
-      });
-    } finally {
-      if (mounted) setState(() => _loadingMetadata = false);
-    }
-  }
-
   void _onQuery(String value) {
-    _query = value;
+    _state.invalidateSearch();
     _debounce?.cancel();
+    setState(() {});
     _debounce = Timer(const Duration(milliseconds: 500), _search);
   }
 
-  bool get _hasActiveFilters =>
-      _selectedLibraryId.isNotEmpty ||
-      _selectedSeries.isNotEmpty ||
-      _selectedTag.isNotEmpty ||
-      _selectedGenre.isNotEmpty ||
-      _selectedYear.isNotEmpty ||
-      _selectedAuthor.isNotEmpty ||
-      _selectedNarrator.isNotEmpty;
-
-  Future<void> _search() async {
-    if (_query.trim().isEmpty && !_hasActiveFilters) {
-      setState(() => _results = []);
-      return;
-    }
-
-    setState(() => _searching = true);
-    final appState = AppScope.appOf(context);
-    try {
-      final res = await appState.api.get(
-        '/api/books',
-        params: {
-          if (_query.trim().isNotEmpty) 'search': _query.trim(),
-          if (_selectedTag.isNotEmpty) 'tag': _selectedTag,
-          if (_selectedLibraryId.isNotEmpty) 'library_id': _selectedLibraryId,
-        },
-      );
-      var books = asMapList(res.data).map(Book.fromJson).toList();
-      if (_selectedAuthor.isNotEmpty) {
-        books = books.where((book) => book.author == _selectedAuthor).toList();
-      }
-      if (_selectedNarrator.isNotEmpty) {
-        books =
-            books.where((book) => book.narrator == _selectedNarrator).toList();
-      }
-      if (_selectedGenre.isNotEmpty) {
-        books = books.where((book) {
-          return (book.genre ?? '')
-              .split(',')
-              .map((item) => item.trim())
-              .contains(_selectedGenre);
-        }).toList();
-      }
-      if (_selectedYear.isNotEmpty) {
-        books = books
-            .where((book) => book.year?.toString() == _selectedYear)
-            .toList();
-      }
-      if (_selectedSeries.isNotEmpty) {
-        final target = _series.where((item) => item.id == _selectedSeries);
-        final ids = target.isEmpty
-            ? <String>{}
-            : target.first.books.map((book) => book.id).toSet();
-        books = books.where((book) => ids.contains(book.id)).toList();
-      }
-      setState(() => _results = books);
-    } finally {
-      if (mounted) setState(() => _searching = false);
-    }
+  Future<void> _search({int page = 1}) async {
+    _debounce?.cancel();
+    _state.query = _queryController.text;
+    await _state.search(requestedPage: page);
   }
 
   void _setFilter(VoidCallback mutate) {
     setState(mutate);
-    _search();
+    unawaited(_search());
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loadingMetadata) return const LoadingView();
+    if (_state.loading) return const LoadingView();
 
     return PageListView(
       children: [
@@ -224,7 +111,7 @@ class _SearchPageState extends State<SearchPage> {
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search_rounded),
                 hintText: context.localeText('输入关键词搜索...', 'Enter keywords...'),
-                suffixIcon: _searching
+                suffixIcon: _state.searching
                     ? const Padding(
                         padding: EdgeInsets.all(14),
                         child: SizedBox(
@@ -248,131 +135,390 @@ class _SearchPageState extends State<SearchPage> {
           ),
         ),
         const SizedBox(height: 16),
-        Center(
-          child: TextButton.icon(
-            onPressed: () => setState(() => _showFilters = !_showFilters),
-            icon: const Icon(Icons.tune_rounded),
-            label: Text(context.localeText(_showFilters ? '收起筛选' : '展开筛选',
-                _showFilters ? 'Hide Filters' : 'Show Filters')),
+        _scopeTabs(),
+        if (_state.metadataError != null) _error(_state.metadataError),
+        if (_state.showFilters)
+          Center(
+            child: TextButton.icon(
+              onPressed: () => setState(() => _showFilters = !_showFilters),
+              icon: const Icon(Icons.tune_rounded),
+              label: Text(context.localeText(_showFilters ? '收起筛选' : '展开筛选',
+                  _showFilters ? 'Hide Filters' : 'Show Filters')),
+            ),
           ),
-        ),
-        if (_showFilters) ...[
+        if (_state.showFilters && _showFilters) ...[
           const SizedBox(height: 14),
           TingCard(
             child: Column(
               children: [
                 _FilterRow(
                   label: context.localeText('媒体库', 'Library'),
-                  items: _libraries
+                  items: _state.libraries
                       .map((item) => _FilterOption(item.id, item.name))
                       .toList(),
-                  selected: _selectedLibraryId,
+                  selected: _state.libraryId,
                   onSelected: (value) =>
-                      _setFilter(() => _selectedLibraryId = value),
+                      _setFilter(() => _state.libraryId = value),
                 ),
                 _FilterRow(
                   label: context.localeText('系列', 'Series'),
-                  items: _series
+                  items: _state.series
                       .map((item) => _FilterOption(item.id, item.title))
                       .toList(),
-                  selected: _selectedSeries,
+                  selected: _state.seriesId,
                   onSelected: (value) =>
-                      _setFilter(() => _selectedSeries = value),
+                      _setFilter(() => _state.seriesId = value),
                 ),
                 _FilterRow(
                   label: context.localeText('标签', 'Tags'),
-                  items:
-                      _tags.map((item) => _FilterOption(item, item)).toList(),
-                  selected: _selectedTag,
-                  onSelected: (value) => _setFilter(() => _selectedTag = value),
+                  items: _state.tags
+                      .map((item) => _FilterOption(item, item))
+                      .toList(),
+                  selected: _state.tag,
+                  onSelected: (value) => _setFilter(() => _state.tag = value),
                 ),
                 _FilterRow(
                   label: context.localeText('流派', 'Genre'),
-                  items:
-                      _genres.map((item) => _FilterOption(item, item)).toList(),
-                  selected: _selectedGenre,
-                  onSelected: (value) =>
-                      _setFilter(() => _selectedGenre = value),
+                  items: _state.genres
+                      .map((item) => _FilterOption(item, item))
+                      .toList(),
+                  selected: _state.genre,
+                  onSelected: (value) => _setFilter(() => _state.genre = value),
                 ),
                 _FilterRow(
                   label: context.localeText('年份', 'Year'),
-                  items:
-                      _years.map((item) => _FilterOption(item, item)).toList(),
-                  selected: _selectedYear,
-                  onSelected: (value) =>
-                      _setFilter(() => _selectedYear = value),
+                  items: _state.years
+                      .map((item) => _FilterOption(item, item))
+                      .toList(),
+                  selected: _state.year,
+                  onSelected: (value) => _setFilter(() => _state.year = value),
                 ),
                 _FilterRow(
                   label: context.localeText('作者', 'Author'),
-                  items: _authors
+                  items: _state.authors
                       .map((item) => _FilterOption(item, item))
                       .toList(),
-                  selected: _selectedAuthor,
+                  selected: _state.author,
                   onSelected: (value) =>
-                      _setFilter(() => _selectedAuthor = value),
+                      _setFilter(() => _state.author = value),
                 ),
                 _FilterRow(
                   label: context.localeText('演播者', 'Narrator'),
-                  items: _narrators
+                  items: _state.narrators
                       .map((item) => _FilterOption(item, item))
                       .toList(),
-                  selected: _selectedNarrator,
+                  selected: _state.narrator,
                   onSelected: (value) =>
-                      _setFilter(() => _selectedNarrator = value),
+                      _setFilter(() => _state.narrator = value),
                 ),
               ],
             ),
           ),
         ],
         const SizedBox(height: 24),
-        if (_results.isNotEmpty)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns =
-                  gridColumnsForWidth(constraints.maxWidth, _iconSize);
-              final spacing = gridSpacing(_iconSize);
-              return GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _results.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  crossAxisSpacing: spacing,
-                  mainAxisSpacing: spacing + 14,
-                  childAspectRatio:
-                      _coverShape == CoverShape.square ? 0.62 : 0.54,
-                ),
-                itemBuilder: (context, index) {
-                  final book = _results[index];
-                  return BookCard(
-                    book: book,
-                    coverShape: _coverShape,
-                    onTap: () => widget.openBook(book.id),
-                  );
-                },
+        if (_state.hasSearch && _state.showBookshelf) ...[
+          if (_state.scope == SearchScope.all)
+            _sectionTitle(context.localeText('书架', 'Bookshelf')),
+          if (_state.bookshelfError != null)
+            _error(_state.bookshelfError)
+          else if (_state.books.isNotEmpty)
+            _bookGrid(_state.books.length, (index) {
+              final book = _state.books[index];
+              return BookCard(
+                book: book,
+                coverShape: _coverShape,
+                onTap: () => widget.openBook(book.id),
               );
-            },
-          )
-        else if ((_query.trim().isNotEmpty || _hasActiveFilters) && !_searching)
-          EmptyState(
-            icon: Icons.search_off_rounded,
-            title: context.localeText('未找到相关结果', 'No Results'),
-            message: context.localeText(
-                '尝试调整筛选条件或搜索关键词', 'Try changing filters or keywords'),
-          )
-        else
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 52),
-            child: Center(
-              child: Text(
-                context.localeText('输入关键词或使用上方筛选器开始探索',
-                    'Enter keywords or use filters to start'),
-                style: TextStyle(color: context.mutedText),
-              ),
+            })
+          else
+            _emptyResults(),
+        ],
+        if (_state.showOnline &&
+            (_state.hasSearch || _state.scope == SearchScope.online)) ...[
+          if (_state.scope == SearchScope.all) ...[
+            const SizedBox(height: 28),
+            _sectionTitle(context.localeText('在线', 'Online')),
+          ],
+          if (_state.sourceLoadError != null) _error(_state.sourceLoadError),
+          for (final error in _state.sourceErrors) _error(error),
+          if (_state.sources.isEmpty)
+            _hint(context.localeText('暂无可用书源', 'No online sources available'))
+          else if (_state.selectedSourceIds.isEmpty)
+            _hint(context.localeText('请选择在线书源', 'Select online sources'))
+          else if (_state.sourceBooks.isNotEmpty)
+            _bookGrid(_state.sourceBooks.length, (index) {
+              final item = _state.sourceBooks[index];
+              return BookCard(
+                book: item.book,
+                coverShape: _coverShape,
+                showProgress: false,
+                onTap: () {
+                  final id = item.addedBookId;
+                  if (id != null && id.isNotEmpty) widget.openBook(id);
+                },
+                action: _addButton(item),
+              );
+            }, online: true)
+          else if (_state.sourceErrors.isEmpty)
+            _state.query.trim().isEmpty
+                ? _hint(context.localeText(
+                    '输入关键词搜索在线书源', 'Enter keywords to search online sources'))
+                : _emptyResults(),
+          if (_state.page > 1 || _state.hasMore)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  tooltip: context.localeText('上一页', 'Previous page'),
+                  onPressed: _state.searching || _state.page <= 1
+                      ? null
+                      : () => _search(page: _state.page - 1),
+                  icon: const Icon(Icons.chevron_left_rounded),
+                ),
+                Text('${_state.page}'),
+                IconButton(
+                  tooltip: context.localeText('下一页', 'Next page'),
+                  onPressed: _state.searching || !_state.hasMore
+                      ? null
+                      : () => _search(page: _state.page + 1),
+                  icon: const Icon(Icons.chevron_right_rounded),
+                ),
+              ],
             ),
-          ),
+        ],
+        if (!_state.hasSearch && _state.scope != SearchScope.online)
+          _hint(context.localeText(
+              '输入关键词或使用上方筛选器开始探索', 'Enter keywords or use filters to start')),
         const SafeBottomSpacer(),
       ],
+    );
+  }
+
+  void _changeScope(SearchScope scope) {
+    _debounce?.cancel();
+    _state.query = _queryController.text;
+    unawaited(_state.setScope(scope));
+  }
+
+  Widget _scopeTabs() {
+    final allSelected = _state.sources.isNotEmpty &&
+        _state.selectedSourceIds.length == _state.sources.length;
+    void selectSources(Iterable<String> ids) {
+      _debounce?.cancel();
+      _state.query = _queryController.text;
+      unawaited(_state.selectSources(ids));
+    }
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 440),
+        child: MenuAnchor(
+          controller: _sourceMenu,
+          consumeOutsideTap: true,
+          style: const MenuStyle(
+            maximumSize: WidgetStatePropertyAll(Size(320, 360)),
+          ),
+          menuChildren: [
+            CheckboxMenuButton(
+              value: allSelected,
+              closeOnActivate: false,
+              onChanged: _state.sources.isEmpty
+                  ? null
+                  : (value) => selectSources(value == true
+                      ? _state.sources.map((source) => source.id)
+                      : []),
+              child: Text(context.localeText('全部在线书源', 'All online sources')),
+            ),
+            for (final source in _state.sources)
+              CheckboxMenuButton(
+                value: _state.selectedSourceIds.contains(source.id),
+                closeOnActivate: false,
+                onChanged: (value) => selectSources({
+                  ..._state.selectedSourceIds.where((id) => id != source.id),
+                  if (value == true) source.id,
+                }),
+                child: Text(source.name,
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            if (_state.sources.isEmpty)
+              MenuItemButton(
+                child: Text(context.localeText(
+                    '暂无可用书源', 'No online sources available')),
+              ),
+          ],
+          builder: (context, controller, child) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final scope in [SearchScope.all, SearchScope.bookshelf])
+                Flexible(
+                    child: _scopeTab(
+                        scope,
+                        scope == SearchScope.all
+                            ? context.localeText('全部', 'All')
+                            : context.localeText('书架', 'Bookshelf'))),
+              Flexible(
+                  child: _scopeTab(
+                      SearchScope.online, context.localeText('在线', 'Online'),
+                      menuOpen: controller.isOpen, onTap: () {
+                if (_state.scope != SearchScope.online) {
+                  _changeScope(SearchScope.online);
+                  // Scope changes can shorten the scroll extent and close a menu
+                  // opened before layout has settled.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _sourceMenu.open();
+                  });
+                } else {
+                  controller.isOpen ? controller.close() : controller.open();
+                }
+              })),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scopeTab(SearchScope scope, String label,
+      {bool menuOpen = false, VoidCallback? onTap}) {
+    final selected = _state.scope == scope;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: TextButton(
+        onPressed: onTap ??
+            () {
+              _sourceMenu.close();
+              _changeScope(scope);
+            },
+        style: TextButton.styleFrom(
+          minimumSize: const Size(0, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          textStyle: const TextStyle(fontSize: 14),
+          foregroundColor: selected ? AppColors.primary600 : context.mutedText,
+          shape: const RoundedRectangleBorder(),
+          side: BorderSide.none,
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            border: Border(
+                bottom: BorderSide(
+                    color: selected ? AppColors.primary600 : Colors.transparent,
+                    width: 2)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Flexible(
+                child:
+                    Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+            if (scope == SearchScope.online) ...[
+              if (_state.selectedSourceIds.isNotEmpty)
+                Text(' (${_state.selectedSourceIds.length})'),
+              Icon(
+                  menuOpen
+                      ? Icons.expand_less_rounded
+                      : Icons.expand_more_rounded,
+                  size: 18),
+            ],
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+              header: true,
+              child:
+                  Text(title, style: Theme.of(context).textTheme.titleMedium)),
+          const Divider(height: 24),
+        ],
+      );
+
+  Widget _hint(String text) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 40),
+        child: Center(
+            child: Text(text, style: TextStyle(color: context.mutedText))),
+      );
+
+  Widget _emptyResults() => _hint(_state.searching
+      ? context.localeText('搜索中…', 'Searching…')
+      : context.localeText('未找到相关结果', 'No Results'));
+
+  Widget _error(Object? error) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(ApiError.messageFor(error ?? StateError('Search failed')),
+            style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      );
+
+  Widget _bookGrid(int count, Widget Function(int) itemBuilder,
+          {bool online = false}) =>
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = gridColumnsForWidth(constraints.maxWidth, _iconSize);
+          final spacing = gridSpacing(_iconSize);
+          final width =
+              (constraints.maxWidth - spacing * (columns - 1)) / columns;
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: count,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              crossAxisSpacing: spacing,
+              mainAxisSpacing: spacing + 14,
+              mainAxisExtent: width / coverAspectRatio(_coverShape) +
+                  (online ? 110 : 62) *
+                      MediaQuery.textScalerOf(context).scale(1),
+            ),
+            itemBuilder: (context, index) => itemBuilder(index),
+          );
+        },
+      );
+
+  Widget _addButton(SourceSearchBook item) {
+    final pending = _state.adding.contains(item.key);
+    return SizedBox(
+      height: 36,
+      width: double.infinity,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 4)),
+        onPressed: pending || item.added || item.book.id.isEmpty
+            ? null
+            : () async {
+                try {
+                  await _state.addBook(item);
+                } catch (error) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(ApiError.messageFor(error))),
+                  );
+                }
+              },
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          if (pending)
+            const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2))
+          else
+            Icon(item.added ? Icons.check_rounded : Icons.add_rounded,
+                size: 14),
+          const SizedBox(width: 3),
+          Flexible(
+              child: Text(
+                  pending
+                      ? context.localeText('加入中', 'Adding')
+                      : item.added
+                          ? context.localeText('已加入', 'Added')
+                          : context.localeText('加入书架', 'Add to shelf'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12))),
+        ]),
+      ),
     );
   }
 }

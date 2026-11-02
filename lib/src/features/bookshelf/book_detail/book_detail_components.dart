@@ -26,14 +26,17 @@ class _Meta extends StatelessWidget {
       children: [
         Icon(icon, size: 16, color: AppColors.primary500),
         const SizedBox(width: 6),
-        Text(
+        Flexible(
+            child: Text(
           text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: context.isDark ? AppColors.slate400 : AppColors.slate600,
             fontSize: 14,
             fontWeight: FontWeight.w700,
           ),
-        ),
+        )),
       ],
     );
   }

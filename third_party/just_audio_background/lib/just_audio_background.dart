@@ -21,6 +21,13 @@ bool _audioFocusEnabled = true;
 
 /// Provides the [init] method to initialise just_audio for background playback.
 class JustAudioBackground {
+  static Future<void> Function()? _beforePlay;
+
+  /// 应用内播放和系统媒体按钮共用续播准备逻辑。
+  static void setBeforePlayHandler(Future<void> Function()? handler) {
+    _beforePlay = handler;
+  }
+
   static void setSeekHandler(
       Future<void> Function(Duration position)? handler) {
     _externalSeekHandler = handler;
@@ -210,6 +217,16 @@ class _JustAudioPlayer extends AudioPlayerPlatform {
         case 'androidAudioSessionId':
           _androidAudioSessionId = event['value'] as int?;
           broadcastPlaybackEvent();
+          break;
+        case 'playbackError':
+          if (!eventController.isClosed) {
+            eventController.addError(
+                PlatformException(
+                    code: event['errorCode'] as String,
+                    message: event['errorMessage'] as String?,
+                    details: event['errorDetails']),
+                StackTrace.fromString(event['stackTrace'] as String));
+          }
           break;
       }
     });
@@ -447,7 +464,18 @@ class _PlayerAudioHandler extends BaseAudioHandler
   Future<void> _init(InitRequest initRequest) async {
     final player = await _platform.init(initRequest);
     _playerCompleter.complete(player);
-    final playbackEventMessageStream = player.playbackEventMessageStream;
+    // 原生预加载错误也要传回应用；在广播前统一处理，避免多个订阅重复报错。
+    final playbackEventMessageStream = player.playbackEventMessageStream
+        .handleError((Object failure, StackTrace stackTrace) {
+      customEvent.add({
+        'type': 'playbackError',
+        'errorCode': failure is PlatformException ? failure.code : '9999999',
+        'errorMessage':
+            failure is PlatformException ? failure.message : failure.toString(),
+        'errorDetails': failure is PlatformException ? failure.details : null,
+        'stackTrace': stackTrace.toString(),
+      });
+    }).asBroadcastStream();
     playbackEventMessageStream.listen((event) {
       final previousIndex = _justAudioEvent.currentIndex;
       final displayPosition = _usesDisplayClock ? _displayPosition : null;
@@ -722,11 +750,19 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToQueueItem(int index) async {
-    (await _player).seek(SeekRequest(position: Duration.zero, index: index));
+    await (await _player)
+        .seek(SeekRequest(position: Duration.zero, index: index));
   }
 
   @override
   Future<void> skipToNext() async {
+    // 耳机切章与界面共用片头定位、睡眠定时及失败恢复逻辑。
+    if (_externalNextHandler != null) {
+      if (_externalBool(_externalHasNextHandler)) {
+        await _externalNextHandler!();
+      }
+      return;
+    }
     if (hasNext) {
       await skipToQueueItem(nextIndex);
       return;
@@ -738,6 +774,12 @@ class _PlayerAudioHandler extends BaseAudioHandler
 
   @override
   Future<void> skipToPrevious() async {
+    if (_externalPreviousHandler != null) {
+      if (_externalBool(_externalHasPreviousHandler)) {
+        await _externalPreviousHandler!();
+      }
+      return;
+    }
     if (hasPrevious) {
       await skipToQueueItem(previousIndex);
       return;
@@ -750,6 +792,8 @@ class _PlayerAudioHandler extends BaseAudioHandler
   @override
   Future<void> play() async {
     final generation = ++_playRequestGeneration;
+    await JustAudioBackground._beforePlay?.call();
+    if (generation != _playRequestGeneration) return;
     if (_audioFocusEnabled) {
       try {
         final session = await AudioSession.instance;
@@ -995,6 +1039,10 @@ class _PlayerAudioHandler extends BaseAudioHandler
     playbackState.add(playbackState.nvalue!.copyWith(
       controls: controls,
       systemActions: {
+        // 与当前播放状态一致，不能让系统在播放时仍把耳机按键解释为播放。
+        playPauseAction,
+        // 双击切换命令独立于明确的播放、暂停命令，始终保留。
+        MediaAction.playPause,
         MediaAction.seek,
         MediaAction.skipToPrevious,
         MediaAction.skipToNext,

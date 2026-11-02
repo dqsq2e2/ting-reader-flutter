@@ -38,6 +38,8 @@ class _BookshelfPageState extends State<BookshelfPage> {
   static const int _pageSize = 50;
 
   BookshelfState? _shelf;
+  ValueNotifier<int>? _libraryRevision;
+  void _libraryChanged() => unawaited(_load());
   bool get _loading => _shelf?.loading ?? true;
   List<Book> get _books => _shelf?.books ?? const [];
   List<Series> get _series => _shelf?.series ?? const [];
@@ -84,6 +86,7 @@ class _BookshelfPageState extends State<BookshelfPage> {
   void dispose() {
     _shelf?.removeListener(_shelfChanged);
     _shelf?.dispose();
+    _libraryRevision?.removeListener(_libraryChanged);
     _indexOverlayTimer?.cancel();
     _filterOverlay?.remove();
     _scrollController
@@ -109,7 +112,13 @@ class _BookshelfPageState extends State<BookshelfPage> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _shelf ??= BookshelfState(AppScope.appOf(context).api)
+    if (!TickerMode.valuesOf(context).enabled) _closeFilterMenu();
+    final app = AppScope.appOf(context);
+    if (_libraryRevision != app.libraryRevision) {
+      _libraryRevision?.removeListener(_libraryChanged);
+      _libraryRevision = app.libraryRevision..addListener(_libraryChanged);
+    }
+    _shelf ??= BookshelfState(app.api, cache: app.libraryCache)
       ..addListener(_shelfChanged);
   }
 
@@ -129,7 +138,6 @@ class _BookshelfPageState extends State<BookshelfPage> {
 
   Future<void> _load() async {
     await _shelf?.load();
-    if (mounted) setState(_resetVisibleItems);
   }
 
   Future<void> _persist(String key, Object value) async {
@@ -253,7 +261,9 @@ class _BookshelfPageState extends State<BookshelfPage> {
   Widget build(BuildContext context) {
     final activeLetterValue = _activeLetter;
     if (_loading) return const LoadingView();
-    if (_shelf?.error != null) return LoadErrorView(onRetry: _load);
+    if (_shelf?.error != null && _shelf?.hasSnapshot != true) {
+      return LoadErrorView(onRetry: _load);
+    }
     final appState = AppScope.appOf(context);
     final hasContent = _books.isNotEmpty || _series.isNotEmpty;
     final grouped = _groupedContent;

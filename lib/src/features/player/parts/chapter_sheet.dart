@@ -33,6 +33,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   bool _ascending = true;
   List<Chapter>? _catalogChapters;
   bool _catalogRequested = false;
+  BookDetailState? _sourceDetail;
   final Map<String, GlobalKey> _chapterKeys = {};
   final Map<int, GlobalKey> _groupKeys = {};
 
@@ -41,6 +42,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
     super.initState();
     _showExtra = _chapterLooksExtra(widget.player.currentChapter);
     _groupIndex = _initialGroupIndex();
+    _ascending = _defaultAscending();
     _ensureCurrentVisible();
   }
 
@@ -52,12 +54,53 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
     unawaited(_loadChapterCatalog());
   }
 
+  @override
+  void dispose() {
+    _sourceDetail?.removeListener(_sourceChanged);
+    _sourceDetail?.dispose();
+    super.dispose();
+  }
+
   List<Chapter> get _chapterSource =>
-      _catalogChapters ?? widget.player.chapters;
+      _sourceDetail?.chapters ?? _catalogChapters ?? widget.player.chapters;
+
+  void _sourceChanged() {
+    final detail = _sourceDetail;
+    if (!mounted || detail == null) return;
+    setState(() {
+      _groupIndex = detail.group;
+      _showExtra = detail.tab == 'extra';
+      final ids = detail.chapters.map((chapter) => chapter.id).toSet();
+      _chapterKeys.removeWhere((id, _) => !ids.contains(id));
+    });
+  }
+
+  void _selectTab(bool extra) {
+    final detail = _sourceDetail;
+    if (detail != null) {
+      unawaited(detail.loadPage(
+          requestedTab: extra ? 'extra' : 'main', requestedGroup: 0));
+    } else {
+      setState(() {
+        _showExtra = extra;
+        _groupIndex = 0;
+        _ensureCurrentVisible();
+      });
+    }
+  }
 
   Future<void> _loadChapterCatalog() async {
     final book = widget.player.currentBook;
     if (book == null) return;
+    if (book.libraryType == 'source') {
+      final detail = BookDetailState(AppScope.appOf(context).api, book.id);
+      _sourceDetail = detail..addListener(_sourceChanged);
+      await detail.load(initialChapter: widget.player.currentChapter?.id);
+      if (!mounted) return;
+      setState(() => _ascending = _defaultAscending());
+      _ensureCurrentVisible();
+      return;
+    }
     try {
       final response = await AppScope.appOf(context).api.get(
             '/api/books/${book.id}/chapters',
@@ -75,6 +118,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
       setState(() {
         _catalogChapters = chapters;
         _groupIndex = _initialGroupIndex();
+        _ascending = _defaultAscending();
       });
       _ensureCurrentVisible();
     } catch (_) {
@@ -114,12 +158,26 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
   }
 
   int _initialGroupIndex() {
+    if (_sourceDetail case final detail?) return detail.group;
     final chapters = _chaptersForTab(_showExtra);
     final current = widget.player.currentChapter;
     if (current == null) return 0;
     final index = chapters.indexWhere((chapter) => chapter.id == current.id);
     if (index < 0) return 0;
     return index ~/ _chaptersPerGroup;
+  }
+
+  bool _defaultAscending() {
+    final chapters = _chaptersForTab(_showExtra);
+    if (chapters.isEmpty) return true;
+    final count = _sourceDetail == null
+        ? chapters.length
+        : _showExtra
+            ? _sourceDetail?.extraTotal ?? 0
+            : _sourceDetail?.mainTotal ?? 0;
+    final groupCount = (count + _chaptersPerGroup - 1) ~/ _chaptersPerGroup;
+    // 从第一组进入默认正序，从最后一组（从后往前）进入默认逆序。
+    return !(groupCount > 1 && _groupIndex == groupCount - 1);
   }
 
   bool _chapterLooksExtra(Chapter? chapter) {
@@ -135,9 +193,19 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
 
   List<_ChapterPageGroup> _groupsFor(List<Chapter> chapters) {
     final groups = <_ChapterPageGroup>[];
-    for (var i = 0; i < chapters.length; i += _chaptersPerGroup) {
-      final end = (i + _chaptersPerGroup).clamp(0, chapters.length);
-      final slice = chapters.sublist(i, end);
+    final detail = _sourceDetail;
+    final count = detail == null
+        ? chapters.length
+        : _showExtra
+            ? detail.extraTotal
+            : detail.mainTotal;
+    for (var i = 0; i < count; i += _chaptersPerGroup) {
+      final end = (i + _chaptersPerGroup).clamp(0, count);
+      final slice = detail == null
+          ? chapters.sublist(i, end)
+          : i ~/ _chaptersPerGroup == detail.group
+              ? chapters
+              : <Chapter>[];
       groups.add(_ChapterPageGroup(
         start: i + 1,
         end: end,
@@ -203,7 +271,9 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
         final mainChapters = _chaptersForTab(false);
         final extraChapters = _chaptersForTab(true);
         final downloadState = AppScope.downloadOf(context);
-        final activeExtra = _showExtra && extraChapters.isNotEmpty;
+        final mainCount = _sourceDetail?.mainTotal ?? mainChapters.length;
+        final extraCount = _sourceDetail?.extraTotal ?? extraChapters.length;
+        final activeExtra = _showExtra && extraCount > 0;
         final currentChapters = activeExtra ? extraChapters : mainChapters;
         final groups = _groupsFor(currentChapters);
         var groupIndex = _groupIndex;
@@ -271,7 +341,7 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                 ),
                               ],
                             );
-                            final tabs = extraChapters.isEmpty
+                            final tabs = extraCount == 0
                                 ? null
                                 : Container(
                                     padding: const EdgeInsets.all(4),
@@ -286,31 +356,23 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                       children: [
                                         _ChapterTabButton(
                                           label: context.localeText(
-                                            '正文 (${mainChapters.length})',
-                                            'Main (${mainChapters.length})',
+                                            '正文 ($mainCount)',
+                                            'Main ($mainCount)',
                                           ),
                                           selected: !activeExtra,
                                           accent: accent,
                                           onAccent: onAccent,
-                                          onTap: () => setState(() {
-                                            _showExtra = false;
-                                            _groupIndex = 0;
-                                            _ensureCurrentVisible();
-                                          }),
+                                          onTap: () => _selectTab(false),
                                         ),
                                         _ChapterTabButton(
                                           label: context.localeText(
-                                            '番外 (${extraChapters.length})',
-                                            'Extra (${extraChapters.length})',
+                                            '番外 ($extraCount)',
+                                            'Extra ($extraCount)',
                                           ),
                                           selected: activeExtra,
                                           accent: accent,
                                           onAccent: onAccent,
-                                          onTap: () => setState(() {
-                                            _showExtra = true;
-                                            _groupIndex = 0;
-                                            _ensureCurrentVisible();
-                                          }),
+                                          onTap: () => _selectTab(true),
                                         ),
                                       ],
                                     ),
@@ -429,10 +491,16 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                                               BorderRadius.circular(14),
                                         ),
                                         onSelected: (_) {
-                                          setState(() {
-                                            _groupIndex = index;
-                                            _ensureCurrentVisible();
-                                          });
+                                          final detail = _sourceDetail;
+                                          if (detail != null) {
+                                            unawaited(detail.loadPage(
+                                                requestedGroup: index));
+                                          } else {
+                                            setState(() {
+                                              _groupIndex = index;
+                                              _ensureCurrentVisible();
+                                            });
+                                          }
                                         },
                                       );
                                     },
@@ -445,81 +513,113 @@ class _ChapterSheetListState extends State<_ChapterSheetList> {
                           ),
                         ),
                       Expanded(
-                        child: activeGroup == null
-                            ? Center(
-                                child: Text(
-                                  activeExtra
-                                      ? context.localeText(
-                                          '暂无番外章节',
-                                          'No extra chapters',
-                                        )
-                                      : context.localeText(
-                                          '暂无正文章节',
-                                          'No main chapters',
+                        child: _sourceDetail?.loading == true ||
+                                _sourceDetail?.pageLoading == true
+                            ? const LoadingView()
+                            : _sourceDetail?.error != null
+                                ? Center(
+                                    child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                        Text(_sourceDetail?.error ?? ''),
+                                        TextButton.icon(
+                                          onPressed: () =>
+                                              _sourceDetail?.loadPage(
+                                                  requestedGroup: groupIndex),
+                                          icon:
+                                              const Icon(Icons.refresh_rounded),
+                                          label: Text(context.localeText(
+                                              '重试', 'Retry')),
                                         ),
-                                  style: TextStyle(color: context.mutedText),
-                                ),
-                              )
-                            : SingleChildScrollView(
-                                padding:
-                                    const EdgeInsets.fromLTRB(14, 14, 14, 18),
-                                child: Column(
-                                  children: [
-                                    for (var index = 0;
-                                        index < activeChapters.length;
-                                        index++) ...[
-                                      Builder(
-                                        builder: (context) {
-                                          final chapter = activeChapters[index];
-                                          final originalIndex = activeGroup
-                                              .chapters
-                                              .indexOf(chapter);
-                                          final actualIndex =
-                                              groupIndex * _chaptersPerGroup +
-                                                  (originalIndex < 0
-                                                      ? index
-                                                      : originalIndex);
-                                          return KeyedSubtree(
-                                            key: _chapterKeys.putIfAbsent(
-                                              chapter.id,
-                                              () => GlobalKey(),
-                                            ),
-                                            child: _ChapterSheetTile(
-                                              chapter: chapter,
-                                              fallbackIndex: actualIndex + 1,
-                                              active: chapter.id ==
-                                                  widget.player.currentChapter
-                                                      ?.id,
-                                              isPlaying:
-                                                  widget.player.isPlaying,
-                                              progressText: _progressText(
-                                                  context, chapter),
-                                              downloaded: downloadState
-                                                  .hasChapter(chapter.id),
-                                              task: downloadState
-                                                  .taskForChapter(chapter.id),
-                                              accent: accent,
-                                              onAccent: onAccent,
-                                              onTap: () async {
-                                                await _playChapter(chapter);
-                                                if (context.mounted) {
-                                                  Navigator.pop(context);
-                                                }
-                                              },
-                                              onDownload: () =>
-                                                  _downloadChapter(
-                                                chapter,
+                                      ]))
+                                : activeGroup == null
+                                    ? Center(
+                                        child: Text(
+                                          activeExtra
+                                              ? context.localeText(
+                                                  '暂无番外章节',
+                                                  'No extra chapters',
+                                                )
+                                              : context.localeText(
+                                                  '暂无正文章节',
+                                                  'No main chapters',
+                                                ),
+                                          style: TextStyle(
+                                              color: context.mutedText),
+                                        ),
+                                      )
+                                    : SingleChildScrollView(
+                                        padding: const EdgeInsets.fromLTRB(
+                                            14, 14, 14, 18),
+                                        child: Column(
+                                          children: [
+                                            for (var index = 0;
+                                                index < activeChapters.length;
+                                                index++) ...[
+                                              Builder(
+                                                builder: (context) {
+                                                  final chapter =
+                                                      activeChapters[index];
+                                                  final originalIndex =
+                                                      activeGroup.chapters
+                                                          .indexOf(chapter);
+                                                  final actualIndex =
+                                                      groupIndex *
+                                                              _chaptersPerGroup +
+                                                          (originalIndex < 0
+                                                              ? index
+                                                              : originalIndex);
+                                                  return KeyedSubtree(
+                                                    key: _chapterKeys
+                                                        .putIfAbsent(
+                                                      chapter.id,
+                                                      () => GlobalKey(),
+                                                    ),
+                                                    child: _ChapterSheetTile(
+                                                      chapter: chapter,
+                                                      fallbackIndex:
+                                                          actualIndex + 1,
+                                                      active: chapter.id ==
+                                                          widget
+                                                              .player
+                                                              .currentChapter
+                                                              ?.id,
+                                                      isPlaying: widget
+                                                          .player.isPlaying,
+                                                      progressText:
+                                                          _progressText(
+                                                              context, chapter),
+                                                      downloaded: downloadState
+                                                          .hasChapter(
+                                                              chapter.id),
+                                                      task: downloadState
+                                                          .taskForChapter(
+                                                              chapter.id),
+                                                      accent: accent,
+                                                      onAccent: onAccent,
+                                                      onTap: () async {
+                                                        await _playChapter(
+                                                            chapter);
+                                                        if (context.mounted) {
+                                                          Navigator.pop(
+                                                              context);
+                                                        }
+                                                      },
+                                                      onDownload: () =>
+                                                          _downloadChapter(
+                                                        chapter,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
                                               ),
-                                            ),
-                                          );
-                                        },
+                                              if (index !=
+                                                  activeChapters.length - 1)
+                                                const SizedBox(height: 8),
+                                            ],
+                                          ],
+                                        ),
                                       ),
-                                      if (index != activeChapters.length - 1)
-                                        const SizedBox(height: 8),
-                                    ],
-                                  ],
-                                ),
-                              ),
                       ),
                     ],
                   ),

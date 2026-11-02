@@ -257,6 +257,10 @@ class _PlaybackSettingField extends StatelessWidget {
         TextField(
           controller: controller,
           keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => FocusScope.of(context).unfocus(),
+          onTapOutside: (_) => FocusScope.of(context).unfocus(),
           decoration: InputDecoration(
             hintText: hint,
             contentPadding:

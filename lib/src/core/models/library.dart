@@ -23,6 +23,8 @@ class Library {
   final String? createdAt;
   final Map<String, dynamic>? scraperConfig;
 
+  bool get isSource => libraryType == 'source';
+
   factory Library.fromJson(Map<String, dynamic> json) {
     final rawScraper = json['scraper_config'];
     return Library(

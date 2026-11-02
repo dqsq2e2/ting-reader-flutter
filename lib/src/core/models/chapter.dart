@@ -9,6 +9,8 @@ class Chapter {
     required this.chapterIndex,
     this.duration = 0,
     this.isExtra = false,
+    this.startTime,
+    this.endTime,
     this.progressPosition,
     this.progressUpdatedAt,
   });
@@ -20,8 +22,31 @@ class Chapter {
   final int chapterIndex;
   final int duration;
   final bool isExtra;
+
+  /// Milliseconds into [path] where this chapter starts. Set for chapters read
+  /// from an embedded M4B chapter table; null when the chapter is the file.
+  final int? startTime;
+
+  /// Milliseconds into [path] where this chapter ends.
+  final int? endTime;
   final double? progressPosition;
   final String? progressUpdatedAt;
+
+  bool get isSegmented => startTime != null && endTime != null;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'book_id': bookId,
+        'title': title,
+        'path': path,
+        'chapter_index': chapterIndex,
+        'duration': duration,
+        'is_extra': isExtra,
+        'start_time': startTime,
+        'end_time': endTime,
+        'progress_position': progressPosition,
+        'progress_updated_at': progressUpdatedAt,
+      };
 
   factory Chapter.fromJson(Map<String, dynamic> json) {
     return Chapter(
@@ -33,6 +58,8 @@ class Chapter {
       chapterIndex: readInt(json, 'chapter_index') ?? 0,
       isExtra: (readInt(json, 'is_extra') ?? 0) != 0 ||
           (readBool(json, 'is_extra') ?? false),
+      startTime: readInt(json, 'start_time'),
+      endTime: readInt(json, 'end_time'),
       progressPosition: readDouble(json, 'progress_position'),
       progressUpdatedAt: readString(json, 'progress_updated_at'),
     );
@@ -54,10 +81,18 @@ class Chapter {
       chapterIndex: chapterIndex ?? this.chapterIndex,
       duration: duration ?? this.duration,
       isExtra: isExtra ?? this.isExtra,
+      startTime: startTime,
+      endTime: endTime,
       progressPosition: progressPosition ?? this.progressPosition,
       progressUpdatedAt: progressUpdatedAt ?? this.progressUpdatedAt,
     );
   }
+
+  /// Start of this chapter inside the shared audio file, in seconds.
+  double get startSeconds => (startTime ?? 0) / 1000;
+
+  /// End of this chapter inside the shared audio file, in seconds.
+  double get endSeconds => (endTime ?? 0) / 1000;
 }
 
 class ChaptersPage {

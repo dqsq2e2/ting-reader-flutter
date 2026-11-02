@@ -26,7 +26,11 @@ class _PlayerProgress {
       onRemotePosition;
   WebSocket? _socket;
   StreamSubscription<dynamic>? _subscription;
-  Timer? _pingTimer;
+  SocketHeartbeat? _heartbeat;
+  Timer? _reconnectTimer;
+  int _reconnectAttempts = 0;
+  int _socketAuthRevision = -1;
+  bool _wantSocket = false;
   Timer? _webSocketTimer;
   Timer? _httpTimer;
   bool _connecting = false;
@@ -90,14 +94,18 @@ class _PlayerProgress {
       return true;
     } catch (error) {
       if (_invalidGatewayToken(error)) _reauthenticate();
-      closeSocket();
+      _dropSocket();
       return false;
     }
   }
 
   Future<WebSocket?> _ensureSocket() async {
     if (_blocked) return null;
-    if (_socket != null) return _socket;
+    _wantSocket = true;
+    if (_socket != null && _socketAuthRevision == appState.api.authRevision) {
+      return _socket;
+    }
+    if (_socket != null) closeSocket(reconnect: true);
     if (_connecting) return null;
     _connecting = true;
     final generation = _generation;
@@ -125,32 +133,44 @@ class _PlayerProgress {
       final socket = await connection.timeout(const Duration(seconds: 5));
       if (socket == null) return null;
       _socket = socket;
+      _socketAuthRevision = authRevision;
+      _reconnectAttempts = 0;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
       _subscription = socket.listen(
-        _handleMessage,
+        (message) {
+          if (identical(_socket, socket) &&
+              authRevision == appState.api.authRevision) {
+            _handleMessage(message);
+          }
+        },
         onDone: () {
           if (!identical(_socket, socket)) return;
           if (_invalidGatewayToken(socket.closeReason)) _reauthenticate();
-          closeSocket();
+          _dropSocket();
         },
         onError: (Object error) {
           if (!identical(_socket, socket)) return;
           if (_invalidGatewayToken(error)) _reauthenticate();
-          closeSocket();
+          _dropSocket();
         },
         cancelOnError: true,
       );
-      _pingTimer = Timer.periodic(const Duration(seconds: 25), (_) {
-        try {
-          _socket?.add(jsonEncode({'type': 'ping'}));
-        } catch (_) {
-          closeSocket();
-        }
-      });
+      _heartbeat = SocketHeartbeat(
+        sendPing: () {
+          if (identical(_socket, socket)) {
+            socket.add(jsonEncode({'type': 'ping'}));
+          }
+        },
+        onTimeout: () {
+          if (identical(_socket, socket)) _dropSocket();
+        },
+      )..start();
       return socket;
     } catch (error) {
       if (!_disposed && generation == _generation) {
         if (_invalidGatewayToken(error)) _reauthenticate();
-        closeSocket();
+        _dropSocket();
       }
       return null;
     } finally {
@@ -189,7 +209,12 @@ class _PlayerProgress {
         _reauthenticate();
         return;
       }
-      if (data is! Map || data['type'] != 'progress_updated') return;
+      if (data is! Map) return;
+      if (data['type'] == 'pong') {
+        _heartbeat?.pong();
+        return;
+      }
+      if (data['type'] != 'progress_updated') return;
       final position = _doubleValue(data['position']);
       if (position == null || !position.isFinite) return;
       onRemotePosition(data['book_id']?.toString(),
@@ -200,12 +225,48 @@ class _PlayerProgress {
   }
 
   bool _invalidGatewayToken(Object? value) =>
-      (appState.api.isGatewaySession?.call() ?? false) &&
-      ApiClient.isInvalidGatewayTokenPayload(value);
+      ApiClient.isInvalidGatewayTokenPayload(value) ||
+      (value is WebSocketException &&
+          RegExp(r'\bstatus(?:\s+code)?\s*:\s*401\b', caseSensitive: false)
+              .hasMatch(value.message));
 
   void _reauthenticate() {
-    closeSocket();
-    if (!_disposed) unawaited(appState.handleGatewaySessionExpired());
+    closeSocket(reconnect: true);
+    if (!_disposed) {
+      unawaited(appState.recoverSession().then((_) {
+        if (!_disposed) _scheduleReconnect();
+      }));
+    }
+  }
+
+  void _dropSocket() {
+    closeSocket(reconnect: true);
+    _scheduleReconnect();
+  }
+
+  void connectionChanged() {
+    final wanted = _wantSocket;
+    closeSocket(reconnect: wanted);
+    _reconnectAttempts = 0;
+    if (wanted) _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (_blocked ||
+        !_wantSocket ||
+        _socket != null ||
+        _reconnectTimer != null ||
+        (appState.token?.isEmpty ?? true) ||
+        appState.needsDirectLogin) {
+      return;
+    }
+    final seconds = (1 << _reconnectAttempts.clamp(0, 5)).clamp(1, 30);
+    _reconnectAttempts++;
+    _reconnectTimer = Timer(Duration(seconds: seconds), () async {
+      _reconnectTimer = null;
+      if (_blocked || !_wantSocket) return;
+      if (await _ensureSocket() == null) _scheduleReconnect();
+    });
   }
 
   void start(double position) {
@@ -225,10 +286,14 @@ class _PlayerProgress {
     _httpTimer = null;
   }
 
-  void closeSocket() {
+  void closeSocket({bool reconnect = false}) {
     _generation++;
-    _pingTimer?.cancel();
-    _pingTimer = null;
+    if (!reconnect) _wantSocket = false;
+    _heartbeat?.stop();
+    _heartbeat = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _socketAuthRevision = -1;
     unawaited(_subscription?.cancel());
     _subscription = null;
     final socket = _socket;

@@ -303,6 +303,18 @@ EdgeInsets pagePaddingForWidth(double width) {
   return const EdgeInsets.all(16);
 }
 
+/// Marks a [PageListView] child that should span the full viewport width
+/// instead of taking the page's horizontal padding. Used by sections that are
+/// edge-to-edge while the rest of the page keeps its gutters.
+class FullBleed extends StatelessWidget {
+  const FullBleed({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class PageListView extends StatelessWidget {
   const PageListView({
     super.key,
@@ -320,11 +332,31 @@ class PageListView extends StatelessWidget {
     final onRefreshValue = onRefresh;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final list = ListView(
-          controller: controller,
-          padding: pagePaddingForWidth(constraints.maxWidth),
-          children: children,
-        );
+        final padding = pagePaddingForWidth(constraints.maxWidth);
+        final hasFullBleed = children.any((child) => child is FullBleed);
+        final list = hasFullBleed
+            ? ListView(
+                controller: controller,
+                padding: EdgeInsets.only(
+                  top: padding.top,
+                  bottom: padding.bottom,
+                ),
+                children: [
+                  for (final child in children)
+                    if (child is FullBleed)
+                      child.child
+                    else
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: padding.left),
+                        child: child,
+                      ),
+                ],
+              )
+            : ListView(
+                controller: controller,
+                padding: padding,
+                children: children,
+              );
 
         if (onRefreshValue == null) return list;
         return RefreshIndicator(
@@ -624,15 +656,17 @@ class BatchActionButton extends StatelessWidget {
                   iconWidget,
                   SizedBox(width: narrow ? 6 : 8),
                 ],
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: narrow ? 13 : 14,
-                    fontWeight: FontWeight.w400,
-                    height: 1.15,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: narrow ? 13 : 14,
+                      fontWeight: FontWeight.w400,
+                      height: 1.15,
+                    ),
                   ),
                 ),
               ],

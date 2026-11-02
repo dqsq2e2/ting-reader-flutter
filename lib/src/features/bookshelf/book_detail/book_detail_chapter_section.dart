@@ -3,6 +3,181 @@ part of 'book_detail_page.dart';
 class _ChapterSection extends StatefulWidget {
   const _ChapterSection({
     required this.book,
+    required this.header,
+    required this.chapters,
+    required this.groupIndex,
+    required this.activeTab,
+    required this.highlightedChapterId,
+    required this.currentChapterId,
+    required this.isPlaying,
+    required this.loading,
+    required this.themeColor,
+    required this.rowKeys,
+    required this.selectionMode,
+    required this.selectedIds,
+    required this.onToggleSelected,
+    required this.onPlayChapter,
+  });
+
+  final Book book;
+  final Widget header;
+  final List<Chapter> chapters;
+  final int groupIndex;
+  final String activeTab;
+  final String? highlightedChapterId;
+  final String? currentChapterId;
+  final bool isPlaying;
+  final bool loading;
+  final Color? themeColor;
+  final Map<String, GlobalKey> rowKeys;
+  final bool selectionMode;
+  final Set<String> selectedIds;
+  final ValueChanged<Chapter> onToggleSelected;
+  final Future<void> Function(Chapter chapter) onPlayChapter;
+
+  @override
+  State<_ChapterSection> createState() => _ChapterSectionState();
+}
+
+class _ChapterSectionState extends State<_ChapterSection> {
+  Future<void> _downloadChapter(Chapter chapter) async {
+    try {
+      final result = await AppScope.downloadOf(context)
+          .requestChapter(widget.book, chapter);
+      if (!mounted) return;
+      _showDownloadMessage(
+          result.messageForLocale(context.isEnglishLocale, chapter.title));
+    } catch (error) {
+      if (mounted) {
+        _showDownloadMessage(context.localeText(
+            '加入下载失败：${ApiError.messageFor(error)}',
+            'Failed to add download: ${ApiError.messageFor(error)}'));
+      }
+    }
+  }
+
+  void _showDownloadMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final compactLayout = MediaQuery.sizeOf(context).width < 640;
+    final sidePadding = compactLayout ? 16.0 : 24.0;
+    final downloadState = AppScope.downloadOf(context);
+    final displayChapters = widget.chapters;
+    return Container(
+      // Full-width rows: the section spans the viewport, only its header and
+      // auxiliary controls keep the page's readable side padding.
+      padding: EdgeInsets.symmetric(vertical: compactLayout ? 16 : 24),
+      decoration: BoxDecoration(
+        color: context.cardColor,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: context.isDark ? AppColors.slate800 : AppColors.slate100,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color:
+                Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          widget.header,
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: sidePadding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.loading) ...[
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(999),
+                    child: LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: context.isDark
+                          ? AppColors.slate800
+                          : AppColors.slate100,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.primary500),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+          if (widget.chapters.isEmpty)
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: sidePadding),
+              child: EmptyState(
+                icon: Icons.queue_music_rounded,
+                title: context.localeText('暂无章节', 'No Chapters'),
+                message: context.localeText(
+                    '这个分组下还没有章节。', 'This group has no chapters yet.'),
+              ),
+            )
+          else
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: compactLayout ? 8 : 12,
+              ),
+              child: Column(
+                children: [
+                  for (var i = 0; i < displayChapters.length; i++)
+                    KeyedSubtree(
+                      key: widget.rowKeys.putIfAbsent(
+                        displayChapters[i].id,
+                        () => GlobalKey(),
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          bottom: i == displayChapters.length - 1 ? 0 : 12,
+                        ),
+                        child: _ChapterListRow(
+                          chapter: displayChapters[i],
+                          active: widget.highlightedChapterId ==
+                              displayChapters[i].id,
+                          playing: widget.currentChapterId ==
+                                  displayChapters[i].id &&
+                              widget.isPlaying,
+                          themeColor: widget.themeColor,
+                          selectionMode: widget.selectionMode,
+                          selected: widget.selectedIds
+                              .contains(displayChapters[i].id),
+                          downloaded:
+                              downloadState.hasChapter(displayChapters[i].id),
+                          task: downloadState
+                              .taskForChapter(displayChapters[i].id),
+                          onSelected: () =>
+                              widget.onToggleSelected(displayChapters[i]),
+                          onPlay: () =>
+                              widget.onPlayChapter(displayChapters[i]),
+                          onDownload: () =>
+                              _downloadChapter(displayChapters[i]),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ChapterSectionHeader extends StatefulWidget {
+  const _ChapterSectionHeader({
+    super.key,
     required this.chapters,
     required this.groupCount,
     required this.activeTotal,
@@ -12,22 +187,24 @@ class _ChapterSection extends StatefulWidget {
     required this.mainCount,
     required this.extraCount,
     required this.showExtraTab,
-    required this.highlightedChapterId,
-    required this.currentChapterId,
-    required this.isPlaying,
-    required this.loading,
-    required this.themeColor,
     required this.admin,
-    required this.rowKeys,
     required this.ascending,
-    required this.onPlayChapter,
+    required this.themeColor,
+    required this.selectionMode,
+    required this.selectedDownloadable,
+    required this.allPageSelected,
+    required this.hasSelectable,
+    required this.sidePadding,
+    required this.sticky,
+    required this.onToggleCurrentPage,
+    required this.onDownloadSelected,
     required this.onToggleSort,
     required this.onGroupChanged,
     required this.onTabChanged,
     required this.onManage,
+    required this.onToggleSelectionMode,
   });
 
-  final Book book;
   final List<Chapter> chapters;
   final int groupCount;
   final int activeTotal;
@@ -37,38 +214,39 @@ class _ChapterSection extends StatefulWidget {
   final int mainCount;
   final int extraCount;
   final bool showExtraTab;
-  final String? highlightedChapterId;
-  final String? currentChapterId;
-  final bool isPlaying;
-  final bool loading;
-  final Color? themeColor;
   final bool admin;
-  final Map<String, GlobalKey> rowKeys;
   final bool ascending;
-  final Future<void> Function(Chapter chapter) onPlayChapter;
+  final Color? themeColor;
+  final bool selectionMode;
+  final int selectedDownloadable;
+  final bool allPageSelected;
+  final bool hasSelectable;
+  final double sidePadding;
+  final bool sticky;
+  final VoidCallback onToggleCurrentPage;
+  final VoidCallback onDownloadSelected;
   final VoidCallback onToggleSort;
   final ValueChanged<int> onGroupChanged;
   final ValueChanged<String> onTabChanged;
   final VoidCallback onManage;
+  final VoidCallback onToggleSelectionMode;
 
   @override
-  State<_ChapterSection> createState() => _ChapterSectionState();
+  State<_ChapterSectionHeader> createState() => _ChapterSectionHeaderState();
 }
 
-class _ChapterSectionState extends State<_ChapterSection> {
-  final Set<String> _selectedIds = {};
+class _ChapterSectionHeaderState extends State<_ChapterSectionHeader> {
   final Map<int, GlobalKey> _groupKeys = {};
-  bool _selectionMode = false;
 
   @override
-  void didUpdateWidget(covariant _ChapterSection oldWidget) {
+  void initState() {
+    super.initState();
+    _centerSelectedGroup();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChapterSectionHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final visibleIds = widget.chapters.map((chapter) => chapter.id).toSet();
-    _selectedIds.removeWhere((id) => !visibleIds.contains(id));
-    if (oldWidget.activeTab != widget.activeTab ||
-        oldWidget.groupIndex != widget.groupIndex) {
-      _selectedIds.clear();
-    }
     if (oldWidget.groupIndex != widget.groupIndex ||
         oldWidget.activeTab != widget.activeTab) {
       _centerSelectedGroup();
@@ -99,137 +277,32 @@ class _ChapterSectionState extends State<_ChapterSection> {
     });
   }
 
-  List<Chapter> _downloadableChapters(DownloadState downloadState) {
-    return widget.chapters
-        .where((chapter) => downloadState.canQueueChapter(chapter.id))
-        .toList();
-  }
-
-  void _toggleSelectionMode() {
-    setState(() {
-      _selectionMode = !_selectionMode;
-      _selectedIds.clear();
-    });
-  }
-
-  void _toggleChapterSelection(Chapter chapter, DownloadState downloadState) {
-    if (downloadState.hasChapter(chapter.id) ||
-        downloadState.taskForChapter(chapter.id) != null) {
-      return;
-    }
-    setState(() {
-      if (_selectedIds.contains(chapter.id)) {
-        _selectedIds.remove(chapter.id);
-      } else {
-        _selectedIds.add(chapter.id);
-      }
-    });
-  }
-
-  void _toggleCurrentPage(DownloadState downloadState) {
-    final ids = _downloadableChapters(downloadState)
-        .map((chapter) => chapter.id)
-        .toList();
-    setState(() {
-      final allSelected = ids.every(_selectedIds.contains);
-      if (allSelected) {
-        _selectedIds.removeAll(ids);
-      } else {
-        _selectedIds.addAll(ids);
-      }
-    });
-  }
-
-  Future<void> _downloadChapter(Chapter chapter) async {
-    try {
-      final result = await AppScope.downloadOf(context)
-          .requestChapter(widget.book, chapter);
-      if (!mounted) return;
-      _showDownloadMessage(
-          result.messageForLocale(context.isEnglishLocale, chapter.title));
-    } catch (error) {
-      if (mounted) {
-        _showDownloadMessage(context.localeText(
-            '加入下载失败：${ApiError.messageFor(error)}',
-            'Failed to add download: ${ApiError.messageFor(error)}'));
-      }
-    }
-  }
-
-  Future<void> _downloadSelected() async {
-    final downloadState = AppScope.downloadOf(context);
-    final targets = widget.chapters
-        .where((chapter) =>
-            _selectedIds.contains(chapter.id) &&
-            downloadState.canQueueChapter(chapter.id))
-        .toList()
-      ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
-    if (targets.isEmpty) {
-      _showDownloadMessage(
-          context.localeText('没有可加入队列的章节', 'No chapters can be queued'));
-      return;
-    }
-    var queued = 0;
-    for (final chapter in targets) {
-      try {
-        final result = await downloadState.requestChapter(widget.book, chapter,
-            resumeExisting: false);
-        if (result.outcome == DownloadRequestOutcome.queued) queued++;
-      } catch (err) {
-        if (!mounted) return;
-        _showDownloadMessage(context.localeText(
-            '加入下载失败：${ApiError.messageFor(err)}',
-            'Failed to add download: ${ApiError.messageFor(err)}'));
-        break;
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      _selectionMode = false;
-      _selectedIds.clear();
-    });
-    if (queued > 0) {
-      _showDownloadMessage(context.localeText(
-          '已加入 $queued 个章节到下载队列', 'Queued $queued chapters'));
-    }
-  }
-
-  void _showDownloadMessage(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final downloadState = AppScope.downloadOf(context);
-    final downloadable = _downloadableChapters(downloadState);
-    final allPageSelected = downloadable.isNotEmpty &&
-        downloadable.map((chapter) => chapter.id).every(_selectedIds.contains);
-    final selectedDownloadable = widget.chapters
-        .where((chapter) =>
-            _selectedIds.contains(chapter.id) &&
-            downloadState.canQueueChapter(chapter.id))
-        .length;
-    final displayChapters = widget.chapters;
     return Container(
-      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 640 ? 16 : 24),
-      decoration: BoxDecoration(
-        color: context.cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: context.isDark ? AppColors.slate800 : AppColors.slate100,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color:
-                Colors.black.withValues(alpha: context.isDark ? 0.12 : 0.035),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+      padding: EdgeInsets.fromLTRB(
+        widget.sidePadding,
+        widget.sticky ? 10 : 0,
+        widget.sidePadding,
+        widget.sticky ? 10 : 0,
       ),
+      decoration: widget.sticky
+          ? BoxDecoration(
+              color: context.cardColor,
+              border: Border(
+                bottom: BorderSide(color: context.faintBorder),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(
+                    alpha: context.isDark ? 0.35 : 0.08,
+                  ),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -286,34 +359,35 @@ class _ChapterSectionState extends State<_ChapterSection> {
                 icon: Icon(Icons.settings_rounded, size: compact ? 18 : 20),
               );
               final batchButton = TextButton.icon(
-                onPressed:
-                    widget.chapters.isEmpty ? null : _toggleSelectionMode,
+                onPressed: widget.chapters.isEmpty
+                    ? null
+                    : widget.onToggleSelectionMode,
                 icon: Icon(
-                  _selectionMode
+                  widget.selectionMode
                       ? Icons.close_rounded
                       : Icons.download_for_offline_outlined,
                   size: actionIconSize,
                 ),
                 label: Text(
-                  _selectionMode
+                  widget.selectionMode
                       ? context.l10n.commonCancel
                       : context.localeText('批量下载', 'Batch Download'),
                   style: actionTextStyle,
                 ),
                 style: TextButton.styleFrom(
-                  foregroundColor: _selectionMode
+                  foregroundColor: widget.selectionMode
                       ? context.secondaryText
                       : AppColors.primary600,
                   backgroundColor: context.isDark
                       ? AppColors.slate800
-                      : (_selectionMode
+                      : (widget.selectionMode
                           ? AppColors.slate100
                           : AppColors.primary50),
                   padding: actionPadding,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                     side: BorderSide(
-                      color: _selectionMode
+                      color: widget.selectionMode
                           ? context.faintBorder
                           : AppColors.primary100,
                     ),
@@ -433,129 +507,63 @@ class _ChapterSectionState extends State<_ChapterSection> {
               ),
             ),
           ],
-          if (widget.loading) ...[
+          if (widget.selectionMode) ...[
             const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                minHeight: 2,
-                backgroundColor:
-                    context.isDark ? AppColors.slate800 : AppColors.slate100,
-                valueColor:
-                    const AlwaysStoppedAnimation<Color>(AppColors.primary500),
-              ),
-            ),
+            _buildSelectionBar(context),
           ],
-          const SizedBox(height: 24),
-          if (_selectionMode) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: context.isDark ? AppColors.slate800 : AppColors.slate50,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.faintBorder),
-              ),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final compact = constraints.maxWidth < 520;
-                  final selectButton = BatchSelectButton(
-                    checked: allPageSelected,
-                    label: allPageSelected
-                        ? context.localeText('取消本页', 'Unselect Page')
-                        : context.localeText('全选本页', 'Select Page'),
-                    compact: compact,
-                    onPressed: downloadable.isEmpty
-                        ? null
-                        : () => _toggleCurrentPage(downloadState),
-                  );
-                  final countBadge = BatchCountBadge(
-                    label: context.localeText('已选 $selectedDownloadable',
-                        '$selectedDownloadable selected'),
-                    compact: compact,
-                  );
-                  final downloadButton = BatchActionButton(
-                    icon: Icons.download_rounded,
-                    label: compact
-                        ? context.localeText('下载', 'Download')
-                        : context.localeText('下载选中', 'Download Selected'),
-                    filled: true,
-                    compact: compact,
-                    onPressed:
-                        selectedDownloadable == 0 ? null : _downloadSelected,
-                  );
-                  if (compact) {
-                    return Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        selectButton,
-                        countBadge,
-                        downloadButton,
-                      ],
-                    );
-                  }
-                  final trailing = Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    alignment: WrapAlignment.end,
-                    children: [countBadge, downloadButton],
-                  );
-                  return Row(
-                    children: [selectButton, const Spacer(), trailing],
-                  );
-                },
-              ),
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (widget.chapters.isEmpty)
-            EmptyState(
-              icon: Icons.queue_music_rounded,
-              title: context.localeText('暂无章节', 'No Chapters'),
-              message: context.localeText(
-                  '这个分组下还没有章节。', 'This group has no chapters yet.'),
-            )
-          else
-            Column(
-              children: [
-                for (var i = 0; i < displayChapters.length; i++)
-                  KeyedSubtree(
-                    key: widget.rowKeys.putIfAbsent(
-                      displayChapters[i].id,
-                      () => GlobalKey(),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        bottom: i == displayChapters.length - 1 ? 0 : 12,
-                      ),
-                      child: _ChapterListRow(
-                        chapter: displayChapters[i],
-                        active: widget.highlightedChapterId ==
-                            displayChapters[i].id,
-                        playing:
-                            widget.currentChapterId == displayChapters[i].id &&
-                                widget.isPlaying,
-                        themeColor: widget.themeColor,
-                        selectionMode: _selectionMode,
-                        selected: _selectedIds.contains(displayChapters[i].id),
-                        downloaded:
-                            downloadState.hasChapter(displayChapters[i].id),
-                        task:
-                            downloadState.taskForChapter(displayChapters[i].id),
-                        onSelected: () => _toggleChapterSelection(
-                          displayChapters[i],
-                          downloadState,
-                        ),
-                        onPlay: () => widget.onPlayChapter(displayChapters[i]),
-                        onDownload: () => _downloadChapter(displayChapters[i]),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSelectionBar(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.isDark ? AppColors.slate800 : AppColors.slate50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.faintBorder),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 520;
+          final selectButton = BatchSelectButton(
+            checked: widget.allPageSelected,
+            label: widget.allPageSelected
+                ? context.localeText('取消本页', 'Unselect Page')
+                : context.localeText('全选本页', 'Select Page'),
+            compact: compact,
+            onPressed: widget.hasSelectable ? widget.onToggleCurrentPage : null,
+          );
+          final downloadButton = BatchActionButton(
+            icon: Icons.download_rounded,
+            label: compact
+                ? context.localeText('下载 (${widget.selectedDownloadable})',
+                    'Download (${widget.selectedDownloadable})')
+                : context.localeText('下载选中 (${widget.selectedDownloadable})',
+                    'Download Selected (${widget.selectedDownloadable})'),
+            filled: true,
+            compact: compact,
+            onPressed: widget.selectedDownloadable == 0
+                ? null
+                : widget.onDownloadSelected,
+          );
+          if (compact) {
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [selectButton, downloadButton],
+            );
+          }
+          return Row(
+            children: [
+              selectButton,
+              const Spacer(),
+              downloadButton,
+            ],
+          );
+        },
       ),
     );
   }

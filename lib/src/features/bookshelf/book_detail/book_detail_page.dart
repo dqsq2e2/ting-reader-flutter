@@ -69,6 +69,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
   bool _tagsExpanded = false;
   CoverShapePreference _coverShape = CoverShapePreference.square;
   final _chapterSectionKey = GlobalKey();
+  final _chapterInlineHeaderKey = GlobalKey();
+  final _pageStackKey = GlobalKey();
+  final ValueNotifier<bool> _chapterHeaderStuck = ValueNotifier<bool>(false);
+  bool _chapterSelectionMode = false;
+  final Set<String> _selectedChapterIds = {};
+  bool _headerCheckScheduled = false;
   final Map<String, GlobalKey> _chapterRowKeys = {};
 
   @override
@@ -78,7 +84,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
   }
 
   void _bindDetail() {
-    _detail = BookDetailState(AppScope.appOf(context).api, widget.bookId)
+    final app = AppScope.appOf(context);
+    _detail = BookDetailState(app.api, widget.bookId, cache: app.libraryCache)
       ..addListener(_detailChanged);
     _load();
   }
@@ -91,6 +98,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
           : CoverShapePreference.square;
       final visible = _chapters.map((chapter) => chapter.id).toSet();
       _chapterRowKeys.removeWhere((id, _) => !visible.contains(id));
+      _selectedChapterIds.removeWhere((id) => !visible.contains(id));
     });
   }
 
@@ -111,6 +119,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   void dispose() {
     _detail?.removeListener(_detailChanged);
     _detail?.dispose();
+    _chapterHeaderStuck.dispose();
     super.dispose();
   }
 
@@ -245,7 +254,8 @@ class _BookDetailPageState extends State<BookDetailPage> {
     final detail = _detail;
     final book = _book;
     if (book == null || chapter.bookId != book.id) return;
-    final allChapters = await _fetchAllChapters();
+    final allChapters =
+        book.libraryType == 'source' ? _chapters : await _fetchAllChapters();
     if (!mounted || !identical(detail, _detail)) return;
     await AppScope.playerOf(context).playChapter(
       book,
@@ -302,6 +312,142 @@ class _BookDetailPageState extends State<BookDetailPage> {
     });
   }
 
+  bool _handlePageScroll(ScrollNotification notification) {
+    if (notification.depth == 0) _scheduleHeaderCheck();
+    return false;
+  }
+
+  void _scheduleHeaderCheck() {
+    if (_headerCheckScheduled) return;
+    _headerCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerCheckScheduled = false;
+      _checkHeaderPosition();
+    });
+  }
+
+  void _checkHeaderPosition() {
+    if (!mounted) return;
+    final headerContext = _chapterInlineHeaderKey.currentContext;
+    final stackContext = _pageStackKey.currentContext;
+    if (headerContext == null || stackContext == null) {
+      if (_chapterHeaderStuck.value) _chapterHeaderStuck.value = false;
+      return;
+    }
+    final headerBox = headerContext.findRenderObject();
+    final stackBox = stackContext.findRenderObject();
+    if (headerBox is! RenderBox ||
+        stackBox is! RenderBox ||
+        !headerBox.attached ||
+        !stackBox.attached) {
+      return;
+    }
+    final top = stackBox.globalToLocal(headerBox.localToGlobal(Offset.zero)).dy;
+    final sectionBox =
+        _chapterSectionKey.currentContext?.findRenderObject() as RenderBox?;
+    final sectionBottom = sectionBox == null || !sectionBox.attached
+        ? double.infinity
+        : stackBox
+            .globalToLocal(
+                sectionBox.localToGlobal(Offset(0, sectionBox.size.height)))
+            .dy;
+    final stuck = top <= 0.5 && sectionBottom > 0;
+    if (stuck != _chapterHeaderStuck.value) {
+      _chapterHeaderStuck.value = stuck;
+    }
+  }
+
+  void _toggleChapterSelectionMode() {
+    setState(() {
+      _chapterSelectionMode = !_chapterSelectionMode;
+      if (!_chapterSelectionMode) _selectedChapterIds.clear();
+    });
+  }
+
+  List<Chapter> _downloadableVisibleChapters(DownloadState downloadState) {
+    return _chapters
+        .where((chapter) => downloadState.canQueueChapter(chapter.id))
+        .toList();
+  }
+
+  bool _isChapterSelectable(DownloadState downloadState, String chapterId) {
+    return !downloadState.hasChapter(chapterId) &&
+        downloadState.taskForChapter(chapterId) == null;
+  }
+
+  void _toggleChapterSelected(Chapter chapter) {
+    final downloadState = AppScope.downloadOf(context);
+    if (!_isChapterSelectable(downloadState, chapter.id)) return;
+    setState(() {
+      if (!_selectedChapterIds.remove(chapter.id)) {
+        _selectedChapterIds.add(chapter.id);
+      }
+    });
+  }
+
+  void _toggleVisiblePageSelection() {
+    final downloadState = AppScope.downloadOf(context);
+    final ids = _downloadableVisibleChapters(downloadState)
+        .map((chapter) => chapter.id)
+        .toList();
+    if (ids.isEmpty) return;
+    setState(() {
+      final allSelected = ids.every(_selectedChapterIds.contains);
+      if (allSelected) {
+        _selectedChapterIds.removeAll(ids);
+      } else {
+        _selectedChapterIds.addAll(ids);
+      }
+    });
+  }
+
+  Future<void> _downloadSelectedChapters() async {
+    final book = _book;
+    if (book == null) return;
+    final downloadState = AppScope.downloadOf(context);
+    final targets = _chapters
+        .where((chapter) =>
+            _selectedChapterIds.contains(chapter.id) &&
+            downloadState.canQueueChapter(chapter.id))
+        .toList()
+      ..sort((a, b) => a.chapterIndex.compareTo(b.chapterIndex));
+    if (targets.isEmpty) {
+      _showChapterDownloadMessage(
+          context.localeText('没有可加入队列的章节', 'No chapters can be queued'));
+      return;
+    }
+    var queued = 0;
+    for (final chapter in targets) {
+      try {
+        final result = await downloadState.requestChapter(book, chapter,
+            resumeExisting: false);
+        if (result.outcome == DownloadRequestOutcome.queued) queued++;
+      } catch (error) {
+        if (!mounted) return;
+        _showChapterDownloadMessage(context.localeText(
+            '加入下载失败：${ApiError.messageFor(error)}',
+            'Failed to add download: ${ApiError.messageFor(error)}'));
+        break;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _selectedChapterIds.clear();
+      _chapterSelectionMode = false;
+    });
+    if (queued > 0) {
+      _showChapterDownloadMessage(context.localeText(
+          '已加入 $queued 个章节到下载队列', 'Queued $queued chapters'));
+    }
+  }
+
+  void _showChapterDownloadMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _showScrapeDialog() async {
     final book = _book;
     if (book == null) return;
@@ -338,7 +484,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) return const LoadingView();
-    if (_detail?.error != null) {
+    if (_detail?.error != null && _book == null) {
       return PageListView(children: [
         AppBackButton(onPressed: widget.onBack),
         LoadErrorView(onRetry: _load),
@@ -360,6 +506,7 @@ class _BookDetailPageState extends State<BookDetailPage> {
     }
 
     final appState = AppScope.appOf(context);
+    final downloadState = AppScope.downloadOf(context);
     final description = book.description;
     final tags = book.tags;
     final resume = _resumeChapter;
@@ -380,8 +527,58 @@ class _BookDetailPageState extends State<BookDetailPage> {
                 ? context.l10n.bookDetailContinuePlaying(resume.title)
                 : context.l10n.bookDetailPlayNow;
     final themeColor = effectiveBookThemeColor(book.themeColor);
+    final visibleChapters = _chapterAscending
+        ? _chapters
+        : _chapters.reversed.toList(growable: false);
+    final sidePadding = MediaQuery.sizeOf(context).width < 640 ? 16.0 : 24.0;
+    final downloadableIds = _chapters
+        .where((chapter) => downloadState.canQueueChapter(chapter.id))
+        .map((chapter) => chapter.id)
+        .toSet();
+    final allPageSelected = downloadableIds.isNotEmpty &&
+        downloadableIds.every(_selectedChapterIds.contains);
+    final selectedDownloadable =
+        downloadableIds.where(_selectedChapterIds.contains).length;
 
-    final page = PageListView(
+    Widget buildChapterHeader({required bool sticky, Key? key}) {
+      return _ChapterSectionHeader(
+        key: key,
+        chapters: visibleChapters,
+        groupCount: _groupCount,
+        activeTotal: _activeTotal,
+        groupIndex: _groupIndex,
+        groupDescending: _chapterGroupsDescending,
+        activeTab: _activeTab,
+        mainCount: _mainChapterTotal,
+        extraCount: _extraChapterTotal,
+        showExtraTab: _extraChapterTotal > 0,
+        admin: appState.isAdmin,
+        ascending: _chapterAscending,
+        themeColor: themeColor,
+        selectionMode: _chapterSelectionMode,
+        selectedDownloadable: selectedDownloadable,
+        allPageSelected: allPageSelected,
+        hasSelectable: downloadableIds.isNotEmpty,
+        sidePadding: sidePadding,
+        sticky: sticky,
+        onToggleCurrentPage: _toggleVisiblePageSelection,
+        onDownloadSelected: _downloadSelectedChapters,
+        onToggleSort: () {
+          setState(() => _chapterAscending = !_chapterAscending);
+        },
+        onGroupChanged: (index) =>
+            _loadChapterPage(tab: _activeTab, groupIndex: index),
+        onTabChanged: (tab) => _loadChapterPage(
+          tab: tab,
+          groupIndex:
+              _chapterGroupsDescending ? _detail?.lastGroup(tab) ?? 0 : 0,
+        ),
+        onManage: _showChapterManager,
+        onToggleSelectionMode: _toggleChapterSelectionMode,
+      );
+    }
+
+    final pageView = PageListView(
       onRefresh: _load,
       children: [
         _DetailBackButton(onPressed: widget.onBack),
@@ -436,28 +633,43 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  alignment:
-                      compact ? WrapAlignment.center : WrapAlignment.start,
-                  spacing: 16,
-                  runSpacing: 8,
+                Row(
+                  mainAxisAlignment: compact
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.start,
                   children: [
-                    _Meta(
-                        icon: Icons.person_rounded,
-                        text: book.author ??
-                            context.l10n.bookDetailUnknownAuthor),
-                    _Meta(
-                        icon: Icons.mic_rounded,
-                        text: book.narrator ??
-                            context.l10n.bookDetailUnknownNarrator),
-                    _Meta(
-                        icon: Icons.queue_music_rounded,
-                        text:
-                            context.l10n.bookDetailChapterCount(_chapterTotal)),
-                    if (book.year != null)
-                      _Meta(icon: Icons.event_rounded, text: '${book.year}'),
+                    Flexible(
+                        flex: 4,
+                        child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 220),
+                            child: _Meta(
+                                icon: Icons.person_rounded,
+                                text: book.author ??
+                                    context.l10n.bookDetailUnknownAuthor))),
+                    const SizedBox(width: 12),
+                    Flexible(
+                        flex: 4,
+                        child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 220),
+                            child: _Meta(
+                                icon: Icons.mic_rounded,
+                                text: book.narrator ??
+                                    context.l10n.bookDetailUnknownNarrator))),
+                    const SizedBox(width: 12),
+                    Flexible(
+                        flex: 3,
+                        child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 140),
+                            child: _Meta(
+                                icon: Icons.queue_music_rounded,
+                                text: context.l10n
+                                    .bookDetailChapterCount(_chapterTotal)))),
                   ],
                 ),
+                if (book.year != null) ...[
+                  const SizedBox(height: 8),
+                  _Meta(icon: Icons.event_rounded, text: '${book.year}'),
+                ],
                 if (tags != null && tags.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   _CollapsibleBookTags(
@@ -528,54 +740,61 @@ class _BookDetailPageState extends State<BookDetailPage> {
           },
         ),
         const SizedBox(height: 32),
-        Builder(
-          builder: (context) {
-            final visibleChapters = _chapterAscending
-                ? _chapters
-                : _chapters.reversed.toList(growable: false);
-            return KeyedSubtree(
-              key: _chapterSectionKey,
-              child: _ChapterSection(
-                book: book,
-                chapters: visibleChapters,
-                groupCount: _groupCount,
-                activeTotal: _activeTotal,
-                groupIndex: _groupIndex,
-                groupDescending: _chapterGroupsDescending,
-                activeTab: _activeTab,
-                mainCount: _mainChapterTotal,
-                extraCount: _extraChapterTotal,
-                showExtraTab: _extraChapterTotal > 0,
-                highlightedChapterId: highlightedChapterId,
-                currentChapterId: sameBookCurrentChapter?.id,
-                isPlaying: player.isPlaying,
-                loading: _chapterPageLoading,
-                themeColor: themeColor,
-                admin: appState.isAdmin,
-                rowKeys: _chapterRowKeys,
-                ascending: _chapterAscending,
-                onPlayChapter: (chapter) async {
-                  await _playChapter(chapter);
-                },
-                onToggleSort: () {
-                  setState(() => _chapterAscending = !_chapterAscending);
-                },
-                onGroupChanged: (index) =>
-                    _loadChapterPage(tab: _activeTab, groupIndex: index),
-                onTabChanged: (tab) => _loadChapterPage(
-                  tab: tab,
-                  groupIndex: _chapterGroupsDescending
-                      ? _detail?.lastGroup(tab) ?? 0
-                      : 0,
-                ),
-                onManage: _showChapterManager,
+        FullBleed(
+          child: KeyedSubtree(
+            key: _chapterSectionKey,
+            child: _ChapterSection(
+              book: book,
+              header: buildChapterHeader(
+                sticky: false,
+                key: _chapterInlineHeaderKey,
               ),
-            );
-          },
+              chapters: visibleChapters,
+              groupIndex: _groupIndex,
+              activeTab: _activeTab,
+              highlightedChapterId: highlightedChapterId,
+              currentChapterId: sameBookCurrentChapter?.id,
+              isPlaying: player.isPlaying,
+              loading: _chapterPageLoading,
+              themeColor: themeColor,
+              rowKeys: _chapterRowKeys,
+              selectionMode: _chapterSelectionMode,
+              selectedIds: _selectedChapterIds,
+              onToggleSelected: _toggleChapterSelected,
+              onPlayChapter: (chapter) async {
+                await _playChapter(chapter);
+              },
+            ),
+          ),
         ),
         const SafeBottomSpacer(),
       ],
     );
+    final page = Stack(
+      key: _pageStackKey,
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: NotificationListener<ScrollNotification>(
+            onNotification: _handlePageScroll,
+            child: pageView,
+          ),
+        ),
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: ValueListenableBuilder<bool>(
+            valueListenable: _chapterHeaderStuck,
+            builder: (context, stuck, _) {
+              if (!stuck) return const SizedBox.shrink();
+              return buildChapterHeader(sticky: true);
+            },
+          ),
+        ),
+      ],
+    );
+    _scheduleHeaderCheck();
     if (themeColor == null || context.isDark) return page;
     return ColoredBox(color: themeColor.withValues(alpha: 0.05), child: page);
   }

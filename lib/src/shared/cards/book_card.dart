@@ -131,6 +131,8 @@ class BookCard extends StatelessWidget {
     this.selectionMode = false,
     this.viewMode = BookshelfViewMode.grid,
     this.iconSize = IconSizeSetting.medium,
+    this.showProgress,
+    this.action,
   });
 
   final Book book;
@@ -140,6 +142,8 @@ class BookCard extends StatelessWidget {
   final bool selectionMode;
   final BookshelfViewMode viewMode;
   final IconSizeSetting iconSize;
+  final bool? showProgress;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -147,9 +151,10 @@ class BookCard extends StatelessWidget {
     final url = bookCoverUrl(appState, book);
     final credits = bookPrimaryCredit(book.author, book.narrator);
     final settingsJson = asMap(appState.settings['settings_json']);
-    final showProgress = (appState.settings['bookshelf_progress_enabled'] ??
-            settingsJson['bookshelf_progress_enabled']) !=
-        false;
+    final showProgress = this.showProgress ??
+        (appState.settings['bookshelf_progress_enabled'] ??
+                settingsJson['bookshelf_progress_enabled']) !=
+            false;
     final progress = book.progressPercent >= 100
         ? 100
         : book.progressPercent <= 0
@@ -319,6 +324,10 @@ class BookCard extends StatelessWidget {
                   height: 1.2,
                 ),
               ),
+            ],
+            if (action case final action?) ...[
+              const SizedBox(height: 8),
+              action,
             ],
           ],
         ),

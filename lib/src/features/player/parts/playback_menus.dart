@@ -593,166 +593,188 @@ extension _PlaybackMenus on _ExpandedPlayerState {
     final outroController =
         TextEditingController(text: book.skipOutro.toString());
     final hostContext = context;
-    await showGeneralDialog<void>(
-      context: context,
+    final route = RawDialogRoute<void>(
       barrierDismissible: true,
       barrierLabel: context.localeText('播放设置', 'Playback Settings'),
       barrierColor: Colors.black.withValues(alpha: 0.6),
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (dialogContext, _, __) {
-        return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 384),
-              child: Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
-                decoration: BoxDecoration(
-                  color: context.cardColor,
-                  borderRadius: BorderRadius.circular(32),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black
-                          .withValues(alpha: context.isDark ? 0.55 : 0.2),
-                      blurRadius: 34,
-                      offset: const Offset(0, 18),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          context.localeText('播放设置', 'Playback Settings'),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const Spacer(),
-                        IconButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          icon: const Icon(Icons.close_rounded),
-                          color: context.mutedText,
-                          tooltip: context.l10n.commonClose,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    _PlaybackSettingField(
-                      controller: introController,
-                      icon: Icons.skip_previous_rounded,
-                      label: context.localeText('跳过片头 (秒)', 'Skip Intro (sec)'),
-                      hint: context.localeText('例如: 30', 'For example: 30'),
-                    ),
-                    const SizedBox(height: 18),
-                    _PlaybackSettingField(
-                      controller: outroController,
-                      icon: Icons.skip_next_rounded,
-                      label: context.localeText('跳过片尾 (秒)', 'Skip Outro (sec)'),
-                      hint: context.localeText('例如: 15', 'For example: 15'),
-                    ),
-                    const SizedBox(height: 18),
-                    StatefulBuilder(
-                      builder: (context, setVolumeState) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+        return Dialog(
+          insetPadding: EdgeInsets.zero,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 384),
+                child: Container(
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+                  decoration: BoxDecoration(
+                    color: context.cardColor,
+                    borderRadius: BorderRadius.circular(32),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black
+                            .withValues(alpha: context.isDark ? 0.55 : 0.2),
+                        blurRadius: 34,
+                        offset: const Offset(0, 18),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                  child:
-                                      Text(context.localeText('音量', 'Volume'))),
-                              Text('${(player.volume * 100).round()}%',
-                                  style: TextStyle(
-                                      color: context.mutedText, fontSize: 12)),
-                            ],
+                          Expanded(
+                            child: Text(
+                              context.localeText('播放设置', 'Playback Settings'),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                          Slider(
-                            min: 0,
-                            max: 1,
-                            value: player.volume.clamp(0, 1).toDouble(),
-                            activeColor: AppColors.primary600,
-                            onChanged: (value) {
-                              setVolumeState(() {});
-                              player.setVolume(value);
-                            },
+                          if (MediaQuery.viewInsetsOf(dialogContext).bottom > 0)
+                            IconButton(
+                              onPressed: () =>
+                                  FocusScope.of(dialogContext).unfocus(),
+                              tooltip:
+                                  context.localeText('收起键盘', 'Hide keyboard'),
+                              icon: const Icon(Icons.keyboard_hide_rounded),
+                            ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            icon: const Icon(Icons.close_rounded),
+                            color: context.mutedText,
+                            tooltip: context.l10n.commonClose,
                           ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 28),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextButton(
-                            onPressed: () => Navigator.pop(dialogContext),
-                            style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              foregroundColor: context.mutedText,
+                      const SizedBox(height: 18),
+                      _PlaybackSettingField(
+                        controller: introController,
+                        icon: Icons.skip_previous_rounded,
+                        label:
+                            context.localeText('跳过片头 (秒)', 'Skip Intro (sec)'),
+                        hint: context.localeText('例如: 30', 'For example: 30'),
+                      ),
+                      const SizedBox(height: 18),
+                      _PlaybackSettingField(
+                        controller: outroController,
+                        icon: Icons.skip_next_rounded,
+                        label:
+                            context.localeText('跳过片尾 (秒)', 'Skip Outro (sec)'),
+                        hint: context.localeText('例如: 15', 'For example: 15'),
+                      ),
+                      const SizedBox(height: 18),
+                      StatefulBuilder(
+                        builder: (context, setVolumeState) => Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                    child: Text(
+                                        context.localeText('音量', 'Volume'))),
+                                Text('${(player.volume * 100).round()}%',
+                                    style: TextStyle(
+                                        color: context.mutedText,
+                                        fontSize: 12)),
+                              ],
                             ),
-                            child: Text(context.l10n.commonCancel),
-                          ),
+                            Slider(
+                              min: 0,
+                              max: 1,
+                              value: player.volume.clamp(0, 1).toDouble(),
+                              activeColor: AppColors.primary600,
+                              onChanged: (value) {
+                                setVolumeState(() {});
+                                player.setVolume(value);
+                              },
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: () async {
-                              final skipIntro =
-                                  int.tryParse(introController.text.trim()) ??
-                                      0;
-                              final skipOutro =
-                                  int.tryParse(outroController.text.trim()) ??
-                                      0;
-                              try {
-                                await player.savePlaybackSettings(
-                                    book, skipIntro, skipOutro);
-                                if (mounted) _updateMenuState(() {});
-                                if (!mounted) return;
-                                if (dialogContext.mounted) {
-                                  Navigator.pop(dialogContext);
+                      ),
+                      const SizedBox(height: 28),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextButton(
+                              onPressed: () => Navigator.pop(dialogContext),
+                              style: TextButton.styleFrom(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                foregroundColor: context.mutedText,
+                              ),
+                              child: Text(context.l10n.commonCancel),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                FocusScope.of(dialogContext).unfocus();
+                                final skipIntro =
+                                    int.tryParse(introController.text.trim()) ??
+                                        0;
+                                final skipOutro =
+                                    int.tryParse(outroController.text.trim()) ??
+                                        0;
+                                try {
+                                  await player.savePlaybackSettings(
+                                      book, skipIntro, skipOutro);
+                                  if (mounted) _updateMenuState(() {});
+                                  if (!mounted) return;
+                                  if (dialogContext.mounted) {
+                                    Navigator.pop(dialogContext);
+                                  }
+                                  if (!hostContext.mounted) return;
+                                  ScaffoldMessenger.of(hostContext)
+                                      .showSnackBar(
+                                    SnackBar(
+                                        content: Text(hostContext.localeText(
+                                            '播放设置已保存',
+                                            'Playback settings saved'))),
+                                  );
+                                } catch (err) {
+                                  if (!mounted) return;
+                                  if (!hostContext.mounted) return;
+                                  ScaffoldMessenger.of(hostContext)
+                                      .showSnackBar(
+                                    SnackBar(
+                                        content: Text(hostContext.localeText(
+                                            '保存失败：${ApiError.messageFor(err)}',
+                                            'Save failed: ${ApiError.messageFor(err)}'))),
+                                  );
                                 }
-                                if (!hostContext.mounted) return;
-                                ScaffoldMessenger.of(hostContext).showSnackBar(
-                                  SnackBar(
-                                      content: Text(hostContext.localeText(
-                                          '播放设置已保存',
-                                          'Playback settings saved'))),
-                                );
-                              } catch (err) {
-                                if (!mounted) return;
-                                if (!hostContext.mounted) return;
-                                ScaffoldMessenger.of(hostContext).showSnackBar(
-                                  SnackBar(
-                                      content: Text(hostContext.localeText(
-                                          '保存失败：${ApiError.messageFor(err)}',
-                                          'Save failed: ${ApiError.messageFor(err)}'))),
-                                );
-                              }
-                            },
-                            style: ElevatedButton.styleFrom(
-                              elevation: 8,
-                              shadowColor:
-                                  AppColors.primary500.withValues(alpha: 0.3),
-                              backgroundColor: AppColors.primary600,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                              },
+                              style: ElevatedButton.styleFrom(
+                                elevation: 8,
+                                shadowColor:
+                                    AppColors.primary500.withValues(alpha: 0.3),
+                                backgroundColor: AppColors.primary600,
+                                foregroundColor: Colors.white,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
                               ),
+                              icon: const Icon(Icons.check_rounded, size: 20),
+                              label: Text(context.localeText('保存', 'Save')),
                             ),
-                            icon: const Icon(Icons.check_rounded, size: 20),
-                            label: Text(context.localeText('保存', 'Save')),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -773,6 +795,9 @@ extension _PlaybackMenus on _ExpandedPlayerState {
         );
       },
     );
+    await Navigator.of(context, rootNavigator: true).push(route);
+    // Popping completes before the exit animation and keyboard relayout.
+    await route.completed;
     introController.dispose();
     outroController.dispose();
   }

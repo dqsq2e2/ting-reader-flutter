@@ -8,6 +8,8 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "window_tasks.h"
+#include <algorithm>
 
 std::vector<std::wstring> LoadPrivateFonts() {
   wchar_t module_path[MAX_PATH];
@@ -46,12 +48,18 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
+  std::vector<std::string> command_line_arguments = GetCommandLineArguments();
+  if (std::find(command_line_arguments.begin(), command_line_arguments.end(), "--exit") !=
+      command_line_arguments.end()) {
+    ExitRunningApplication();
+    ::CoUninitialize();
+    return EXIT_SUCCESS;
+  }
+  InitializeTaskbarTasks();
+
   const std::vector<std::wstring> private_fonts = LoadPrivateFonts();
 
   flutter::DartProject project(L"data");
-
-  std::vector<std::string> command_line_arguments =
-      GetCommandLineArguments();
 
   project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
 

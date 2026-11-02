@@ -18,6 +18,7 @@ static NSMutableArray *commands;
 static BOOL _controlsUpdated = NO;
 static enum AudioProcessingState processingState = ApsIdle;
 static BOOL playing = NO;
+static MPRemoteCommandEvent *lastPlaybackEvent = nil;
 static NSNumber *position = nil;
 static NSNumber *bufferedPosition = nil;
 static NSNumber *updateTime = nil;
@@ -119,8 +120,20 @@ static NSMutableDictionary *nowPlayingInfo = nil;
         commands[8] = commandCenter.changePlaybackPositionCommand;
     }
     [commandCenter.changePlaybackRateCommand setEnabled:YES];
-    [commandCenter.togglePlayPauseCommand setEnabled:YES];
+    for (MPRemoteCommand *command in @[
+        commandCenter.playCommand, commandCenter.pauseCommand,
+        commandCenter.togglePlayPauseCommand,
+        commandCenter.nextTrackCommand, commandCenter.previousTrackCommand
+    ]) {
+        [command removeTarget:self];
+        [command setEnabled:YES];
+    }
+    [commandCenter.playCommand addTarget:self action:@selector(play:)];
+    [commandCenter.pauseCommand addTarget:self action:@selector(pause:)];
     [commandCenter.togglePlayPauseCommand addTarget:self action:@selector(togglePlayPause:)];
+    [commandCenter.nextTrackCommand addTarget:self action:@selector(nextTrack:)];
+    [commandCenter.previousTrackCommand addTarget:self action:@selector(previousTrack:)];
+    lastPlaybackEvent = nil;
     // TODO: enable more commands
     // Language options
     if (@available(iOS 9.0, macOS 10.12.2, *)) {
@@ -235,6 +248,12 @@ static NSMutableDictionary *nowPlayingInfo = nil;
         processingState = ApsIdle;
         actionBits = 0;
         [self updateControls];
+        for (id command in commands) {
+            if (command == (id)[NSNull null]) continue;
+            [command removeTarget:self];
+            [command setEnabled:NO];
+        }
+        lastPlaybackEvent = nil;
         _controlsUpdated = NO;
         startResult = nil;
         commandCenter = nil;
@@ -243,12 +262,14 @@ static NSMutableDictionary *nowPlayingInfo = nil;
 }
 
 - (MPRemoteCommandHandlerStatus) play: (MPRemoteCommandEvent *) event {
+    if (![self acceptPlaybackEvent:event]) return MPRemoteCommandHandlerStatusSuccess;
     //NSLog(@"play");
     [handlerChannel invokeMethod:@"play" arguments:@{}];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) pause: (MPRemoteCommandEvent *) event {
+    if (![self acceptPlaybackEvent:event]) return MPRemoteCommandHandlerStatusSuccess;
     //NSLog(@"pause");
     [handlerChannel invokeMethod:@"pause" arguments:@{}];
     return MPRemoteCommandHandlerStatusSuccess;
@@ -284,6 +305,13 @@ static NSMutableDictionary *nowPlayingInfo = nil;
 
     if (@available(iOS 10.0, macOS 10.12.2, *)) {
         updated |= [self updateNowPlayingField:MPNowPlayingInfoPropertyMediaType value:@(MPNowPlayingInfoMediaTypeAudio)];
+        NSDictionary *extras = [mediaItem objectForKey:@"extras"];
+        id queueCount = [extras isKindOfClass:[NSDictionary class]] ? [extras objectForKey:@"queueCount"] : nil;
+        id queueIndex = [extras isKindOfClass:[NSDictionary class]] ? [extras objectForKey:@"queueIndex"] : nil;
+        updated |= [self updateNowPlayingField:MPNowPlayingInfoPropertyPlaybackQueueCount
+            value:[queueCount isKindOfClass:[NSNumber class]] ? queueCount : nil];
+        updated |= [self updateNowPlayingField:MPNowPlayingInfoPropertyPlaybackQueueIndex
+            value:[queueIndex isKindOfClass:[NSNumber class]] ? queueIndex : nil];
     }
     updated |= [self updateNowPlayingField:MPNowPlayingInfoPropertyPlaybackRate value:(playing ? speed : [NSNumber numberWithDouble: 0.0])];
     updated |= [self updateNowPlayingField:MPNowPlayingInfoPropertyElapsedPlaybackTime value:[NSNumber numberWithDouble:([position doubleValue] / 1000)]];
@@ -328,6 +356,12 @@ static NSMutableDictionary *nowPlayingInfo = nil;
 - (void) updateControl:(enum MediaAction)action {
     MPRemoteCommand *command = commands[action];
     if (command == (id)[NSNull null]) return;
+    // Keep transport handlers registered across state changes.
+    if (action == APlay || action == APause || action == APlayPause ||
+        action == ASkipToNext || action == ASkipToPrevious) {
+        [command setEnabled:YES];
+        return;
+    }
     // Shift the actionBits right until the least significant bit is the tested action bit, and AND that with a 1 at the same position.
     // All bytes become 0, other than the tested action bit, which will be 0 or 1 according to its status in the actionBits long.
     BOOL enable = ((actionBits >> action) & 1);
@@ -453,11 +487,18 @@ static NSMutableDictionary *nowPlayingInfo = nil;
     }
 }
 
+- (BOOL)acceptPlaybackEvent:(MPRemoteCommandEvent *)event {
+    if (lastPlaybackEvent != nil &&
+        (event == lastPlaybackEvent || event.timestamp == lastPlaybackEvent.timestamp)) return NO;
+    lastPlaybackEvent = event;
+    return YES;
+}
+
 - (MPRemoteCommandHandlerStatus) togglePlayPause: (MPRemoteCommandEvent *) event {
-    //NSLog(@"togglePlayPause");
-    [handlerChannel invokeMethod:@"click" arguments:@{
-        @"button":@(0)
-    }];
+    if (![self acceptPlaybackEvent:event]) return MPRemoteCommandHandlerStatusSuccess;
+    NSNumber *rate = nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate];
+    BOOL isPlaying = rate != nil ? rate.doubleValue != 0.0 : playing;
+    [handlerChannel invokeMethod:(isPlaying ? @"pause" : @"play") arguments:@{}];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
@@ -468,12 +509,14 @@ static NSMutableDictionary *nowPlayingInfo = nil;
 }
 
 - (MPRemoteCommandHandlerStatus) nextTrack: (MPRemoteCommandEvent *) event {
+    if (![self acceptPlaybackEvent:event]) return MPRemoteCommandHandlerStatusSuccess;
     //NSLog(@"nextTrack");
     [handlerChannel invokeMethod:@"skipToNext" arguments:@{}];
     return MPRemoteCommandHandlerStatusSuccess;
 }
 
 - (MPRemoteCommandHandlerStatus) previousTrack: (MPRemoteCommandEvent *) event {
+    if (![self acceptPlaybackEvent:event]) return MPRemoteCommandHandlerStatusSuccess;
     //NSLog(@"previousTrack");
     [handlerChannel invokeMethod:@"skipToPrevious" arguments:@{}];
     return MPRemoteCommandHandlerStatusSuccess;

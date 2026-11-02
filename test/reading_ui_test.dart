@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/l10n/app_localizations.dart';
@@ -12,6 +13,7 @@ import 'package:ting_reader_flutter/src/core/state/download_state.dart';
 import 'package:ting_reader_flutter/src/core/state/player_state.dart';
 import 'package:ting_reader_flutter/src/core/state/player/playback_sleep.dart';
 import 'package:ting_reader_flutter/src/core/state/navigation_state.dart';
+import 'package:ting_reader_flutter/src/features/app_shell.dart';
 import 'package:ting_reader_flutter/src/features/bookshelf/bookshelf_page.dart';
 import 'package:ting_reader_flutter/src/features/bookshelf/series_detail/series_detail_page.dart';
 import 'package:ting_reader_flutter/src/features/mine/bookmarks_page.dart';
@@ -64,6 +66,10 @@ class _ReadingApi extends ApiClient {
     }
     if (path == '/api/users') return _response(path, []);
     if (path == '/api/settings') return _response(path, settingsPayload);
+    if (['/api/playlists', '/api/progress/recent', '/api/favorites']
+        .contains(path)) {
+      return _response(path, []);
+    }
     if (path == '/api/system/statistics') {
       return _response(path, statisticsPayload);
     }
@@ -347,6 +353,28 @@ class _ReadingPlayer extends ChangeNotifier implements PlayerState {
   double playbackSpeed = 1;
   @override
   bool isMiniCollapsed = false;
+  @override
+  bool get hasChapter => currentChapter != null;
+  @override
+  bool isExpanded = false;
+  @override
+  bool get isLoading => false;
+  @override
+  int? get sleepRemainingSeconds => null;
+  @override
+  int? get sleepEpisodesRemaining => null;
+  @override
+  List<Chapter> chapters = [];
+  @override
+  void setExpanded(bool value) {
+    isExpanded = value;
+    notifyListeners();
+  }
+
+  void advance() {
+    currentTime++;
+    notifyListeners();
+  }
 
   @override
   Future<void> playChapter(Book book, List<Chapter> chapters, Chapter chapter,
@@ -396,6 +424,120 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('playback settings stay reachable above the phone keyboard',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    final app = _ReadingApp();
+    final player = _ReadingPlayer()
+      ..currentBook = const Book(id: 'book', libraryId: 'lib', title: 'Book')
+      ..currentChapter = const Chapter(
+          id: 'chapter',
+          bookId: 'book',
+          title: 'Chapter',
+          path: '/chapter.mp3',
+          chapterIndex: 0,
+          duration: 120)
+      ..isExpanded = true;
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const ExpandedPlayerOverlay());
+    await tester.tap(find.byIcon(Icons.settings_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(TextField).first);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 350);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Hide keyboard'), findsOneWidget);
+    final save = find.widgetWithText(ElevatedButton, 'Save');
+    await tester.ensureVisible(save);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(save).bottom, lessThanOrEqualTo(844 - 350));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byTooltip('Hide keyboard'));
+    await tester.pumpAndSettle();
+    expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText).first)
+            .focusNode
+            .hasFocus,
+        isFalse);
+    await tester.tap(find.byTooltip('Close'));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'shell retains shelf state and scroll when switching primary tabs',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    app.api.bookshelfBookCount = 100;
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AppShell());
+    await tester.tap(find.byIcon(Icons.library_books_rounded).last);
+    await tester.pumpAndSettle();
+    final shelfState = tester.state(find.byType(BookshelfPage));
+    final scroll = tester.state<ScrollableState>(find
+        .descendant(
+            of: find.byType(BookshelfPage), matching: find.byType(Scrollable))
+        .first);
+    scroll.position.jumpTo(200);
+    await tester.pumpAndSettle();
+    final requests = app.api.gets.where((path) => path == '/api/books').length;
+    await tester.tap(find.byIcon(Icons.playlist_play_rounded).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.library_books_rounded).last);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(BookshelfPage)), same(shelfState));
+    expect(scroll.position.pixels, 200);
+    expect(app.api.gets.where((path) => path == '/api/books').length, requests);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('shell refreshes retained shelf after leaving search',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AppShell());
+    await tester.tap(find.byIcon(Icons.library_books_rounded).last);
+    await tester.pumpAndSettle();
+    final shelfState = tester.state(find.byType(BookshelfPage));
+    await tester.tap(find.byIcon(Icons.search_rounded).first);
+    await tester.pumpAndSettle();
+    app.api.bookshelfBookTitle = 'Newly Added Book';
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(BookshelfPage)), same(shelfState));
+    expect(find.text('Newly Added Book'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('playback ticks do not rebuild the shell page subtree',
+      (tester) async {
+    final app = _ReadingApp();
+    final player = _ReadingPlayer();
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const AppShell());
+    await tester.tap(find.byIcon(Icons.library_books_rounded).last);
+    await tester.pumpAndSettle();
+    final shelfElement = tester.element(find.byType(BookshelfPage));
+    final shelfWidget = shelfElement.widget;
+    final requests = app.api.gets.length;
+    for (var tick = 0; tick < 5; tick++) {
+      player.advance();
+      await tester.pump();
+      expect(shelfElement.widget, same(shelfWidget));
+    }
+    expect(app.api.gets.length, requests);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'creating a user initializes an empty form without an existing user',
       (tester) async {
@@ -801,6 +943,32 @@ void main() {
         'list');
     expect(find.byType(BookshelfListTile), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('player views do not add desktop window mode buttons',
+      (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final app = _ReadingApp();
+    final player = _ReadingPlayer()
+      ..currentBook = book
+      ..currentChapter = chapter;
+    addTearDown(app.dispose);
+    addTearDown(player.dispose);
+    await _pump(tester, app, player, const MiniPlayer());
+    expect(find.byTooltip('Chapters'), findsOneWidget);
+    expect(find.byIcon(Icons.picture_in_picture_alt_rounded), findsNothing);
+    expect(find.byTooltip('Mini window'), findsNothing);
+    player.isExpanded = true;
+    await _pump(tester, app, player, const ExpandedPlayerOverlay());
+    expect(find.byIcon(Icons.picture_in_picture_alt_rounded), findsNothing);
+    expect(find.byTooltip('Mini window'), findsNothing);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
   });
 
   for (final coverShape in ['rect', 'square']) {

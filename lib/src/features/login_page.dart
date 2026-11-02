@@ -435,8 +435,9 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final loginStageValue = _loginStage;
-    final errorValue = _error;
     final appState = AppScope.appOf(context);
+    final errorValue =
+        _error ?? (appState.needsDirectLogin ? appState.connectionError : null);
     final profiles = appState.savedServers;
     final l10n = context.l10n;
     return Scaffold(

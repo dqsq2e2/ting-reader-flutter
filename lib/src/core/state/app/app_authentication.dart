@@ -119,10 +119,12 @@ extension _AppAuthentication on AppState {
         needsGatewayLogin = false;
         await _prefs?.remove(AppState._gatewayReloginRequiredPrefsKey);
       }
-      connectionError = textForLocale(
-        '连接服务器失败或登录已过期',
-        'Failed to connect or session expired',
-      );
+      if (!needsDirectLogin) {
+        connectionError = textForLocale(
+          '连接服务器失败或登录已过期',
+          'Failed to connect or session expired',
+        );
+      }
     }
     _notifyIfActive();
   }
@@ -190,6 +192,7 @@ extension _AppAuthentication on AppState {
     CancelToken? cancelToken,
   }) async {
     _throwIfLoginCancelled(cancelToken);
+    _cancelDirectSessionRecovery();
     connectionError = null;
     api.setClientHeaders(await buildClientDeviceHeaders());
     _throwIfLoginCancelled(cancelToken);
@@ -201,7 +204,7 @@ extension _AppAuthentication on AppState {
     );
     final hasGatewayProfile = detectedGatewayHost != null;
     final resumePlaybackAfterGatewayLogin =
-        hasGatewayProfile && needsGatewayLogin;
+        (hasGatewayProfile && needsGatewayLogin) || needsDirectLogin;
     Map<String, dynamic> map;
     var resolvedGatewayCookie = gatewayCookie?.trim() ?? '';
     // 访问码来源优先级：本次登录输入 > 被替换/编辑的配置中已保存的值。
@@ -364,6 +367,7 @@ extension _AppAuthentication on AppState {
     token = map['token']?.toString();
     final authenticatedUser = _requireAuthenticatedUser(map['user']);
     user = authenticatedUser;
+    needsDirectLogin = false;
     this.gatewayCookie = hasGatewayProfile && resolvedGatewayCookie.isNotEmpty
         ? resolvedGatewayCookie
         : null;
@@ -505,6 +509,8 @@ extension _AppAuthentication on AppState {
   }
 
   Future<void> _enterOfflineSession() async {
+    _cancelDirectSessionRecovery();
+    needsDirectLogin = false;
     _prefs ??= await SharedPreferences.getInstance();
     offlineMode = true;
     token = null;
@@ -520,6 +526,8 @@ extension _AppAuthentication on AppState {
   }
 
   Future<void> _logoutSession() async {
+    _cancelDirectSessionRecovery();
+    needsDirectLogin = false;
     _gatewayRecoveryCancelToken?.cancel('User signed out');
     cancelStartup();
     final loginPreferences = <String, dynamic>{

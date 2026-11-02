@@ -3,6 +3,8 @@
 
 #include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
+#include <flutter/encodable_value.h>
 
 #include <memory>
 
@@ -23,6 +25,11 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void SetMiniMode(bool enabled);
+  bool mini_mode_ = false;
+  std::string close_behavior_ = "exit";
+  WINDOWPLACEMENT normal_placement_{sizeof(WINDOWPLACEMENT)};
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
   // The project to run.
   flutter::DartProject project_;
 

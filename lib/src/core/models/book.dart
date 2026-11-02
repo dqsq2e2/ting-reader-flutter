@@ -55,6 +55,34 @@ class Book {
   final String? chapterRegex;
   final double progressPercent;
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'library_id': libraryId,
+        'title': title,
+        'author': author,
+        'narrator': narrator,
+        'description': description,
+        'cover_url': coverUrl,
+        'theme_color': themeColor,
+        'duration': duration,
+        'size': size,
+        'path': path,
+        'hash': hash,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+        'is_favorite': isFavorite,
+        'library_type': libraryType,
+        'can_write_metadata_files': canWriteMetadataFiles,
+        'manual_corrected': manualCorrected,
+        'skip_intro': skipIntro,
+        'skip_outro': skipOutro,
+        'tags': tags,
+        'genre': genre,
+        'year': year,
+        'chapter_regex': chapterRegex,
+        'progress_percent': progressPercent,
+      };
+
   factory Book.fromJson(Map<String, dynamic> json) {
     return Book(
       id: readString(json, 'id') ?? '',

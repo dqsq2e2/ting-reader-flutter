@@ -26,6 +26,13 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>连接你选择的局域网听悦或 NAS 服务，浏览书籍、播放音频和下载章节。</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>UIBackgroundModes</key>
