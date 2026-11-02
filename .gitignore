@@ -72,6 +72,7 @@ test/*
 !test/session_recovery_test.dart
 !test/desktop_window_test.dart
 !test/library_cache_test.dart
+!test/cover_image_test.dart
 !test/playlist_layout_test.dart
 !test/default_admin_credentials_test.dart
 preview_screenshots/

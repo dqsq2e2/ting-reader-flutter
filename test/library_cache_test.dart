@@ -131,6 +131,23 @@ void main() {
     expect(root.listSync(), isEmpty);
   });
 
+  test('a first cover download completes and later reads reuse its file',
+      () async {
+    var calls = 0;
+    Future<List<int>> fetch(CancelToken _) async {
+      calls++;
+      return [1, 2, 3];
+    }
+
+    final file = await cache
+        .cover('alice', 'cover', fetch)
+        .timeout(const Duration(seconds: 2));
+    expect(await file!.readAsBytes(), [1, 2, 3]);
+    final reused = await cache.cover('alice', 'cover', fetch);
+    expect(reused!.path, file.path);
+    expect(calls, 1);
+  });
+
   test('server artwork keys survive token rotation but retain cover revisions',
       () {
     final first = cache.coverResource(
@@ -147,6 +164,27 @@ void main() {
         isNot(cache.coverResource(
             'https://server/api/proxy/cover?book_id=b&token=new&v=2',
             serverResource: true)));
+  });
+
+  test('cover recovery notifies only active listeners for the same account',
+      () async {
+    final updated = <File>[];
+    var unrelated = 0;
+    final stop = cache.watchCover('alice', 'cover', updated.add);
+    final stopOther = cache.watchCover('bob', 'cover', (_) => unrelated++);
+    addTearDown(stopOther);
+    expect(
+        await cache.cover(
+            'alice', 'cover', (_) async => throw StateError('offline')),
+        isNull);
+    expect(updated, isEmpty);
+    final file = await cache.cover('alice', 'cover', (_) async => [1, 2, 3]);
+    expect(updated.single.path, file!.path);
+    expect(unrelated, 0);
+    stop();
+    await file.delete();
+    await cache.cover('alice', 'cover', (_) async => [4, 5, 6]);
+    expect(updated, hasLength(1));
   });
 
   test('shelf and detail keep cached content during refresh and on failure',

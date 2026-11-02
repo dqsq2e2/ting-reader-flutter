@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -266,7 +267,7 @@ class CoverImage extends StatefulWidget {
   State<CoverImage> createState() => _CoverImageState();
 }
 
-class _CoverImageState extends State<CoverImage> {
+class _CoverImageState extends State<CoverImage> with WidgetsBindingObserver {
   Future<File?>? _cachedCover;
   String? _cacheRequest;
   bool _recoveringRedirect = false;
@@ -274,12 +275,29 @@ class _CoverImageState extends State<CoverImage> {
   String? _failedUrl;
   String? _recoveredUrl;
   CancelToken? _recoveryToken;
+  Timer? _retryTimer;
+  int _retryCount = 0;
+  bool _failed = false;
+  void Function()? _stopWatching;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
 
   @override
   void didUpdateWidget(covariant CoverImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.url != widget.url) {
       _recoveryToken?.cancel('Cover changed');
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      _retryCount = 0;
+      _failed = false;
+      _stopWatching?.call();
+      _stopWatching = null;
+      _cacheRequest = null;
       _failedUrl = null;
       _recoveredUrl = null;
       _recoveringRedirect = false;
@@ -288,8 +306,36 @@ class _CoverImageState extends State<CoverImage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _retryTimer?.cancel();
+    _stopWatching?.call();
     _recoveryToken?.cancel('Cover disposed');
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _failed) {
+      _retryCount = 0;
+      _retry();
+    }
+  }
+
+  void _retry() {
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    if (!mounted) return;
+    setState(() {
+      _cacheRequest = null;
+      _retryEpoch++;
+    });
+  }
+
+  void _scheduleRetry() {
+    _failed = true;
+    const delays = [1, 3, 8];
+    if (_retryTimer != null || _retryCount >= delays.length) return;
+    _retryTimer = Timer(Duration(seconds: delays[_retryCount++]), _retry);
   }
 
   @override
@@ -327,9 +373,28 @@ class _CoverImageState extends State<CoverImage> {
     final ownOrigin = app.usesActiveOrigin(url);
     final resource =
         app.libraryCache.coverResource(url, serverResource: ownOrigin);
-    final request = '${app.libraryCacheIdentity}:$resource';
+    // Disk identity survives token/route changes; failed requests must not.
+    final request = '${app.libraryCacheIdentity}:$resource:$url:'
+        '${ownOrigin ? app.api.authRevision : 0}';
     if (_cacheRequest != request) {
+      _retryTimer?.cancel();
+      _retryTimer = null;
+      if (_cacheRequest != null) _retryCount = 0;
+      _stopWatching?.call();
       _cacheRequest = request;
+      _stopWatching = app.libraryCache
+          .watchCover(app.libraryCacheIdentity, resource, (file) async {
+        await FileImage(file).evict();
+        if (!mounted || _cacheRequest != request) return;
+        _retryTimer?.cancel();
+        _retryTimer = null;
+        setState(() {
+          _cachedCover = Future.value(file);
+          _failed = false;
+          _retryCount = 0;
+          _retryEpoch++;
+        });
+      });
       _cachedCover = app.libraryCache.cover(app.libraryCacheIdentity, resource,
           (cancel) async {
         final Response<dynamic> response;
@@ -361,9 +426,6 @@ class _CoverImageState extends State<CoverImage> {
           codec.dispose();
         }
         return bytes;
-      }, onUpdated: (file) async {
-        await FileImage(file).evict();
-        if (mounted && _cacheRequest == request) setState(() => _retryEpoch++);
       });
     }
     return FutureBuilder<File?>(
@@ -397,7 +459,17 @@ class _CoverImageState extends State<CoverImage> {
         fit: widget.fit,
         width: double.infinity,
         height: double.infinity,
+        frameBuilder: (context, child, frame, synchronouslyLoaded) {
+          if (frame != null) {
+            _retryTimer?.cancel();
+            _retryTimer = null;
+            _failed = false;
+            _retryCount = 0;
+          }
+          return child;
+        },
         errorBuilder: (context, error, stackTrace) {
+          _scheduleRetry();
           _recoverRedirectAndRetry(url);
           return _placeholder(context, loading: _recoveringRedirect);
         },

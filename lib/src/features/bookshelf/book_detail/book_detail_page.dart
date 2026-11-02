@@ -633,38 +633,12 @@ class _BookDetailPageState extends State<BookDetailPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: compact
-                      ? MainAxisAlignment.center
-                      : MainAxisAlignment.start,
-                  children: [
-                    Flexible(
-                        flex: 4,
-                        child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 220),
-                            child: _Meta(
-                                icon: Icons.person_rounded,
-                                text: book.author ??
-                                    context.l10n.bookDetailUnknownAuthor))),
-                    const SizedBox(width: 12),
-                    Flexible(
-                        flex: 4,
-                        child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 220),
-                            child: _Meta(
-                                icon: Icons.mic_rounded,
-                                text: book.narrator ??
-                                    context.l10n.bookDetailUnknownNarrator))),
-                    const SizedBox(width: 12),
-                    Flexible(
-                        flex: 3,
-                        child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 140),
-                            child: _Meta(
-                                icon: Icons.queue_music_rounded,
-                                text: context.l10n
-                                    .bookDetailChapterCount(_chapterTotal)))),
-                  ],
+                _BookMetadataRow(
+                  centered: compact,
+                  author: book.author ?? context.l10n.bookDetailUnknownAuthor,
+                  narrator:
+                      book.narrator ?? context.l10n.bookDetailUnknownNarrator,
+                  chapters: context.l10n.bookDetailChapterCount(_chapterTotal),
                 ),
                 if (book.year != null) ...[
                   const SizedBox(height: 8),

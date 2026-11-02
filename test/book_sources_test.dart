@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ting_reader_flutter/l10n/app_localizations.dart';
 import 'package:ting_reader_flutter/src/core/api/api_client.dart';
@@ -40,6 +41,8 @@ const _onlineBook = {
 };
 
 class _SourceApi extends ApiClient {
+  final bookMetadata = <String, dynamic>{};
+  int chapterTotal = 205;
   final searches = <Map<String, dynamic>>[];
   final queries = <Map<String, dynamic>>[];
   final adds = <Object?>[];
@@ -84,7 +87,9 @@ class _SourceApi extends ApiClient {
     }
     if (path == '/api/libraries') return response(path, [_sourceLibrary]);
     if (path == '/api/settings') return response(path, {'settings_json': {}});
-    if (path == '/api/books/book') return response(path, _onlineBook);
+    if (path == '/api/books/book') {
+      return response(path, {..._onlineBook, ...bookMetadata});
+    }
     if (path.endsWith('/chapters')) {
       chapterQueries.add({...?params});
       final target = params?['target_chapter_id']?.toString();
@@ -102,8 +107,8 @@ class _SourceApi extends ApiClient {
               'chapter_index': offset + i
             },
         ],
-        'total': 205,
-        'main_total': 205,
+        'total': chapterTotal,
+        'main_total': chapterTotal,
         'extra_total': 0,
         'offset': offset,
         'limit': 100,
@@ -444,6 +449,37 @@ void main() {
     }
   }
 
+  for (final width in [320.0, 390.0, 768.0, 1280.0]) {
+    for (final english in [false, true]) {
+      testWidgets(
+          'metadata uses available space before ellipsis at $width / $english',
+          (tester) async {
+        final app = _SourceApp();
+        app.api.bookMetadata.addAll({'author': 'A', 'narrator': 'Narrator'});
+        app.api.chapterTotal = 1332;
+        await _pump(tester, BookDetailPage(bookId: 'book', onBack: () {}),
+            width: width, english: english, app: app);
+        final chapterLabel = find.text(english ? '1332 chapters' : '1332 章节');
+        expect(chapterLabel, findsOneWidget);
+        for (final finder in [
+          find.text('A'),
+          find.text('Narrator'),
+          chapterLabel
+        ]) {
+          final paragraph = tester.renderObject<RenderParagraph>(finder);
+          if (finder == chapterLabel ||
+              width >= 768 ||
+              (width >= 390 && !english)) {
+            expect(paragraph.didExceedMaxLines, isFalse);
+          }
+          expect(tester.getCenter(finder).dy,
+              closeTo(tester.getCenter(chapterLabel).dy, 1));
+        }
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
   for (final width in [320.0, 1280.0]) {
     testWidgets('online book metadata stays on one line at $width',
         (tester) async {
@@ -458,6 +494,10 @@ void main() {
           closeTo(tester.getCenter(narrator).dy, 1));
       expect(tester.widget<Text>(author).maxLines, 1);
       expect(tester.widget<Text>(narrator).overflow, TextOverflow.ellipsis);
+      final count = find.textContaining('205');
+      expect(
+          tester.renderObject<RenderParagraph>(count.first).didExceedMaxLines,
+          isFalse);
       expect(app.api.chapterQueries, hasLength(1));
       expect(app.api.chapterQueries.single['limit'], 100);
       expect(tester.takeException(), isNull);

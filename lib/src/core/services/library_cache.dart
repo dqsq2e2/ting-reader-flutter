@@ -24,6 +24,7 @@ class LibraryCache {
   int _pendingBytes = 0;
   bool _saving = false;
   final _covers = <String, Future<File?>>{};
+  final _coverListeners = <String, Set<void Function(File)>>{};
   final _requests = <CancelToken>{};
   Future<Directory>? _directory;
   Future<void> _writes = Future.value();
@@ -157,9 +158,22 @@ class LibraryCache {
     return 'cover:${Uri(path: api < 0 ? path : path.substring(api), queryParameters: Map.of(uri.queryParameters)..remove('token'))}';
   }
 
+  void Function() watchCover(
+      String identity, String resource, void Function(File) listener) {
+    if (_disposed) return () {};
+    final key = _key(identity, resource);
+    final listeners = _coverListeners.putIfAbsent(key, () => {});
+    listeners.add(listener);
+    return () {
+      listeners.remove(listener);
+      if (listeners.isEmpty && identical(_coverListeners[key], listeners)) {
+        _coverListeners.remove(key);
+      }
+    };
+  }
+
   Future<File?> cover(String identity, String resource,
-      Future<List<int>> Function(CancelToken token) fetch,
-      {void Function(File)? onUpdated}) async {
+      Future<List<int>> Function(CancelToken token) fetch) async {
     if (_disposed) return null;
     final key = _key(identity, resource);
     try {
@@ -170,9 +184,7 @@ class LibraryCache {
         if (stat.size > 0 && stat.size <= 8 * 1024 * 1024) {
           if (DateTime.now().difference(stat.modified) >
               const Duration(minutes: 15)) {
-            unawaited(_loadCover(key, fetch).then((updated) {
-              if (updated != null && !_disposed) onUpdated?.call(updated);
-            }));
+            unawaited(_loadCover(key, fetch));
           }
           return file;
         }
@@ -198,14 +210,22 @@ class LibraryCache {
           }
           await _save('$key.img', bytes);
           final file = File('${(await _root()).path}/$key.img');
-          return !_disposed && await file.exists() ? file : null;
+          if (_disposed || !await file.exists()) return null;
+          for (final listener
+              in _coverListeners[key]?.toList() ?? <void Function(File)>[]) {
+            listener(file);
+          }
+          return file;
         } catch (_) {
           return null;
         } finally {
           _requests.remove(token);
         }
       }()
-          .whenComplete(() => _covers.remove(key));
+          .whenComplete(() {
+        // Returning the removed Future here would make it await itself.
+        _covers.remove(key);
+      });
 
   Future<void> flush() => _writes;
 
@@ -219,5 +239,6 @@ class LibraryCache {
     _pending.clear();
     _memoryBytes = _pendingBytes = 0;
     _covers.clear();
+    _coverListeners.clear();
   }
 }

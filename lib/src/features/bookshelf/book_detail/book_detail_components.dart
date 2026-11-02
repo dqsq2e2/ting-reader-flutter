@@ -13,11 +13,79 @@ class _DetailBackButton extends StatelessWidget {
   }
 }
 
+class _BookMetadataRow extends StatelessWidget {
+  const _BookMetadataRow({
+    required this.author,
+    required this.narrator,
+    required this.chapters,
+    required this.centered,
+  });
+
+  final String author;
+  final String narrator;
+  final String chapters;
+  final bool centered;
+
+  @override
+  Widget build(BuildContext context) =>
+      LayoutBuilder(builder: (context, constraints) {
+        double preferred(String text, double maximum) {
+          final painter = TextPainter(
+            text: TextSpan(
+                text: text,
+                style: DefaultTextStyle.of(context)
+                    .style
+                    .merge(_Meta.textStyle(context))),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: 1,
+          )..layout();
+          final width = math.min(maximum, painter.width.ceilToDouble() + 22);
+          painter.dispose();
+          return width;
+        }
+
+        final available = math.max(0.0, constraints.maxWidth - 24);
+        final chapterWidth = preferred(chapters, math.max(0.0, available - 44));
+        final namesWidth = math.max(0.0, available - chapterWidth);
+        final authorPreferred = preferred(author, 220);
+        final narratorPreferred = preferred(narrator, 220);
+        // Short credits give their unused space to the other credit, not a fixed flex share.
+        final authorWidth = math.min(authorPreferred,
+            namesWidth / 2 + math.max(0.0, namesWidth / 2 - narratorPreferred));
+        final narratorWidth =
+            math.min(narratorPreferred, namesWidth - authorWidth);
+        return Row(
+          mainAxisAlignment:
+              centered ? MainAxisAlignment.center : MainAxisAlignment.start,
+          children: [
+            SizedBox(
+                width: authorWidth,
+                child: _Meta(icon: Icons.person_rounded, text: author)),
+            const SizedBox(width: 12),
+            SizedBox(
+                width: narratorWidth,
+                child: _Meta(icon: Icons.mic_rounded, text: narrator)),
+            const SizedBox(width: 12),
+            SizedBox(
+                width: chapterWidth,
+                child: _Meta(icon: Icons.queue_music_rounded, text: chapters)),
+          ],
+        );
+      });
+}
+
 class _Meta extends StatelessWidget {
   const _Meta({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
+
+  static TextStyle textStyle(BuildContext context) => TextStyle(
+        color: context.isDark ? AppColors.slate400 : AppColors.slate600,
+        fontSize: 14,
+        fontWeight: FontWeight.w700,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -31,11 +99,7 @@ class _Meta extends StatelessWidget {
           text,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: context.isDark ? AppColors.slate400 : AppColors.slate600,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
+          style: textStyle(context),
         )),
       ],
     );
